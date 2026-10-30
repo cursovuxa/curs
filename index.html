@@ -1,4 +1,922 @@
-<html>
-  <title> я крутой</title>
-<font size="10"> привет </font> <font size="10" color="red"> ГАНДЖА </font>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EventHub Pro - Система управления мероприятиями | Курсовой проект</title>
+  <meta name="description" content="Полнофункциональная веб-платформа управления мероприятиями: 5 ролей пользователей, конструктор программ, интерактивные схемы залов, QR-билеты, электронная очередь, динамическое ценообразование, контроль конфликтов и Supabase + Render.com." />
+  <meta property="og:title" content="EventHub Pro - Система управления мероприятиями" />
+  <meta property="og:description" content="Полнофункциональная платформа управления мероприятиями для курсового проекта." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- Header Top Bar -->
+  <header class="header-top">
+    <div class="header-container">
+      <div class="logo-group">
+        <div class="logo-badge">EH</div>
+        <div class="logo-title">
+          <h1>EventHub Pro</h1>
+          <div class="logo-subtitle">Система управления мероприятиями &bull; Курсовой проект</div>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Counters -->
+      <div class="event-quick-counters" id="quickCounters">
+        <div class="counter-chip">
+          <span>Сегодня:</span>
+          <strong id="cntToday">12</strong>
+        </div>
+        <span style="color:var(--gray-300)">&bull;</span>
+        <div class="counter-chip">
+          <span>Завтра:</span>
+          <strong id="cntTomorrow">24</strong>
+        </div>
+        <span style="color:var(--gray-300)">&bull;</span>
+        <div class="counter-chip">
+          <span>На этой неделе:</span>
+          <strong id="cntWeek">146</strong>
+        </div>
+      </div>
+
+      <!-- Role Switcher & User Profile -->
+      <div class="role-switcher-box">
+        <span class="role-label">Роль:</span>
+        <select id="userRoleSelect" class="role-select" aria-label="Переключение роли пользователя">
+          <option value="visitor" selected>👤 Посетитель (Алексей)</option>
+          <option value="organizer">👨‍💼 Организатор (Даулет)</option>
+          <option value="staff">👷 Сотрудник (Ерлан)</option>
+          <option value="moderator">🛡️ Модератор (Алина)</option>
+          <option value="admin">👑 Администратор (SuperAdmin)</option>
+        </select>
+      </div>
+
+      <!-- Nav Icons -->
+      <div class="nav-actions">
+        <button id="btnNotifToggle" class="btn-icon" aria-label="Уведомления" title="Уведомления">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span id="notifBadge" class="badge-dot"></span>
+        </button>
+        <button id="btnFavorites" class="btn-icon" aria-label="Избранное" title="Избранные мероприятия">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path>
+          </svg>
+          <span id="favCount" style="font-size:0.7rem; font-weight:700; color:var(--primary); margin-left:2px;">2</span>
+        </button>
+        <button id="btnSupabaseModal" class="btn btn-secondary btn-sm" title="База данных Supabase и деплой">
+          🗄️ Supabase & Render
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Popover -->
+  <div id="notifPopover" class="notif-popover">
+    <div style="padding:0.75rem 1rem; border-bottom:1px solid var(--gray-200); display:flex; justify-content:space-between; align-items:center;">
+      <strong style="font-size:0.9rem;">Центр уведомлений</strong>
+      <button id="btnClearNotifs" class="btn-sm btn-secondary" style="font-size:0.7rem; padding:0.2rem 0.4rem;">Очистить</button>
+    </div>
+    <div id="notifList" style="max-height:280px; overflow-y:auto;">
+      <!-- Dynamic notifications inserted here -->
+    </div>
+  </div>
+
+  <!-- Navigation Tabs Bar -->
+  <nav class="nav-tabs-bar" aria-label="Разделы системы">
+    <div class="nav-tabs-container">
+      <button class="tab-btn active" data-tab="catalog">🎪 Каталог мероприятий</button>
+      <button class="tab-btn" data-tab="booking">💺 Схема зала и бронь</button>
+      <button class="tab-btn" data-tab="my-tickets">🎟️ Мои билеты и возврат</button>
+      <button class="tab-btn" data-tab="organizer">🏗️ Кабинет Организатора</button>
+      <button class="tab-btn" data-tab="staff-terminal">📱 Терминал Сотрудника</button>
+      <button class="tab-btn" data-tab="moderator">🛡️ Панель Модератора</button>
+      <button class="tab-btn" data-tab="admin">📊 Панель Администратора</button>
+      <button class="tab-btn" data-tab="database-deploy">⚙️ Supabase & Архитектура</button>
+    </div>
+  </nav>
+
+  <!-- Main Content Panels Container -->
+  <main class="main-content">
+
+    <!-- 1. TAB: CATALOG (Витрина мероприятий) -->
+    <section id="panel-catalog" class="tab-panel active">
+      <!-- Hero Banner -->
+      <div class="hero-box">
+        <h2 class="hero-title">Управляйте, создавайте и посещайте события</h2>
+        <p class="hero-desc">
+          Платформа с интерактивным выбором мест, защитой от повторного входа, динамическим ценообразованием, электронной очередью и бесконфликтным планированием.
+        </p>
+
+        <!-- Smart Search Widget -->
+        <div class="search-widget">
+          <div class="search-input-wrap">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+              type="text"
+              id="smartSearchInput"
+              class="search-input"
+              placeholder="Умный поиск: 'IT мероприятия в Петропавловске на выходных'..."
+              aria-label="Умный поиск мероприятий"
+            />
+          </div>
+          <select id="filterCity" class="search-select" aria-label="Город">
+            <option value="">Все города</option>
+            <option value="Петропавловск" selected>Петропавловск</option>
+            <option value="Алматы">Алматы</option>
+            <option value="Астана">Астана</option>
+            <option value="Шымкент">Шымкент</option>
+          </select>
+          <select id="filterDateRange" class="search-select" aria-label="Период">
+            <option value="all">Любая дата</option>
+            <option value="today">Сегодня</option>
+            <option value="tomorrow">Завтра</option>
+            <option value="weekend">На этих выходных</option>
+            <option value="month">В этом месяце</option>
+          </select>
+          <button id="btnExecuteSearch" class="btn btn-primary">
+            Найти
+          </button>
+        </div>
+      </div>
+
+      <!-- Category Filter Pills & Mode Switcher -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+        <div class="category-pills" id="categoryPillsContainer">
+          <button class="category-pill active" data-category="all">Все категории</button>
+          <button class="category-pill" data-category="IT & Конференции">💻 IT & Конференции</button>
+          <button class="category-pill" data-category="Концерты и Шоу">🎵 Концерты и Шоу</button>
+          <button class="category-pill" data-category="Бизнес и Стартапы">💼 Бизнес и Стартапы</button>
+          <button class="category-pill" data-category="Спорт и Фитнес">⚽ Спорт и Фитнес</button>
+          <button class="category-pill" data-category="Образование">🎓 Образование</button>
+        </div>
+
+        <div style="display:flex; gap:0.5rem;">
+          <button id="btnViewCards" class="btn btn-secondary btn-sm active">Сетка</button>
+          <button id="btnViewMap" class="btn btn-secondary btn-sm">📍 Карта</button>
+          <button id="btnViewCalendar" class="btn btn-secondary btn-sm">📅 Календарь</button>
+        </div>
+      </div>
+
+      <!-- Personalized Recommendations Section -->
+      <div id="recommendationBanner" class="card" style="background:linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border:1px solid #bae6fd;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span style="font-size:1.4rem;">🎯</span>
+            <div>
+              <strong style="color:var(--gray-900); font-size:1rem;">Рекомендовано вам (Персональный AI-алгоритм)</strong>
+              <div style="font-size:0.8rem; color:var(--gray-600);">Подобрано на основе интересов: IT, город Петропавловск и история посещений</div>
+            </div>
+          </div>
+          <span class="badge-recom" style="background:#0284c7; color:white; font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:9999px; font-weight:700;">Score 119/120</span>
+        </div>
+        <div id="recomEventSnippet" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+          <!-- Injected via index.js -->
+        </div>
+      </div>
+
+      <!-- Map View Container (Hidden by default) -->
+      <div id="mapViewContainer" class="card" style="display:none;">
+        <div class="card-header">
+          <h3 class="card-title">📍 Карта мероприятий с расчетом расстояния и маршрута</h3>
+          <span style="font-size:0.85rem; color:var(--gray-500);">Ваша геопозиция: г. Петропавловск (центр)</span>
+        </div>
+        <div class="map-canvas-container" id="interactiveMapContainer">
+          <!-- Rendered custom interactive SVG Map in index.js -->
+        </div>
+        <div id="routeInfoBox" style="margin-top:1rem; padding:0.75rem; background:var(--gray-50); border-radius:var(--radius-sm); font-size:0.85rem; display:none;">
+          <!-- Dynamic route calculation info -->
+        </div>
+      </div>
+
+      <!-- Calendar View Container (Hidden by default) -->
+      <div id="calendarViewContainer" class="card" style="display:none;">
+        <div class="card-header">
+          <h3 class="card-title">📅 Расписание мероприятий (Календарная сетка)</h3>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-secondary btn-sm" id="calPrevMonth">&larr;</button>
+            <span id="calCurrentMonth" style="font-weight:700; align-self:center;">Ноябрь 2026</span>
+            <button class="btn btn-secondary btn-sm" id="calNextMonth">&rarr;</button>
+          </div>
+        </div>
+        <div id="calendarGrid" style="display:grid; grid-template-columns:repeat(7, 1fr); gap:6px;">
+          <!-- Injected via index.js -->
+        </div>
+      </div>
+
+      <!-- Events Grid Section -->
+      <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="font-size:1.25rem; font-weight:700; color:var(--gray-900);">Ближайшие и популярные события</h3>
+        <span id="eventsFoundCount" style="font-size:0.85rem; color:var(--gray-500);">Найдено: 6 мероприятий</span>
+      </div>
+      <div class="events-grid" id="eventsGridContainer">
+        <!-- Rendered via index.js -->
+      </div>
+    </section>
+
+    <!-- 2. TAB: BOOKING & HALL SEATING (Схема зала и покупка) -->
+    <section id="panel-booking" class="tab-panel">
+      <!-- 10-Minute Hold Reservation Countdown Banner -->
+      <div id="reservationTimerBox" class="reservation-timer-banner" style="display:none;">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <div>
+            <strong>Место временно заблокировано за вами!</strong>
+            <div style="font-size:0.8rem;">Завершите оплату до истечения времени, иначе место станет доступно другим посетителям.</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span>Осталось времени:</span>
+          <div class="timer-digits" id="timerCountdown">10:00</div>
+        </div>
+      </div>
+
+      <!-- Virtual Queue Banner (Conditional) -->
+      <div id="virtualQueueBanner" class="card" style="background:#fef3c7; border:1.5px solid #f59e0b; display:none;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span style="font-size:1.8rem;">⏳</span>
+            <div>
+              <strong style="color:#92400e; font-size:1.05rem;">Электронная очередь активна (Высокий наплыв посетителей)</strong>
+              <div style="font-size:0.85rem; color:#b45309;" id="queueStatusText">Вы в очереди: №127 &bull; Перед вами: 36 человек &bull; Ожидаемое время: ~4 мин</div>
+            </div>
+          </div>
+          <button id="btnFastForwardQueue" class="btn btn-warning btn-sm" style="color:#78350f;">
+            Симуляция: Продвинуть очередь &rarr;
+          </button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 2fr 1fr; gap:1.5rem;" class="booking-layout">
+        <!-- Left Column: Hall Layout & Program -->
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title" id="bookingEventTitle">Северный IT-Форум: Архитектура и ИИ 2026</h3>
+                <div style="font-size:0.85rem; color:var(--gray-500); margin-top:0.25rem;">
+                  Площадка: IT Hub North Tech &bull; Главный зал Alfa &bull; Возрастной ценз: 16+
+                </div>
+              </div>
+              <span class="badge" style="background:var(--primary-light); color:var(--primary); font-weight:700; padding:0.35rem 0.75rem; border-radius:var(--radius-sm); font-size:0.85rem;">
+                Интерактивная схема зала
+              </span>
+            </div>
+
+            <!-- Hall Screen Stage -->
+            <div class="hall-stage-screen">ГЛАВНАЯ СЦЕНА / ЭКРАН</div>
+
+            <!-- Interactive Seats Grid -->
+            <div class="seat-grid-container" id="interactiveSeatGrid">
+              <!-- Rendered via index.js: rows A, B, C with 10 seats each + VIP + Accessible -->
+            </div>
+
+            <!-- Legend -->
+            <div class="seat-legend">
+              <div class="legend-item"><div class="legend-swatch" style="background:white;"></div> Обычное (2 500 ₸)</div>
+              <div class="legend-item"><div class="legend-swatch" style="background:#e0e7ff; border-color:#6366f1;"></div> Бизнес (3 500 ₸)</div>
+              <div class="legend-item"><div class="legend-swatch" style="background:#fef3c7; border-color:#f59e0b;"></div> VIP (5 000 ₸)</div>
+              <div class="legend-item"><div class="legend-swatch" style="background:#dcfce7; border-color:#22c55e;"></div> Доступно для МГН</div>
+              <div class="legend-item"><div class="legend-swatch" style="background:var(--primary);"></div> Выбранное вами</div>
+              <div class="legend-item"><div class="legend-swatch" style="background:#fed7aa; border-color:#f97316;"></div> Бронь 10 мин</div>
+              <div class="legend-item"><div class="legend-swatch" style="background:var(--gray-300);"></div> Занято</div>
+            </div>
+          </div>
+
+          <!-- Event Program / Schedule Constructor Tree View -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">📋 Программа мероприятия (Секции и тайминг)</h3>
+              <span style="font-size:0.8rem; color:var(--gray-500);">4 секции &bull; 6 спикеров</span>
+            </div>
+            <div id="bookingProgramTree" style="display:flex; flex-direction:column; gap:0.75rem;">
+              <!-- Dynamic Program items -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Checkout & Dynamic Price Info -->
+        <div>
+          <!-- Dynamic Price Widget -->
+          <div class="card" style="border-top:4px solid var(--primary);">
+            <div class="card-header">
+              <h4 style="font-size:1.1rem; font-weight:700;">Динамический расчет цены</h4>
+              <span class="badge" style="background:#eef2ff; color:#4338ca; font-size:0.75rem; font-weight:700; padding:0.2rem 0.5rem; border-radius:4px;">Smart Pricing</span>
+            </div>
+            <div style="font-size:0.85rem; color:var(--gray-600); margin-bottom:1rem;">
+              Стоимость меняется автоматически в зависимости от спроса и оставшихся мест:
+            </div>
+            <div style="background:var(--gray-50); border:1px solid var(--gray-200); border-radius:var(--radius-sm); padding:0.75rem; margin-bottom:1rem;">
+              <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:0.35rem;">
+                <span>Осталось мест:</span>
+                <strong id="dynSeatsRemaining" style="color:var(--warning);">38 из 100</strong>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:0.35rem;">
+                <span>Текущая цена билета:</span>
+                <strong id="dynCurrentPrice" style="color:var(--primary); font-size:1.1rem;">2 500 ₸</strong>
+              </div>
+              <div style="font-size:0.75rem; color:var(--gray-500);">
+                Шкала: 100 мест &rarr; 2000 ₸ | 50 мест &rarr; 2500 ₸ | 20 мест &rarr; 3000 ₸ | 10 мест &rarr; 3500 ₸
+              </div>
+            </div>
+
+            <!-- Selected Seat details -->
+            <div style="border-top:1px solid var(--gray-200); padding-top:1rem; margin-bottom:1rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                <span style="font-size:0.9rem; font-weight:600;">Выбранное место:</span>
+                <span id="selectedSeatBadge" class="badge" style="background:var(--primary); color:white; font-size:0.9rem; font-weight:700; padding:0.25rem 0.6rem; border-radius:4px;">
+                  Не выбрано
+                </span>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85rem; color:var(--gray-600);">
+                <span>Категория:</span>
+                <span id="selectedSeatType">Стандарт</span>
+              </div>
+            </div>
+
+            <!-- Promo Code Input -->
+            <div style="margin-bottom:1.25rem;">
+              <label for="promoCodeInput" style="display:block; font-size:0.8rem; font-weight:600; color:var(--gray-700); margin-bottom:0.35rem;">
+                Промокод на скидку:
+              </label>
+              <div style="display:flex; gap:0.5rem;">
+                <input
+                  type="text"
+                  id="promoCodeInput"
+                  placeholder="WELCOME20"
+                  style="flex:1; border:1px solid var(--gray-300); border-radius:var(--radius-sm); padding:0.45rem 0.6rem; font-size:0.85rem; text-transform:uppercase;"
+                />
+                <button id="btnApplyPromo" class="btn btn-secondary btn-sm">
+                  Применить
+                </button>
+              </div>
+              <div id="promoFeedback" style="font-size:0.75rem; margin-top:0.35rem;"></div>
+            </div>
+
+            <!-- Total and Checkout Button -->
+            <div style="border-top:2px dashed var(--gray-200); padding-top:1rem; margin-bottom:1.25rem;">
+              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:0.25rem;">
+                <span style="font-size:0.95rem; font-weight:600; color:var(--gray-700);">Итого к оплате:</span>
+                <span id="cartTotalPrice" style="font-size:1.5rem; font-weight:800; color:var(--primary);">0 ₸</span>
+              </div>
+              <div id="cartDiscountNotice" style="font-size:0.8rem; color:var(--success); font-weight:600; display:none;">
+                Скидка по промокоду учтена!
+              </div>
+            </div>
+
+            <!-- Test Payment Methods -->
+            <div style="margin-bottom:1.25rem;">
+              <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--gray-700); margin-bottom:0.35rem;">
+                Способ оплаты (Тестовый шлюз):
+              </label>
+              <select id="paymentMethodSelect" class="search-select" style="width:100%;">
+                <option value="kaspi">🟡 Kaspi Pay (QR / приложение)</option>
+                <option value="card">💳 Банковская карта (Visa / Mastercard)</option>
+                <option value="apple"> Apple Pay / Google Pay</option>
+                <option value="invoice">📄 Безналичный расчет для юр. лиц</option>
+              </select>
+            </div>
+
+            <button id="btnCheckoutSubmit" class="btn btn-primary btn-lg" style="width:100%;" disabled>
+              Зарезервировать и Оплатить
+            </button>
+            <div style="text-align:center; font-size:0.75rem; color:var(--gray-400); margin-top:0.5rem;">
+              🔒 Безопасная тестовая транзакция. Реальные деньги не списываются.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. TAB: MY TICKETS & REFUND (Мои билеты и возврат) -->
+    <section id="panel-my-tickets" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🎟️ Мои билеты и QR-пропуска</h3>
+            <div style="font-size:0.85rem; color:var(--gray-500); margin-top:0.25rem;">
+              Предъявите QR-код на входе для сканирования сотрудником мероприятия.
+            </div>
+          </div>
+          <button id="btnRefreshTickets" class="btn btn-secondary btn-sm">Обновить</button>
+        </div>
+
+        <div id="myTicketsContainer" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:1.5rem;">
+          <!-- Dynamically filled with ticket passes -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. TAB: ORGANIZER DASHBOARD (Кабинет Организатора) -->
+    <section id="panel-organizer" class="tab-panel">
+      <div style="display:grid; grid-template-columns:1fr; gap:1.5rem;">
+        <!-- Create New Event Card -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">🏗️ Конструктор и создание мероприятий</h3>
+              <div style="font-size:0.85rem; color:var(--gray-500);">
+                Заполните параметры события, постройте многоуровневую программу и проверьте доступность ресурсов.
+              </div>
+            </div>
+            <button id="btnLoadDemoEvent" class="btn btn-secondary btn-sm">Заполнить демо-данными</button>
+          </div>
+
+          <form id="createEventForm" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Название мероприятия *</label>
+              <input type="text" id="evTitle" required placeholder="Например: Hackathon North 2026" class="search-select" style="width:100%;" />
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Категория *</label>
+              <select id="evCategory" required class="search-select" style="width:100%;">
+                <option value="IT & Конференции">IT & Конференции</option>
+                <option value="Концерты и Шоу">Концерты и Шоу</option>
+                <option value="Бизнес и Стартапы">Бизнес и Стартапы</option>
+                <option value="Спорт и Фитнес">Спорт и Фитнес</option>
+                <option value="Образование">Образование</option>
+              </select>
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Площадка и Зал *</label>
+              <select id="evHall" required class="search-select" style="width:100%;">
+                <option value="hall-1">Дворец Спорта &bull; Главный амфитеатр №1 (60 мест)</option>
+                <option value="hall-2">IT Hub North Tech &bull; Конференц-зал Alfa (40 мест)</option>
+                <option value="hall-3">Конгресс-холл &bull; Зал «Астана» (120 мест)</option>
+              </select>
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Дата проведения *</label>
+              <input type="date" id="evDate" required class="search-select" style="width:100%;" value="2026-11-15" />
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Время начала и окончания *</label>
+              <div style="display:flex; gap:0.5rem;">
+                <input type="time" id="evTimeStart" required class="search-select" style="flex:1;" value="10:00" />
+                <input type="time" id="evTimeEnd" required class="search-select" style="flex:1;" value="17:00" />
+              </div>
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Базовая цена билета (₸) *</label>
+              <input type="number" id="evBasePrice" required min="0" step="100" value="2000" class="search-select" style="width:100%;" />
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Возрастное ограничение</label>
+              <select id="evAge" class="search-select" style="width:100%;">
+                <option value="0+">0+</option>
+                <option value="6+">6+</option>
+                <option value="12+">12+</option>
+                <option value="16+" selected>16+</option>
+                <option value="18+">18+</option>
+              </select>
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Количество мест</label>
+              <input type="number" id="evSeatsCount" min="10" max="1000" value="100" class="search-select" style="width:100%;" />
+            </div>
+
+            <!-- Description -->
+            <div style="grid-column: 1 / -1;">
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">Описание и правила посещения</label>
+              <textarea id="evDesc" rows="2" class="search-select" style="width:100%; resize:vertical;" placeholder="Подробное описание программы, спикеров и правил..."></textarea>
+            </div>
+
+            <!-- Conflict Checker Indicator -->
+            <div style="grid-column: 1 / -1;">
+              <div id="conflictAlertBox" class="conflict-alert" style="display:none;">
+                ⚠️ <strong>Конфликт расписания!</strong> Выбранный зал или оборудование уже забронированы на это время другим мероприятием.
+              </div>
+            </div>
+
+            <!-- Visual Program Builder Sub-Section -->
+            <div style="grid-column: 1 / -1; background:var(--gray-50); border:1px solid var(--gray-200); border-radius:var(--radius); padding:1rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                <strong style="font-size:0.95rem; color:var(--gray-900);">Конструктор программы мероприятия (Секции / Таймлайн)</strong>
+                <button type="button" id="btnAddProgramItem" class="btn btn-secondary btn-sm">+ Добавить пункт программы</button>
+              </div>
+              <div id="programBuilderList" style="display:flex; flex-direction:column; gap:0.5rem;">
+                <!-- Dynamically added program items -->
+              </div>
+            </div>
+
+            <!-- Auto-Assign Staff & Resources -->
+            <div style="grid-column: 1 / -1; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; border-top:1px solid var(--gray-200); padding-top:1rem;">
+              <button type="button" id="btnAutoAssignStaff" class="btn btn-secondary">
+                🤖 Авто-распределение сотрудников (5 чел.)
+              </button>
+              <button type="submit" class="btn btn-primary btn-lg">
+                Опубликовать мероприятие
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Organizer Analytics & Promo Codes Manager -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;" class="organizer-lower-grid">
+          <div class="card">
+            <div class="card-header">
+              <h4 class="card-title">📈 Аналитика продаж организатора</h4>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:1rem; margin-bottom:1rem;">
+              <div style="background:var(--gray-50); padding:1rem; border-radius:var(--radius-sm); border:1px solid var(--gray-200);">
+                <div style="font-size:0.8rem; color:var(--gray-500);">Выручка</div>
+                <div style="font-size:1.3rem; font-weight:800; color:var(--primary);">1 240 000 ₸</div>
+              </div>
+              <div style="background:var(--gray-50); padding:1rem; border-radius:var(--radius-sm); border:1px solid var(--gray-200);">
+                <div style="font-size:0.8rem; color:var(--gray-500);">Заполняемость</div>
+                <div style="font-size:1.3rem; font-weight:800; color:var(--success);">87% (743 пос.)</div>
+              </div>
+            </div>
+            <canvas id="orgChartCanvas" width="450" height="180" style="width:100%; height:auto;"></canvas>
+          </div>
+
+          <!-- Promo Codes Generator -->
+          <div class="card">
+            <div class="card-header">
+              <h4 class="card-title">🏷️ Управление промокодами</h4>
+              <button id="btnCreatePromoModal" class="btn btn-secondary btn-sm">+ Создать код</button>
+            </div>
+            <div id="promoCodesList" style="display:flex; flex-direction:column; gap:0.5rem;">
+              <!-- Promo code pills -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. TAB: EVENT STAFF TERMINAL (Терминал Контролёра / Сканер) -->
+    <section id="panel-staff-terminal" class="tab-panel">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem;" class="staff-terminal-grid">
+        <!-- Left: QR Scanner & Anti-Duplicate Entrance Verification -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">📱 Сканер билетов на входе (Защита от повторного входа)</h3>
+              <div style="font-size:0.85rem; color:var(--gray-500);">
+                Контролёр: Ерлан Сагындыков &bull; Пост: Главный вход (Зал Alfa)
+              </div>
+            </div>
+            <span class="badge" style="background:#ecfdf5; color:#065f46; font-size:0.75rem; font-weight:700; padding:0.25rem 0.6rem; border-radius:4px;">
+              Онлайн-синхронизация
+            </span>
+          </div>
+
+          <!-- Scanner Simulation Viewport -->
+          <div class="scanner-viewport">
+            <div class="scanner-laser"></div>
+            <div style="padding:2rem 1rem;">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5" style="margin:0 auto 1rem;">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+                <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+                <rect x="7" y="7" width="10" height="10" rx="1"></rect>
+              </svg>
+              <div style="font-weight:600; font-size:1.1rem;">Оптический сенсор активен</div>
+              <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">
+                Наведите камеру смартфона на QR-код или введите номер билета вручную
+              </div>
+            </div>
+          </div>
+
+          <!-- Manual / Quick Test Buttons -->
+          <div style="margin-top:1.25rem;">
+            <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--gray-700); margin-bottom:0.35rem;">
+              Ручной ввод номера билета или симуляция теста:
+            </label>
+            <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
+              <input
+                type="text"
+                id="staffManualTicketInput"
+                placeholder="TKT-2026-7482"
+                style="flex:1; border:1px solid var(--gray-300); border-radius:var(--radius-sm); padding:0.5rem 0.75rem; font-family:var(--font-mono); font-weight:700;"
+              />
+              <button id="btnStaffScanTicket" class="btn btn-primary">
+                Проверить
+              </button>
+            </div>
+
+            <!-- Instant Test Scenarios for Evaluation -->
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+              <button id="btnTestValidTicket" class="btn btn-secondary btn-sm" title="Тест: валидный билет">
+                ✅ Тест: Валидный билет
+              </button>
+              <button id="btnTestDuplicateTicket" class="btn btn-secondary btn-sm" title="Тест: повторный проход">
+                ❌ Тест: Повторный вход
+              </button>
+              <button id="btnTestWrongEventTicket" class="btn btn-secondary btn-sm" title="Тест: чужое событие">
+                ⚠️ Тест: Другое событие
+              </button>
+              <button id="btnTestRefundedTicket" class="btn btn-secondary btn-sm" title="Тест: аннулирован">
+                🚫 Тест: Аннулирован
+              </button>
+            </div>
+          </div>
+
+          <!-- Scan Verification Result Alert Box -->
+          <div id="scanResultBox" style="display:none;" class="scan-result-box">
+            <!-- Dynamic result text -->
+          </div>
+        </div>
+
+        <!-- Right: Real-time Attendance Monitor -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">📊 Аналитика в реальном времени (Ход мероприятия)</h3>
+            <span style="font-size:0.75rem; color:var(--success); font-weight:700;">● Live Stream</span>
+          </div>
+
+          <!-- Real-time Stats Grid -->
+          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:1rem; margin-bottom:1.5rem;">
+            <div style="background:var(--gray-50); padding:1rem; border-radius:var(--radius-sm); border:1px solid var(--gray-200);">
+              <div style="font-size:0.8rem; color:var(--gray-500);">Зарегистрировано</div>
+              <div style="font-size:1.6rem; font-weight:800; color:var(--gray-900);" id="rtRegistered">850</div>
+            </div>
+            <div style="background:#ecfdf5; padding:1rem; border-radius:var(--radius-sm); border:1px solid #a7f3d0;">
+              <div style="font-size:0.8rem; color:#065f46;">Пришло (Прошли контроль)</div>
+              <div style="font-size:1.6rem; font-weight:800; color:#059669;" id="rtCheckedIn">624</div>
+            </div>
+            <div style="background:#fffbeb; padding:1rem; border-radius:var(--radius-sm); border:1px solid #fde68a;">
+              <div style="font-size:0.8rem; color:#92400e;">Еще не пришли</div>
+              <div style="font-size:1.6rem; font-weight:800; color:#d97706;" id="rtAbsent">226</div>
+            </div>
+            <div style="background:#eef2ff; padding:1rem; border-radius:var(--radius-sm); border:1px solid #c7d2fe;">
+              <div style="font-size:0.8rem; color:#3730a3;">VIP гости в зале</div>
+              <div style="font-size:1.6rem; font-weight:800; color:#4f46e5;" id="rtVip">73</div>
+            </div>
+          </div>
+
+          <!-- Attendance Progress -->
+          <div style="margin-bottom:1.5rem;">
+            <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:0.35rem;">
+              <span>Фактическая заполняемость зала:</span>
+              <strong id="rtPercentFill">73.4%</strong>
+            </div>
+            <div class="price-progress-bar" style="height:10px;">
+              <div class="price-progress-fill" id="rtProgressBar" style="width:73.4%;"></div>
+            </div>
+          </div>
+
+          <!-- Recent Check-in Logs -->
+          <div>
+            <h4 style="font-size:0.9rem; font-weight:700; color:var(--gray-700); margin-bottom:0.5rem;">
+              Последние отметки присутствия:
+            </h4>
+            <div id="staffRecentCheckins" style="display:flex; flex-direction:column; gap:0.4rem; max-height:220px; overflow-y:auto; font-size:0.8rem;">
+              <!-- Dynamic rows -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. TAB: MODERATOR PANEL (Панель Модератора & Жалобы) -->
+    <section id="panel-moderator" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🛡️ Центр модерации и рассмотрения жалоб</h3>
+            <div style="font-size:0.85rem; color:var(--gray-500);">
+              Модератор: Алина Колесникова &bull; Проверка мероприятий, разрешение споров и контроль отзывов
+            </div>
+          </div>
+          <span class="badge" style="background:#fef2f2; color:#b91c1c; font-weight:700; padding:0.25rem 0.6rem; border-radius:4px; font-size:0.8rem;">
+            Активных жалоб: 2
+          </span>
+        </div>
+
+        <!-- Workflow Statuses Guide -->
+        <div style="display:flex; gap:0.5rem; margin-bottom:1.25rem; font-size:0.8rem; flex-wrap:wrap;">
+          <span style="background:#f1f5f9; padding:0.3rem 0.6rem; border-radius:4px; font-weight:600;">Воркфлоу:</span>
+          <span style="background:#fee2e2; color:#991b1b; padding:0.3rem 0.6rem; border-radius:4px; font-weight:700;">Новая &rarr;</span>
+          <span style="background:#fef3c7; color:#92400e; padding:0.3rem 0.6rem; border-radius:4px; font-weight:700;">На рассмотрении &rarr;</span>
+          <span style="background:#dcfce7; color:#166534; padding:0.3rem 0.6rem; border-radius:4px; font-weight:700;">Решена</span>
+          <span style="color:var(--gray-400);">или</span>
+          <span style="background:#f3f4f6; color:#4b5563; padding:0.3rem 0.6rem; border-radius:4px; font-weight:700;">Отклонена</span>
+        </div>
+
+        <div id="complaintsListContainer" style="display:flex; flex-direction:column; gap:1rem;">
+          <!-- Dynamically filled complaints -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. TAB: ADMIN PANEL (Панель Администратора & Audit Logs) -->
+    <section id="panel-admin" class="tab-panel">
+      <!-- Admin Top Metrics Grid -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:1.5rem;">
+        <div class="card" style="margin:0; padding:1.25rem;">
+          <div style="font-size:0.8rem; color:var(--gray-500);">Пользователи</div>
+          <div style="font-size:1.75rem; font-weight:800; color:var(--gray-900);">12 450</div>
+          <div style="font-size:0.75rem; color:var(--success); font-weight:600;">+14% за месяц</div>
+        </div>
+        <div class="card" style="margin:0; padding:1.25rem;">
+          <div style="font-size:0.8rem; color:var(--gray-500);">Организаторы</div>
+          <div style="font-size:1.75rem; font-weight:800; color:var(--primary);">438</div>
+          <div style="font-size:0.75rem; color:var(--gray-500);">Активных: 312</div>
+        </div>
+        <div class="card" style="margin:0; padding:1.25rem;">
+          <div style="font-size:0.8rem; color:var(--gray-500);">Мероприятия</div>
+          <div style="font-size:1.75rem; font-weight:800; color:var(--accent);">2 841</div>
+          <div style="font-size:0.75rem; color:var(--gray-500);">В архиве: 2 120</div>
+        </div>
+        <div class="card" style="margin:0; padding:1.25rem;">
+          <div style="font-size:0.8rem; color:var(--gray-500);">Регистрации</div>
+          <div style="font-size:1.75rem; font-weight:800; color:#8b5cf6;">87 321</div>
+          <div style="font-size:0.75rem; color:var(--gray-500);">Билетов продано: 64 219</div>
+        </div>
+        <div class="card" style="margin:0; padding:1.25rem;">
+          <div style="font-size:0.8rem; color:var(--gray-500);">Общий оборот</div>
+          <div style="font-size:1.75rem; font-weight:800; color:var(--success);">42.8M ₸</div>
+          <div style="font-size:0.75rem; color:var(--success); font-weight:600;">Комиссия 5%: 2.14M ₸</div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div style="display:grid; grid-template-columns:2fr 1fr; gap:1.5rem; margin-bottom:1.5rem;" class="admin-charts-grid">
+        <div class="card" style="margin:0;">
+          <div class="card-header">
+            <h4 class="card-title">📊 Динамика регистраций и выручки по дням</h4>
+          </div>
+          <canvas id="adminMainChart" width="600" height="220" style="width:100%; height:auto;"></canvas>
+        </div>
+        <div class="card" style="margin:0;">
+          <div class="card-header">
+            <h4 class="card-title">🥧 Доли категорий</h4>
+          </div>
+          <canvas id="adminPieChart" width="300" height="220" style="width:100%; height:auto;"></canvas>
+        </div>
+      </div>
+
+      <!-- Audit Log Table -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">📜 Журнал аудита действий (Audit Logs)</h3>
+            <div style="font-size:0.85rem; color:var(--gray-500);">
+              Полная фиксация критических действий: изменение цен, отмены, блокировки, проходы.
+            </div>
+          </div>
+          <button id="btnExportAuditCsv" class="btn btn-secondary btn-sm">Экспорт в CSV</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:0.85rem; text-align:left;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--gray-200); background:var(--gray-50); color:var(--gray-600);">
+                <th style="padding:0.75rem 1rem;">Время</th>
+                <th style="padding:0.75rem 1rem;">Инициатор</th>
+                <th style="padding:0.75rem 1rem;">Действие</th>
+                <th style="padding:0.75rem 1rem;">Сущность</th>
+                <th style="padding:0.75rem 1rem;">Подробности</th>
+              </tr>
+            </thead>
+            <tbody id="auditLogsTableBody">
+              <!-- Rendered via index.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. TAB: DATABASE & DEPLOYMENT ARCHITECTURE (Supabase + Render.com) -->
+    <section id="panel-database-deploy" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🗄️ База данных Supabase (28 таблиц) и деплой на Render.com</h3>
+            <div style="font-size:0.85rem; color:var(--gray-500);">
+              Готовая реляционная модель PostgreSQL для защиты курсовой работы.
+            </div>
+          </div>
+          <button id="btnCopySqlDump" class="btn btn-primary btn-sm">📋 Скопировать весь SQL для Supabase</button>
+        </div>
+
+        <!-- Architecture Diagram & Guide -->
+        <div style="background:var(--gray-900); color:#e2e8f0; padding:1.25rem; border-radius:var(--radius-sm); font-family:var(--font-mono); font-size:0.8rem; margin-bottom:1.5rem; overflow-x:auto;">
+          <pre>
+┌────────────────────────────────────────────────────────────────────────┐
+│                   АРХИТЕКТУРА КУРСОВОГО ПРОЕКТА                        │
+└────────────────────────────────────────────────────────────────────────┘
+  FRONTEND SPA (HTML5 + CSS3 + ES6 Modules)
+     │
+     ▼ (REST API / WebSocket Polling)
+  BACKEND SERVER (Node.js + Express 4.x)  [Деплой на Render.com]
+     │
+     ▼ (SSL PostgreSQL Pool / RLS Policies)
+  SUPABASE DATABASE (PostgreSQL 16)
+     ├── users & roles (5 ролей: visitor, organizer, staff, moderator, admin)
+     ├── events, venues, halls, event_program, seats
+     ├── seat_reservations (10-мин блокировка с авто-освобождением)
+     ├── registrations, tickets, payments, refunds, promo_codes
+     ├── employees, event_staff_assignments (бесконфликтный алгоритм)
+     ├── queue_tokens, reviews, complaints, audit_logs
+          </pre>
+        </div>
+
+        <!-- 28 Tables Schema Catalog -->
+        <h4 style="font-weight:700; font-size:1rem; margin-bottom:0.75rem; color:var(--gray-900);">
+          Структура 28 связанных таблиц (PostgreSQL / Supabase):
+        </h4>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:0.75rem; margin-bottom:1.5rem;" id="dbTablesGrid">
+          <!-- Dynamically populated with 28 tables chips -->
+        </div>
+
+        <!-- Supabase Keys Configuration Form -->
+        <div style="background:var(--gray-50); border:1px solid var(--gray-200); border-radius:var(--radius); padding:1.25rem;">
+          <h4 style="font-weight:700; margin-bottom:0.5rem; font-size:0.95rem;">
+            Настройка подключения к вашему проекту Supabase:
+          </h4>
+          <p style="font-size:0.8rem; color:var(--gray-600); margin-bottom:1rem;">
+            Вы можете вставить ключи сейчас или позже на сервере Render.com в панели Environment Variables.
+          </p>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">SUPABASE_URL</label>
+              <input type="text" id="supabaseUrlInput" placeholder="https://your-project.supabase.co" class="search-select" style="width:100%;" />
+            </div>
+            <div>
+              <label class="role-label" style="display:block; margin-bottom:0.25rem;">SUPABASE_ANON_KEY</label>
+              <input type="password" id="supabaseKeyInput" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="search-select" style="width:100%;" />
+            </div>
+          </div>
+          <div style="margin-top:0.75rem; display:flex; justify-content:flex-end;">
+            <button id="btnSaveSupabaseConfig" class="btn btn-primary btn-sm">
+              Сохранить конфигурацию
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Refund Modal Dialog -->
+  <div id="refundModal" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 style="font-size:1.15rem; font-weight:700; color:var(--gray-900);">Калькулятор возврата билета</h3>
+        <button id="btnCloseRefundModal" class="btn-icon" style="width:30px; height:30px;">&times;</button>
+      </div>
+      <div class="modal-body" id="refundModalContent">
+        <!-- Injected via index.js -->
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelRefund" class="btn btn-secondary">Отмена</button>
+        <button id="btnConfirmRefund" class="btn btn-danger">Подтвердить возврат</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Complaint Modal Dialog -->
+  <div id="complaintModal" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 style="font-size:1.15rem; font-weight:700; color:var(--gray-900);">Подача жалобы модератору</h3>
+        <button id="btnCloseComplaintModal" class="btn-icon" style="width:30px; height:30px;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="complaintForm">
+          <div style="margin-bottom:0.75rem;">
+            <label class="role-label" style="display:block; margin-bottom:0.25rem;">Объект жалобы</label>
+            <input type="text" id="compTarget" class="search-select" style="width:100%;" readonly />
+          </div>
+          <div style="margin-bottom:0.75rem;">
+            <label class="role-label" style="display:block; margin-bottom:0.25rem;">Причина жалобы *</label>
+            <select id="compReason" class="search-select" style="width:100%;" required>
+              <option value="Несоответствие описания">Несоответствие описания программы</option>
+              <option value="Срыв тайминга / задержка">Срыв тайминга или задержка</option>
+              <option value="Неподобающее поведение">Неподобающее поведение участников</option>
+              <option value="Технические проблемы">Проблемы с оборудованием / помещением</option>
+              <option value="Другое">Другое нарушение правил</option>
+            </select>
+          </div>
+          <div>
+            <label class="role-label" style="display:block; margin-bottom:0.25rem;">Подробности *</label>
+            <textarea id="compDetails" rows="3" class="search-select" style="width:100%;" required placeholder="Опишите ситуацию подробно..."></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelComplaint" class="btn btn-secondary">Отмена</button>
+        <button id="btnSubmitComplaint" class="btn btn-danger">Отправить жалобу</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Main Unified Javascript Logic -->
+  <script type="module" src="/index.js"></script>
+</body>
 </html>
