@@ -210,6 +210,10 @@ body[data-theme="dark"].account-page .workspace-card,body[data-theme="halloween"
 .notification-live-dot{width:8px;height:8px;border-radius:50%;background:#a8a6b5}
 .notification-live-dot.is-live{background:#21bd86;box-shadow:0 0 0 4px #21bd8622}
 
+/* Contrast-safe workspace selects in every palette. */
+.workspace select, .workspace select option { background-color: var(--surface) !important; color: var(--ink) !important; }
+body[data-theme="dark"] .workspace select { color-scheme: dark; }
+
 /* Reliable, unified typography: never fall back to a serif heading. */
 html, body, button, input, select, textarea {
   font-family: "DM Sans", "Segoe UI", Arial, sans-serif !important;
