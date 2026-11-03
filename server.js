@@ -71,7 +71,7 @@ app.get('/api/events', async (req, res) => {
   const term = String(req.query.q || '').trim().slice(0, 100);
   const city = String(req.query.city || '').trim().slice(0, 100);
   let query = supabase.from('events')
-    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,dynamic_pricing_enabled,popularity_score,venue_id,category_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*)')
+    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,rules,contact_email,contact_phone,dynamic_pricing_enabled,popularity_score,venue_id,category_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*)')
     .eq('status', 'published').order('start_date', { ascending: true });
   if (term) query = query.ilike('title', '%' + term.replace(/[,%()]/g, '') + '%');
   if (city) query = query.ilike('venues.city', city);
@@ -336,9 +336,23 @@ app.post('/api/uploads/event-cover', requireUser, allowRoles('organizer','admin'
   res.status(201).json({ url: data.publicUrl });
 }));
 app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
-  const { title, description, category_id, venue_id, hall_id, start_date, start_time, end_time, age_limit, total_seats, base_price, cover_image, location_address } = req.body;
+  const { title, description, category_id, venue_id, hall_id, start_date, start_time, end_time, age_limit, total_seats, base_price, cover_image, location_address, rules, contact_email, contact_phone } = req.body;
+  const rawProgram = Array.isArray(req.body.program) ? req.body.program : [];
   if (!title || !start_date || !start_time || !end_time || !Number.isInteger(Number(total_seats)) || Number(total_seats) < 1) {
     return res.status(400).json({ error: 'Заполните название, даты, время и вместимость' });
+  }
+  if (rawProgram.length > 100) return res.status(400).json({ error: 'В программу можно добавить не более 100 пунктов' });
+  const program = rawProgram.map((item) => ({
+    title: String(item?.title || '').trim().slice(0, 180),
+    start_time: String(item?.start_time || '').trim(),
+    end_time: String(item?.end_time || '').trim(),
+    speaker_name: String(item?.speaker_name || '').trim().slice(0, 160),
+    room_name: String(item?.room_name || '').trim().slice(0, 120),
+    description: String(item?.description || '').trim().slice(0, 2000)
+  }));
+  const completeProgram = program.filter((item) => item.title || item.start_time || item.end_time);
+  if (completeProgram.some((item) => !item.title || !/^\\d{2}:\\d{2}$/.test(item.start_time) || !/^\\d{2}:\\d{2}$/.test(item.end_time) || item.end_time <= item.start_time)) {
+    return res.status(400).json({ error: 'У каждого пункта программы нужны название и корректное время начала и окончания' });
   }
   let eventAddress = String(location_address || '').trim().slice(0, 500);
   if (venue_id) {
@@ -357,23 +371,37 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
     start_date, start_time, end_time, age_limit: age_limit || 'Для всех',
     total_seats: Number(total_seats), available_seats: Number(total_seats),
     base_price: Number(base_price || 0), current_price: Number(base_price || 0),
-    cover_image: cover_image || null, status: 'pending_moderation'
+    cover_image: cover_image || null, rules: String(rules || '').trim().slice(0, 5000),
+    contact_email: String(contact_email || '').trim().slice(0, 254) || null,
+    contact_phone: String(contact_phone || '').trim().slice(0, 40) || null,
+    status: 'pending_moderation'
   }).select('*').single();
   if (error) return res.status(400).json({ error: 'Не удалось создать мероприятие' });
-  res.status(201).json({ event: data });
+  if (completeProgram.length) {
+    const { error: programError } = await supabase.from('event_program').insert(completeProgram.map((item) => ({ ...item, event_id: data.id })));
+    if (programError) {
+      await supabase.from('events').delete().eq('id', data.id).eq('organizer_id', req.user.id);
+      console.error('[events] program insert failed:', programError.message);
+      return res.status(400).json({ error: 'Не удалось сохранить программу. Мероприятие отменено, проверьте время пунктов.' });
+    }
+  }
+  res.status(201).json({ event: data, program: completeProgram });
 }));
 app.get('/api/organizer/events', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
-  const { data, error } = await supabase.from('events').select('*,venues(name,city,address),event_categories(name)')
+  const { data, error } = await supabase.from('events').select('*,venues(name,city,address),event_categories(name),event_program(*)')
     .eq('organizer_id', req.user.id).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия организатора' });
   res.json({ events: data });
 }));
 app.patch('/api/events/:id', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
   const changes = {};
-  for (const key of ['title','description','category_id','venue_id','hall_id','start_date','start_time','end_time','age_limit','total_seats','base_price','cover_image']) {
+  for (const key of ['title','description','category_id','venue_id','hall_id','start_date','start_time','end_time','age_limit','total_seats','base_price','cover_image','rules']) {
     if (req.body[key] !== undefined) changes[key] = req.body[key];
   }
   if (req.body.location_address !== undefined) changes.location_address = String(req.body.location_address || '').trim().slice(0, 500);
+  if (req.body.contact_email !== undefined) changes.contact_email = String(req.body.contact_email || '').trim().slice(0, 254) || null;
+  if (req.body.contact_phone !== undefined) changes.contact_phone = String(req.body.contact_phone || '').trim().slice(0, 40) || null;
+  if (req.body.rules !== undefined) changes.rules = String(req.body.rules || '').trim().slice(0, 5000);
   const { data, error } = await supabase.from('events').update(changes)
     .eq('id', req.params.id).eq('organizer_id', req.user.id).select('*').maybeSingle();
   if (error) return res.status(400).json({ error: 'Не удалось изменить мероприятие' });
