@@ -119,3 +119,21 @@ body[data-theme="halloween"] .theme-picker-icon{color:#ff9c44}
   .theme-picker-icon{font-size:12px}
   .theme-menu{width:205px}
 }
+
+
+.settings-layout{display:grid;grid-template-columns:minmax(220px,.72fr) minmax(0,1.5fr);gap:18px;align-items:start}
+.settings-intro{background:linear-gradient(145deg,color-mix(in srgb,var(--surface) 88%,var(--violet)),var(--surface))}
+.settings-intro h3{margin:4px 0 8px!important;font-size:24px!important}
+.settings-intro p:last-child{color:var(--muted);font-size:13px;line-height:1.65;margin:0}
+.settings-form{gap:16px}
+.settings-form label{font-size:12px}
+.settings-form input,.settings-form textarea{min-height:44px;border-color:var(--line);background:var(--surface);color:var(--ink)}
+.settings-form input:disabled{opacity:.65}
+.settings-form textarea{resize:vertical;min-height:110px;line-height:1.55}
+.settings-theme{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--paper) 80%,var(--surface))}
+.settings-theme b{font-size:13px}
+.settings-theme p{margin:5px 0 0;color:var(--muted);font-size:11px}
+.settings-theme .theme-picker{flex:0 0 auto}
+body[data-theme="halloween"] .settings-intro{background:linear-gradient(145deg,#351a32,#211724)}
+body[data-theme="halloween"] .settings-theme{background:#281b2a}
+@media(max-width:760px){.settings-layout{grid-template-columns:1fr}.settings-theme{align-items:flex-start;flex-direction:column}.settings-theme .theme-select{width:100%;max-width:240px}}
