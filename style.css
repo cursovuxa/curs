@@ -214,8 +214,13 @@ body[data-theme="dark"].account-page .workspace-card,body[data-theme="halloween"
 html, body, button, input, select, textarea {
   font-family: "DM Sans", "Segoe UI", Arial, sans-serif !important;
 }
-h1, h2, h3, h4, h5, h6, .brand, .brand-mark, .auth-brand, .profile-dropdown, .art-label {
+h1, h2, h3, h4, h5, h6 {
   font-family: "DM Sans", "Segoe UI", Arial, sans-serif !important;
   font-synthesis: none;
-  letter-spacing: -0.035em;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+}
+.brand, .brand-mark, .auth-brand, .profile-dropdown, .art-label {
+  font-family: "DM Sans", "Segoe UI", Arial, sans-serif !important;
+  font-synthesis: none;
 }
