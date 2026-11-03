@@ -112,6 +112,18 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   res.json({ accessToken: data.session.access_token, user: profile });
 }));
 app.get('/api/me', requireUser, (req, res) => res.json({ user: req.user }));
+app.patch('/api/me/preferences', requireUser, asyncRoute(async (req, res) => {
+  const theme = String(req.body.theme || '');
+  if (!['rose', 'sky', 'dark', 'halloween'].includes(theme)) {
+    return res.status(400).json({ error: 'Неизвестная тема оформления' });
+  }
+  const preferences = { ...(req.user.preferences || {}), theme };
+  const { data, error } = await supabase.from('users')
+    .update({ preferences }).eq('id', req.user.id).select('preferences').single();
+  if (error) return res.status(500).json({ error: 'Не удалось сохранить тему аккаунта' });
+  req.user.preferences = data.preferences;
+  res.json({ preferences: data.preferences });
+}));
 
 app.get('/api/favorites', requireUser, asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('favorites')
