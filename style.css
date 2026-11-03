@@ -256,3 +256,15 @@ h1, h2, h3, h4, h5, h6 {
 body[data-theme="dark"] .role-picker-menu{box-shadow:0 16px 38px #0008}
 body[data-theme="halloween"] .role-picker-option:hover,body[data-theme="halloween"] .role-picker-option[aria-selected="true"]{background:#3b2738}
 @media(max-width:700px){.role-picker{min-width:180px}.role-picker-trigger,.role-picker-root{min-height:40px;padding:7px 9px;gap:7px;font-size:11px}}
+
+
+
+/* Pin category-chip text to a dark ink on its opaque light surface in every theme. */
+.event-card .event-image .event-category{
+  color:#201522!important;
+  -webkit-text-fill-color:#201522!important;
+  background:#fff!important;
+  opacity:1!important;
+  text-shadow:none!important;
+  mix-blend-mode:normal!important;
+}
