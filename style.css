@@ -189,3 +189,7 @@ body.profile-page .workspace{min-height:calc(100vh - 170px);padding-top:54px}
 body.profile-page .workspace-card{box-shadow:0 16px 50px #17182b0d}
 body[data-theme="dark"].profile-page .workspace-card,
 body[data-theme="halloween"].profile-page .workspace-card{box-shadow:0 16px 50px #0003}
+
+/* Keep transient notices readable on the light-text dark palettes. */
+body[data-theme="dark"] .toast{background:#30313d;color:#f7f6ff;border:1px solid #454655}
+body[data-theme="halloween"] .toast{background:#302033;color:#fff1df;border:1px solid #63394e}
