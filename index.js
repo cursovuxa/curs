@@ -111,16 +111,36 @@ async function loadSession() {
     $('#accountName').textContent=user.full_name||user.email;
     $('#authOpen').textContent='Выйти';
     $('#workspaceNav').hidden=false;
-  } catch {sessionStorage.removeItem(tokenKey);user=null}
+    $('#settingsOpen').hidden=false;
+  } catch {
+    sessionStorage.removeItem(tokenKey);user=null;
+    $('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';
+    $('#workspaceNav').hidden=true;$('#settingsOpen').hidden=true;
+  }
 }
 function showWorkspace() {
   if(!signedIn())return authOpen();
   $('#workspace').hidden=false;
+  $('#workspaceRefresh').textContent='Обновить данные ↻';
   $('#workspace').scrollIntoView({behavior:'smooth'});
   $('#workspaceTitle').textContent=({visitor:'Ваш FlowTix',organizer:'Кабинет организатора',staff:'Кабинет сотрудника',moderator:'Модерация',admin:'Управление FlowTix'})[user.role]||'Кабинет';
   const view={visitor:visitorView,organizer:organizerView,staff:staffView,moderator:moderatorView,admin:adminView}[user.role];
   $('#workspaceContent').innerHTML=view?'<div class="workspace-card"><p>Загружаем данные аккаунта…</p></div>':empty('Для аккаунта не назначена роль.');
   if(view)view();
+}
+function themePickerMarkup(){
+  const current=document.body.dataset.theme||'rose';
+  return '<div class="theme-picker"><button class="theme-select" type="button" data-theme-select-button aria-haspopup="listbox" aria-expanded="false"><span class="theme-picker-icon" aria-hidden="true">✦</span><span data-theme-label>'+esc(themeNames[current]||themeNames.rose)+'</span><span class="theme-chevron" aria-hidden="true"></span></button><div class="theme-menu" data-theme-menu role="listbox" aria-label="Тема оформления" hidden>'+
+    [['rose','Нежно-розовая','rose-swatch'],['sky','Нежно-голубая','sky-swatch'],['dark','Ночная','dark-swatch'],['halloween','Хэллоуинская','halloween-swatch']].map(([value,label,swatch])=>'<button type="button" role="option" data-theme-option="'+value+'" aria-selected="'+(current===value)+'"><span class="theme-swatch '+swatch+'"></span><span>'+label+'</span><span class="theme-check">✓</span></button>').join('')+
+    '</div></div>';
+}
+function showSettings(){
+  if(!signedIn())return authOpen();
+  $('#workspace').hidden=false;
+  $('#workspaceTitle').textContent='Настройки профиля';
+  $('#workspaceRefresh').textContent='← В кабинет';
+  $('#workspaceContent').innerHTML='<div class="settings-layout"><div class="workspace-card settings-intro"><p class="eyebrow dark-eyebrow">ТВОЙ FLOWTIX</p><h3>Профиль и предпочтения</h3><p>Добавь немного информации о себе и выбери оформление, которое тебе подходит.</p></div><div class="workspace-card"><form id="profileSettingsForm" class="form-grid settings-form"><label>Имя<input name="full_name" value="'+esc(user.full_name||'')+'" required maxlength="120" autocomplete="name"></label><label>Email аккаунта<input value="'+esc(user.email||'')+'" disabled></label><label>Город<input name="city" value="'+esc(user.city||'')+'" maxlength="100" placeholder="Например, Алматы"></label><label>Телефон<input name="phone" type="tel" value="'+esc(user.phone||'')+'" maxlength="40" autocomplete="tel" placeholder="+7 ..."></label><label class="wide">О себе<textarea name="about" rows="4" maxlength="1000" placeholder="Расскажи, какие события тебе интересны">'+esc(user.preferences?.about||'')+'</textarea></label><div class="wide settings-theme"><div><b>Оформление сайта</b><p>Выбранная тема сохранится в твоём аккаунте.</p></div>'+themePickerMarkup()+'</div><div class="wide form-actions"><button class="button button-accent" type="submit">Сохранить профиль</button></div></form></div></div>';
+  $('#workspace').scrollIntoView({behavior:'smooth'});
 }
 async function visitorView() {
   try {
@@ -159,6 +179,27 @@ async function adminView() {
   }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
 }
 document.addEventListener('click',async(e)=>{
+  const authTab=e.target.closest('.auth-tabs [data-auth]');
+  if(authTab){setAuthMode(authTab.dataset.auth);return}
+  const themeTrigger=e.target.closest('[data-theme-select-button]');
+  if(themeTrigger){
+    const menu=themeTrigger.parentElement.querySelector('[data-theme-menu]');
+    menu.hidden=!menu.hidden;
+    themeTrigger.setAttribute('aria-expanded',String(!menu.hidden));
+    return;
+  }
+  const themeOption=e.target.closest('[data-theme-option]');
+  if(themeOption){
+    applyTheme(themeOption.dataset.themeOption);
+    const menu=themeOption.closest('[data-theme-menu]');
+    menu.hidden=true;
+    menu.parentElement.querySelector('[data-theme-select-button]').setAttribute('aria-expanded','false');
+    return;
+  }
+  if(!e.target.closest('.theme-picker'))$$('[data-theme-menu]').forEach((menu)=>{
+    menu.hidden=true;
+    menu.parentElement.querySelector('[data-theme-select-button]')?.setAttribute('aria-expanded','false');
+  });
   const fav=e.target.closest('[data-favorite]');if(fav)return toggleFavorite(fav.dataset.favorite);
   const detail=e.target.closest('[data-details]');if(detail)return openEvent(detail.dataset.details);
   const reg=e.target.closest('[data-register]');if(reg)return register(reg.dataset.register);
@@ -178,6 +219,7 @@ document.addEventListener('submit',async(e)=>{
     try{const result=await api('/api/auth/'+mode,{method:'POST',body:JSON.stringify({fullName:$('#name').value.trim(),email:$('#email').value.trim(),password:$('#password').value})});if(!result.accessToken){$('#authError').textContent=result.message;return}sessionStorage.setItem(tokenKey,result.accessToken);await loadSession();authClose();toast(mode==='login'?'Вход выполнен':'Аккаунт создан');}
     catch(x){$('#authError').textContent=x.message}finally{setBusy(button,false)}
   }
+  if(e.target.id==='profileSettingsForm'){e.preventDefault();const button=e.target.querySelector('[type="submit"]');setBusy(button,true,'Сохраняем профиль…');try{const data=Object.fromEntries(new FormData(e.target));const result=await api('/api/me/profile',{method:'PATCH',body:JSON.stringify(data)});user={...user,...result.user};$('#accountName').textContent=user.full_name||user.email;toast('Профиль сохранён')}catch(error){toast(error.message)}finally{setBusy(button,false)}}
   if(e.target.id==='reviewForm'){e.preventDefault();try{await api('/api/reviews',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Спасибо за отзыв');visitorView()}catch(x){toast(x.message)}}
   if(e.target.id==='createEventForm'){e.preventDefault();const body=Object.fromEntries(new FormData(e.target));body.total_seats=Number(body.total_seats);body.base_price=Number(body.base_price||0);try{await api('/api/events',{method:'POST',body:JSON.stringify(body)});toast('Мероприятие отправлено модератору');organizerView()}catch(x){toast(x.message)}}
   if(e.target.id==='createVenueForm'){e.preventDefault();try{await api('/api/venues',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Площадка добавлена');organizerView()}catch(x){toast(x.message)}}
@@ -187,20 +229,19 @@ document.addEventListener('submit',async(e)=>{
   if(e.target.id==='scanForm'){e.preventDefault();try{const x=await api('/api/staff/tickets/'+encodeURIComponent(new FormData(e.target).get('ticket'))+'/check-in',{method:'POST'});$('#scanResult').textContent='Вход отмечен · '+x.ticket.ticket_number;toast('Билет проверен')}catch(x){$('#scanResult').textContent=x.message}}
   if(e.target.id==='complaintForm'){e.preventDefault();if(!signedIn())return authOpen();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/complaints',{method:'POST',body:JSON.stringify({targetType:'event',targetId:d.targetId,reason:d.reason,details:d.details})});$('#eventModal').hidden=true;toast('Жалоба отправлена модератору')}catch(x){toast(x.message)}}
 });
-$('#authOpen').addEventListener('click',async()=>{if(signedIn()){sessionStorage.removeItem(tokenKey);if(supabaseAuth)await supabaseAuth.auth.signOut();user=null;$('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';$('#workspaceNav').hidden=true;$('#workspace').hidden=true;renderEvents();toast('Вы вышли из аккаунта')}else authOpen()});
+$('#authOpen').addEventListener('click',async()=>{if(signedIn()){sessionStorage.removeItem(tokenKey);if(supabaseAuth)await supabaseAuth.auth.signOut();user=null;$('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';$('#workspaceNav').hidden=true;$('#settingsOpen').hidden=true;$('#workspace').hidden=true;renderEvents();toast('Вы вышли из аккаунта')}else authOpen()});
 
-$$('[data-auth]').forEach(x=>x.addEventListener('click',()=>setAuthMode(x.dataset.auth)));
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
 $('#workspaceRefresh').addEventListener('click',showWorkspace);
+$('#settingsOpen').addEventListener('click',showSettings);
 const themeKey='flowtix_theme';
 const themeNames={rose:'Розовая',sky:'Голубая',dark:'Тёмная',halloween:'Хэллоуин'};
 const allowedThemes=Object.keys(themeNames);
 function applyTheme(theme,{save=true}={}){
   const next=allowedThemes.includes(theme)?theme:'rose';
   document.body.dataset.theme=next;
-  const legacyPicker=$('#themeSelect');if(legacyPicker)legacyPicker.value=next;
-  const label=$('#themeSelectLabel');if(label)label.textContent=themeNames[next];
+  $$('[data-theme-label]').forEach((label)=>label.textContent=themeNames[next]);
   $$('[data-theme-option]').forEach((option)=>option.setAttribute('aria-selected',String(option.dataset.themeOption===next)));
   localStorage.setItem(themeKey,next);
   if(save&&signedIn()){
@@ -210,27 +251,13 @@ function applyTheme(theme,{save=true}={}){
       .catch((error)=>{user.preferences={...(user.preferences||{}),theme:previous};toast('Тема сохранена на этом устройстве, но не в аккаунте: '+error.message)});
   }
 }
-const themeButton=$('#themeSelectButton');
-const themeMenu=$('#themeMenu');
-if(themeButton&&themeMenu){
-  themeButton.addEventListener('click',()=>{
-    themeMenu.hidden=!themeMenu.hidden;
-    themeButton.setAttribute('aria-expanded',String(!themeMenu.hidden));
-  });
-  $$('[data-theme-option]').forEach((option)=>option.addEventListener('click',()=>{
-    applyTheme(option.dataset.themeOption);
-    themeMenu.hidden=true;
-    themeButton.setAttribute('aria-expanded','false');
-    themeButton.focus();
-  }));
-  document.addEventListener('click',(event)=>{
-    if(!event.target.closest('#themePicker')){themeMenu.hidden=true;themeButton.setAttribute('aria-expanded','false')}
-  });
-  document.addEventListener('keydown',(event)=>{
-    if(event.key==='Escape'&&!themeMenu.hidden){themeMenu.hidden=true;themeButton.setAttribute('aria-expanded','false');themeButton.focus()}
-  });
-}
 applyTheme(localStorage.getItem(themeKey)||'rose',{save:false});
+document.addEventListener('keydown',(event)=>{
+  if(event.key==='Escape')$$('[data-theme-menu]:not([hidden])').forEach((menu)=>{
+    menu.hidden=true;
+    menu.parentElement.querySelector('[data-theme-select-button]')?.setAttribute('aria-expanded','false');
+  });
+});
 let googleAuthCompleting=false,googleAuthCompleted=false,activeGooglePoll=null;
 async function finishGoogleLogin(session){
   if(!session?.access_token||googleAuthCompleting||googleAuthCompleted)return;
