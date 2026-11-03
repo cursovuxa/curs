@@ -1087,3 +1087,13 @@ body {
   .hero-box { border-radius: 20px; }
   .search-widget { border-radius: 16px; }
 }
+
+.auth-tabs { display:flex; gap:.5rem; padding:.25rem; border-radius:12px; background:#f2f2f8; margin-bottom:1.25rem; }
+.auth-tab { flex:1; border:0; padding:.7rem; border-radius:9px; background:transparent; color:#676b80; font:inherit; font-weight:700; cursor:pointer; }
+.auth-tab.active { background:#fff; color:var(--primary); box-shadow:0 2px 8px rgba(30,32,50,.08); }
+#authForm { display:grid; gap:.9rem; }
+#authForm label { display:grid; gap:.35rem; color:var(--gray-700); font-size:.85rem; font-weight:650; }
+#authForm input { width:100%; border:1px solid var(--gray-300); border-radius:10px; padding:.75rem .85rem; color:var(--gray-900); background:white; font:inherit; }
+#authForm input:focus { outline:3px solid rgba(101,84,232,.15); border-color:var(--primary); }
+#authMessage { min-height:1.3rem; color:var(--danger); font-size:.85rem; }
+.eyebrow { color:var(--primary); text-transform:uppercase; letter-spacing:.12em; font-weight:800; font-size:.68rem; margin:0 0 .25rem; }
