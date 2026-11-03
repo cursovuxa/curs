@@ -258,77 +258,57 @@ document.addEventListener('keydown',(event)=>{
     menu.parentElement.querySelector('[data-theme-select-button]')?.setAttribute('aria-expanded','false');
   });
 });
-let googleAuthCompleting=false,googleAuthCompleted=false,activeGooglePoll=null;
-async function finishGoogleLogin(session){
-  if(!session?.access_token||googleAuthCompleting||googleAuthCompleted)return;
-  googleAuthCompleting=true;
-  if(activeGooglePoll){clearInterval(activeGooglePoll);activeGooglePoll=null;}
-  sessionStorage.setItem(tokenKey,session.access_token);
-  try{
-    await loadSession();
-    authClose();
-    toast('Вход выполнен через Google');
-    googleAuthCompleted=true;
-  }catch(error){googleAuthCompleted=false;$('#authError').textContent=error.message||'Не удалось завершить вход'}
-  finally{googleAuthCompleting=false}
-}
-$('#googleFallback').addEventListener('click',()=>{
-  if(!supabaseAuth){$('#authError').textContent='Авторизация ещё загружается. Попробуй ещё раз через секунду.';return}
-  const popup=window.open('about:blank','flowtix-google-auth','popup,width=520,height=680,left=100,top=80');
-  if(!popup){$('#authError').textContent='Браузер заблокировал окно входа. Разреши всплывающие окна для FlowTix.';return}
-  googleAuthCompleted=false;
-  if(activeGooglePoll){clearInterval(activeGooglePoll);activeGooglePoll=null}
-  const button=$('#googleFallback');
-  button.disabled=true;
-  button.setAttribute('aria-busy','true');
-  $('#authError').textContent='';
-  let startingToken=null;
-  let poll=null;
-  supabaseAuth.auth.getSession().then(({data})=>{
-    startingToken=data.session?.access_token||null;
-    poll=setInterval(async()=>{
-      try{
-        const {data:{session}}=await supabaseAuth.auth.getSession();
-        if(session?.access_token&&session.access_token!==startingToken){
-          clearInterval(poll);
-          await finishGoogleLogin(session);
-          if(!popup.closed)popup.close();
-        }else if(popup.closed){
-          clearInterval(poll);
-          $('#authError').textContent='Окно Google закрыто до завершения входа.';
-        }
-      }catch(error){
-        clearInterval(poll);
-        $('#authError').textContent=error.message||'Не удалось проверить вход';
-      }
-    },700);
-    activeGooglePoll=poll;
-    setTimeout(()=>{if(poll){clearInterval(poll);if(activeGooglePoll===poll)activeGooglePoll=null}},120000);
-    return supabaseAuth.auth.signInWithOAuth({
-      provider:'google',
-      options:{skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}
-    });
-  }).then(({data,error})=>{
-    if(error||!data?.url)throw error||new Error('Не удалось открыть Google OAuth');
-    popup.location.replace(data.url);
-  }).catch((error)=>{
-    if(poll)clearInterval(poll);
-    if(!popup.closed)popup.close();
-    $('#authError').textContent=error.message||'Не удалось начать вход через Google';
-  }).finally(()=>{
-    button.disabled=false;
-    button.removeAttribute('aria-busy');
+const GOOGLE_OAUTH_CLIENT_ID='69394596232-2jjcm977md330t3e49urjvuotep57f68.apps.googleusercontent.com';
+let googleNonce='';
+let googleIdentityPromise=null;
+function loadGoogleIdentity(){
+  if(window.google?.accounts?.id)return Promise.resolve();
+  if(googleIdentityPromise)return googleIdentityPromise;
+  googleIdentityPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='https://accounts.google.com/gsi/client';
+    script.async=true;script.defer=true;
+    script.onload=resolve;
+    script.onerror=()=>reject(new Error('Не удалось загрузить Google Identity Services'));
+    document.head.appendChild(script);
   });
-});
-window.addEventListener('message',async(event)=>{
-  if(event.origin!==location.origin||event.data?.type!=='flowtix-auth-success'||!supabaseAuth)return;
-  try{
-    const {data:{session}}=await supabaseAuth.auth.getSession();
-    if(!session?.access_token)throw new Error('Google не вернул сессию. Попробуй войти ещё раз.');
-    await finishGoogleLogin(session);
-  }catch(error){$('#authError').textContent=error.message}
-});
-
+  return googleIdentityPromise;
+}
+async function setupGoogleButton(){
+  await loadGoogleIdentity();
+  if(!supabaseAuth)throw new Error('Supabase Auth ещё загружается');
+  const nonce=crypto.randomUUID()+crypto.randomUUID();
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(nonce));
+  const hashedNonce=[...new Uint8Array(digest)].map((b)=>b.toString(16).padStart(2,'0')).join('');
+  googleNonce=nonce;
+  const container=$('#googleSdkButton');
+  if(!container)throw new Error('Не найден контейнер кнопки Google');
+  container.replaceChildren();
+  google.accounts.id.initialize({
+    client_id:GOOGLE_OAUTH_CLIENT_ID,
+    ux_mode:'popup',
+    nonce:hashedNonce,
+    callback:async(response)=>{
+      try{
+        if(!response?.credential)throw new Error('Google не вернул токен входа');
+        const {data,error}=await supabaseAuth.auth.signInWithIdToken({
+          provider:'google',token:response.credential,nonce:googleNonce
+        });
+        if(error)throw error;
+        if(!data.session?.access_token)throw new Error('Supabase не вернул сессию входа');
+        sessionStorage.setItem(tokenKey,data.session.access_token);
+        await loadSession();
+        authClose();
+        toast('Вход выполнен через Google');
+      }catch(error){$('#authError').textContent=error.message||'Не удалось войти через Google'}
+    }
+  });
+  google.accounts.id.renderButton(container,{
+    type:'standard',theme:'outline',size:'large',text:'continue_with',
+    shape:'pill',logo_alignment:'left',locale:'ru',
+    width:Math.min(container.clientWidth||360,400)
+  });
+}
 $('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){activeCategory=b.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()}});
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
 $('#cityInput').addEventListener('change',loadEvents);
@@ -337,6 +317,7 @@ async function init(){
   try {
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');
     supabaseAuth=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',detectSessionInUrl:true}});
+    await setupGoogleButton();
     const {data:{session}}=await supabaseAuth.auth.getSession();
     if(session?.access_token)sessionStorage.setItem(tokenKey,session.access_token);
     if(window.opener&&session?.access_token){
