@@ -54,4 +54,12 @@ app.get('/api/events/:id', async (req, res) => {
   res.json({ event: data });
 });
 
-app.listen(port, '0.0.0.0', () => console.log('EventHub API listening on ' + port));
+app.listen(port, '0.0.0.0', () => console.log('FlowTix API listening on ' + port));
+const pingUrl = process.env.RENDER_EXTERNAL_URL;
+if (pingUrl) {
+  setInterval(() => {
+    fetch(pingUrl.replace(/\/$/, '') + '/api/health')
+      .then((response) => console.log('[keepalive] health ping ' + response.status))
+      .catch((error) => console.error('[keepalive] failed:', error.message));
+  }, 14 * 60 * 1000).unref();
+}
