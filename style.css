@@ -286,3 +286,12 @@ body[data-theme="halloween"] .role-picker-option:hover,body[data-theme="hallowee
 .preview-note{padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--muted);font-size:.92rem}
 .event-address{margin-top:5px;color:var(--text-muted,var(--muted));font-size:.9rem}
 @media(max-width:640px){.event-tools-actions{align-items:flex-start;flex-direction:column}.organizer-event-item summary{align-items:flex-start;flex-direction:column}.cover-preview img{height:92px}}
+
+
+/* Keep the page behind the event preview still on touch screens */
+body.event-modal-open{overflow:hidden}
+#eventModal.overlay{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+@media(max-width:700px){
+  #eventModal.overlay{place-items:start center;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
+  #eventModal .event-dialog{width:100%;max-height:none;min-height:0;overflow:visible;margin:0 auto}
+}
