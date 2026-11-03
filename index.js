@@ -180,10 +180,25 @@ document.addEventListener('submit',async(e)=>{
 });
 $('#authOpen').addEventListener('click',async()=>{if(signedIn()){sessionStorage.removeItem(tokenKey);if(supabaseAuth)await supabaseAuth.auth.signOut();user=null;$('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';$('#workspaceNav').hidden=true;$('#workspace').hidden=true;renderEvents();toast('Вы вышли из аккаунта')}else authOpen()});
 
-$$('[data-auth]').forEach(x=>x.addEventListener('click',()=>{ $$('#authForm [data-auth]').forEach(t=>t.classList.toggle('active',t===x));const reg=x.dataset.auth==='register';$('#nameWrap').hidden=!reg;$('#name').required=reg;$('#authSubmit').textContent=reg?'Создать аккаунт':'Войти в FlowTix';$('#authTitle').textContent=reg?'Создать аккаунт':'С возвращением';$('#authError').textContent=''}));
+$('[data-auth]').forEach(x=>x.addEventListener('click',()=>{ $('[data-auth]').forEach(t=>t.classList.toggle('active',t===x));const reg=x.dataset.auth==='register';$('#nameWrap').hidden=!reg;$('#name').required=reg;$('#password').autocomplete=reg?'new-password':'current-password';$('#authSubmit').textContent=reg?'Создать аккаунт':'Войти в FlowTix';$('#authTitle').textContent=reg?'Создай свой FlowTix':'С возвращением';$('.auth-intro').textContent=reg?'Создай аккаунт, чтобы находить события по душе.':'Войди, чтобы сохранять события и билеты в одном месте.';$('#authError').textContent=''}));
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
 $('#workspaceRefresh').addEventListener('click',showWorkspace);
+const themeKey='flowtix_theme';
+function applyTheme(theme){
+  const allowed=['rose','sky','dark','halloween'];
+  const next=allowed.includes(theme)?theme:'rose';
+  document.body.dataset.theme=next;
+  const picker=$('#themeSelect');if(picker)picker.value=next;
+  localStorage.setItem(themeKey,next);
+}
+$('#themeSelect').addEventListener('change',(event)=>applyTheme(event.target.value));
+applyTheme(localStorage.getItem(themeKey)||'rose');
+$('#googleFallback').addEventListener('click',async()=>{
+  try{await setupGoogleButton();toast('Нажми кнопку Google, чтобы продолжить')}
+  catch(error){$('#authError').textContent=error.message||'Google-вход временно недоступен'}
+});
+
 $('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){activeCategory=b.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()}});
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
 $('#cityInput').addEventListener('change',loadEvents);
@@ -223,13 +238,14 @@ async function setupGoogleButton(){
       finally{if(button)button.classList.remove('busy')}
     }
   });
-  const container=$('#googleButton');
+  const container=$('#googleSdkButton');
   if(container){
     google.accounts.id.renderButton(container,{
       type:'standard',theme:'outline',size:'large',text:'continue_with',
       shape:'pill',logo_alignment:'left',locale:'ru',
-      width:Math.min(container.clientWidth||400,480)
+      width:Math.min($('#googleButton').clientWidth||400,480)
     });
+    $('#googleFallback').hidden=true;
   }
 }
 async function init(){
