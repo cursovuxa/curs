@@ -201,7 +201,7 @@ function applyTheme(theme,{save=true}={}){
   document.body.dataset.theme=next;
   const legacyPicker=$('#themeSelect');if(legacyPicker)legacyPicker.value=next;
   const label=$('#themeSelectLabel');if(label)label.textContent=themeNames[next];
-  $('[data-theme-option]').forEach((option)=>option.setAttribute('aria-selected',String(option.dataset.themeOption===next)));
+  $$('[data-theme-option]').forEach((option)=>option.setAttribute('aria-selected',String(option.dataset.themeOption===next)));
   localStorage.setItem(themeKey,next);
   if(save&&signedIn()){
     const previous=user.preferences?.theme;
@@ -217,7 +217,7 @@ if(themeButton&&themeMenu){
     themeMenu.hidden=!themeMenu.hidden;
     themeButton.setAttribute('aria-expanded',String(!themeMenu.hidden));
   });
-  $('[data-theme-option]').forEach((option)=>option.addEventListener('click',()=>{
+  $$('[data-theme-option]').forEach((option)=>option.addEventListener('click',()=>{
     applyTheme(option.dataset.themeOption);
     themeMenu.hidden=true;
     themeButton.setAttribute('aria-expanded','false');
