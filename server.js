@@ -142,11 +142,17 @@ app.patch('/api/me/profile', requireUser, asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('users')
     .update({ full_name, username, phone: phone || null, city: city || null, preferences })
     .eq('id', req.user.id)
-    .select('id,email,full_name,username,phone,city,avatar_url,preferences')
+    .select('id,email,full_name,username,phone,city,avatar_url,avatar_path,preferences')
     .single();
   if (error?.code === '23505') return res.status(409).json({ error: 'Этот юзернейм уже занят' });
   if (error) return res.status(500).json({ error: 'Не удалось сохранить профиль' });
-  res.json({ user: data });
+  const profile = { ...data };
+  delete profile.avatar_path;
+  if (data.avatar_path) {
+    const { data: signed, error: signedError } = await supabase.storage.from('avatars').createSignedUrl(data.avatar_path, 3600);
+    if (!signedError && signed?.signedUrl) profile.avatar_url = signed.signedUrl;
+  }
+  res.json({ user: profile });
 }));
 let avatarBucketPromise;
 async function ensureAvatarBucket() {
