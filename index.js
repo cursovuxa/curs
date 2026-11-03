@@ -326,11 +326,6 @@ async function init(){
     await setupGoogleButton();
     const {data:{session}}=await supabaseAuth.auth.getSession();
     if(session?.access_token)sessionStorage.setItem(tokenKey,session.access_token);
-    if(window.opener&&session?.access_token){
-      window.opener.postMessage({type:'flowtix-auth-success'},location.origin);
-      window.close();
-      return;
-    }
   } catch(error) {
     console.error('Supabase Auth init failed:',error);
     $('#authError').textContent='Не удалось загрузить Google-вход: '+(error.message||'попробуй снова');
