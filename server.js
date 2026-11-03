@@ -112,6 +112,21 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   res.json({ accessToken: data.session.access_token, user: profile });
 }));
 app.get('/api/me', requireUser, (req, res) => res.json({ user: req.user }));
+app.patch('/api/me/profile', requireUser, asyncRoute(async (req, res) => {
+  const full_name = String(req.body.full_name || '').trim().slice(0, 120);
+  const phone = String(req.body.phone || '').trim().slice(0, 40);
+  const city = String(req.body.city || '').trim().slice(0, 100);
+  const about = String(req.body.about || '').trim().slice(0, 1000);
+  if (!full_name) return res.status(400).json({ error: 'Укажите имя для профиля' });
+  const preferences = { ...(req.user.preferences || {}), about };
+  const { data, error } = await supabase.from('users')
+    .update({ full_name, phone: phone || null, city: city || null, preferences })
+    .eq('id', req.user.id)
+    .select('id,email,full_name,phone,city,preferences')
+    .single();
+  if (error) return res.status(500).json({ error: 'Не удалось сохранить профиль' });
+  res.json({ user: data });
+}));
 app.patch('/api/me/preferences', requireUser, asyncRoute(async (req, res) => {
   const theme = String(req.body.theme || '');
   if (!['rose', 'sky', 'dark', 'halloween'].includes(theme)) {
