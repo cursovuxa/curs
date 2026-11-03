@@ -444,10 +444,10 @@ function collectProgramDraft(list,parentKey=null) {
     if(!hasData)continue;
     const duration=Number(v.duration_minutes),capacity=Number(v.max_attendees);
     if(!v.title||!/^\\d{2}:\\d{2}$/.test(v.start_time)||!Number.isInteger(duration)||duration<1||duration>1440||!Number.isInteger(capacity)||capacity<1)throw new Error('Для каждого элемента программы укажи название, время начала, длительность и лимит участников.');
-    if(row.dataset.programType==='section'&&!childRows.length)throw new Error('Добавь хотя бы один элемент внутрь каждой секции.');
+
     const start=Number(v.start_time.slice(0,2))*60+Number(v.start_time.slice(3,5)),end=(start+duration)%1440;
     out.push({...v,item_type:row.dataset.programType,client_key:row.dataset.programKey,parent_key:parentKey,duration_minutes:duration,max_attendees:capacity,end_time:String(Math.floor(end/60)).padStart(2,'0')+':'+String(end%60).padStart(2,'0')});
-    if(children)out.push(...collectProgramDraft(children,row.dataset.programKey));
+    if(children){const nested=collectProgramDraft(children,row.dataset.programKey);if(!nested.length)throw new Error('Добавь хотя бы один заполненный элемент внутрь каждой секции.');out.push(...nested)}
   }
   return out;
 }
