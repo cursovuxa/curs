@@ -6,7 +6,7 @@ const app = express();
 const port = Number(process.env.PORT || 10000);
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const rootAdminEmail = String(process.env.FLOWTIX_ROOT_ADMIN_EMAIL || process.env.FLOWTIX_ADMIN_EMAIL || '').trim().toLowerCase();
+const rootAdminEmail = String(process.env.FLOWTIX_ROOT_ADMIN_EMAIL || '').trim().toLowerCase();
 const isRootEmail = (email) => Boolean(rootAdminEmail) && String(email || '').trim().toLowerCase() === rootAdminEmail;
 const validRoles = new Set(['visitor', 'organizer', 'staff', 'moderator', 'admin']);
 const normalizeOrigin = (value) => {
