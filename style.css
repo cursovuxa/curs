@@ -193,3 +193,19 @@ body[data-theme="halloween"].profile-page .workspace-card{box-shadow:0 16px 50px
 /* Keep transient notices readable on the light-text dark palettes. */
 body[data-theme="dark"] .toast{background:#30313d;color:#f7f6ff;border:1px solid #454655}
 body[data-theme="halloween"] .toast{background:#302033;color:#fff1df;border:1px solid #63394e}
+
+body.account-page .topbar{position:sticky;top:0;z-index:80}
+body.account-page .workspace{min-height:calc(100vh - 160px);padding-top:52px}
+body.account-page .workspace-card{box-shadow:0 14px 45px #17182b0b}
+body[data-theme="dark"].account-page .workspace-card,body[data-theme="halloween"].account-page .workspace-card{box-shadow:0 14px 45px #0003}
+.profile-dropdown [data-account-action="notifications"]::before{content:"♢"}
+.notification-list{display:grid;gap:12px}
+.notification-card{display:grid;gap:8px}
+.notification-card.unread{border-left:3px solid var(--violet)}
+.notification-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.notification-card h3{margin:0!important;font-size:16px!important}
+.notification-card p{margin:0;color:var(--muted);line-height:1.6}
+.notification-card small{color:var(--muted);font-size:11px}
+.notification-live{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)}
+.notification-live-dot{width:8px;height:8px;border-radius:50%;background:#a8a6b5}
+.notification-live-dot.is-live{background:#21bd86;box-shadow:0 0 0 4px #21bd8622}
