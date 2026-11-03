@@ -550,6 +550,14 @@ async function adminView() {
 }
 document.addEventListener('click',async(e)=>{
   if(e.target.id==='eventModal'){setEventModalOpen(false);return}
+  const period=e.target.closest('[data-period]');
+  if(period){const today=new Date();selectedCalendarDate=localDateKey(period.dataset.period==='tomorrow'?shiftDate(today,1):today);calendarMonthDate=new Date(dateFromKey(selectedCalendarDate).getFullYear(),dateFromKey(selectedCalendarDate).getMonth(),1);renderCalendar(currentFilteredEvents);$('#calendarEvents').scrollIntoView({behavior:'smooth',block:'center'});return}
+  const calendarDay=e.target.closest('[data-calendar-date]');
+  if(calendarDay){selectedCalendarDate=calendarDay.dataset.calendarDate;const selected=dateFromKey(selectedCalendarDate);calendarMonthDate=new Date(selected.getFullYear(),selected.getMonth(),1);renderCalendar(currentFilteredEvents);return}
+  const calendarShift=e.target.closest('[data-calendar-shift]');
+  if(calendarShift){calendarMonthDate=new Date(calendarMonthDate.getFullYear(),calendarMonthDate.getMonth()+Number(calendarShift.dataset.calendarShift),1);selectedCalendarDate=localDateKey(calendarMonthDate);renderCalendar(currentFilteredEvents);return}
+  const mapEvent=e.target.closest('[data-map-event]');
+  if(mapEvent){renderMap(currentFilteredEvents,mapEvent.dataset.mapEvent);return}
   const profileToggle=e.target.closest('#profileMenuToggle');
   if(profileToggle){
     const menu=$('#profileDropdown');
