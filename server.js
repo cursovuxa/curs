@@ -321,7 +321,7 @@ app.patch('/api/notifications/:id/read', requireUser, asyncRoute(async (req, res
 
 app.post('/api/uploads/event-cover', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
   const dataUrl = String(req.body.dataUrl || '');
-  const match = /^data:(image\\/(?:webp|jpeg|png));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  const match = /^data:(image\/(?:webp|jpeg|png));base64,([A-Za-z0-9+\/]+={0,2})$/.exec(dataUrl);
   if (!match) return res.status(400).json({ error: 'Выберите изображение PNG, JPG или WebP' });
   const contentType = match[1];
   const buffer = Buffer.from(match[2], 'base64');
