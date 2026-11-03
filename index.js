@@ -8,7 +8,8 @@ const tokenKey = 'flowtix_access_token';
 const PROFILE_ROUTE = /^\/profile\/?$/.test(window.location.pathname);
 const DASHBOARD_ROUTE = /^\/dashboard\/?$/.test(window.location.pathname);
 const NOTIFICATIONS_ROUTE = /^\/notifications\/?$/.test(window.location.pathname);
-const ACCOUNT_ROUTE = PROFILE_ROUTE || DASHBOARD_ROUTE || NOTIFICATIONS_ROUTE;
+const ADMIN_ROUTE = /^\/admin\/?$/.test(window.location.pathname);
+const ACCOUNT_ROUTE = PROFILE_ROUTE || DASHBOARD_ROUTE || NOTIFICATIONS_ROUTE || ADMIN_ROUTE;
 if (ACCOUNT_ROUTE) {
   document.body.classList.add('account-page');
   $('.hero').hidden = true;
@@ -56,6 +57,8 @@ function renderAccountMenu(){
   $('#authOpen').hidden=active;
   $('#profileMenuWrap').hidden=!active;
   $('#workspaceNav').hidden=!active;
+  const adminLink=$('#profileAdminLink');
+  if(adminLink)adminLink.hidden=!active||user.is_root_admin!==true;
   if(!active)return;
   const displayName=user.full_name||user.email||'Участник FlowTix';
   const handle=user.username||String(user.email||'user').split('@')[0];
@@ -193,6 +196,7 @@ async function logoutAccount(){
 }
 function showWorkspace() {
   if(!signedIn())return authOpen();
+  if(user?.is_root_admin===true)return window.location.assign('/admin/');
   $('#workspace').hidden=false;
   $('#workspaceRefresh').textContent='Обновить данные ↻';
   $('#workspace').scrollIntoView({behavior:'smooth'});
@@ -256,6 +260,7 @@ async function notificationsView() {
   }catch(error){const list=$('#notificationList');if(list)list.innerHTML='<p class="connection-state">'+esc(error.message)+'</p>'}
 }
 function renderAccountRoute(){
+  if(ADMIN_ROUTE)return adminRoute();
   if(PROFILE_ROUTE)return showSettings();
   if(DASHBOARD_ROUTE)return showWorkspace();
   if(NOTIFICATIONS_ROUTE)return notificationsView();
@@ -315,11 +320,63 @@ async function moderatorView() {
     $('#workspaceContent').innerHTML='<div class="workspace-card"><h3>Мероприятия на проверке</h3>'+((ev.events||[]).length?ev.events.map(e=>'<div class="workspace-row"><b>'+esc(e.title)+'</b><span>'+esc(e.users?.full_name||'Организатор')+'</span><div class="inline-actions"><button class="button button-accent button-small" data-moderate="'+esc(e.id)+'" data-status="published">Одобрить</button><button class="button button-danger button-small" data-moderate="'+esc(e.id)+'" data-status="rejected">Отклонить</button></div></div>').join(''):empty('Очередь проверки пуста.'))+'</div><div class="workspace-card"><h3>Жалобы</h3>'+((complaints.complaints||[]).length?complaints.complaints.map(c=>'<div class="workspace-row"><b>'+esc(c.reason)+'</b><span>'+esc(c.details)+'</span><select data-complaint="'+esc(c.id)+'"><option value="in_review">На рассмотрении</option><option value="resolved">Решена</option><option value="rejected">Отклонена</option></select></div>').join(''):empty('Новых жалоб нет.'))+'</div>';
   }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
 }
+async function adminRoute(){
+  if(!signedIn())return authOpen('login');
+  $('#workspace').hidden=false;
+  $('#workspaceTitle').textContent='Панель главного администратора';
+  $('#workspaceContent').innerHTML='<div class="workspace-card">Проверяем доступ…</div>';
+  try{await api('/api/admin/access');await adminView()}
+  catch(error){const denied=error.message.includes('главному администратору')||error.message.includes('Недостаточно прав');$('#workspaceContent').innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(denied?'Доступ закрыт. Панель доступна только главному администратору.':error.message)+'</p><a class="button button-light" href="/">На главную</a></div>'}
+}
 async function adminView() {
-  try {
-    const [stats,users,logs]=await Promise.all([api('/api/admin/statistics'),api('/api/admin/users'),api('/api/admin/audit-logs')]);
-    $('#workspaceContent').innerHTML='<div class="stats-grid">'+[['Пользователи',stats.users],['Мероприятия',stats.events],['Билеты',stats.tickets],['Выручка',money(stats.revenue)],['Открытые жалобы',stats.openComplaints]].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div class="workspace-card"><h3>Пользователи и роли</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Пользователь</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody>'+users.users.map(u=>'<tr><td>'+esc(u.full_name)+'<br>'+esc(u.email)+'</td><td><select data-role-user="'+esc(u.id)+'">'+['visitor','organizer','staff','moderator','admin'].map(r=>'<option '+(u.role===r?'selected':'')+'>'+r+'</option>').join('')+'</select></td><td>'+ (u.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(u.id)+'" data-value="'+(!u.is_blocked)+'">'+(u.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>').join('')+'</tbody></table></div></div><div class="workspace-card"><h3>Журнал действий</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th></tr></thead><tbody>'+logs.logs.map(x=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.entity_type)+' '+esc(x.entity_id)+'</td></tr>').join('')+'</tbody></table></div></div>';
-  }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
+  const root=$('#workspaceContent');
+  try{
+    const [stats,users,logs,events,venues,tickets,payments,complaints,reviews,settings]=await Promise.all([
+      api('/api/admin/statistics'),api('/api/admin/users'),api('/api/admin/audit-logs'),api('/api/admin/events'),
+      api('/api/admin/venues'),api('/api/admin/tickets'),api('/api/admin/payments'),api('/api/admin/complaints'),
+      api('/api/admin/reviews'),api('/api/admin/settings')
+    ]);
+    const roles={visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник',moderator:'Модератор'};
+    const userRows=(users.users||[]).map(x=>'<tr><td>'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></td><td><select data-role-user="'+esc(x.id)+'" '+(x.id===user.id?'disabled':'')+'>'+Object.entries(roles).map(([r,n])=>'<option value="'+r+'" '+(x.role===r?'selected':'')+'>'+n+'</option>').join('')+(x.id===user.id?'<option selected>Главный администратор</option>':'')+'</select></td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>').join('');
+    const eventRows=(events.events||[]).map(x=>'<tr><td>'+esc(x.title)+'<br><small>'+esc(x.users?.email||'')+'</small></td><td>'+esc(x.start_date||'')+'</td><td><select data-event-status="'+esc(x.id)+'">'+['pending_moderation','published','rejected','cancelled','completed'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td><td>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</td></tr>').join('');
+    const venueRows=(venues.venues||[]).map(v=>'<details class="workspace-row"><summary><b>'+esc(v.name)+'</b> · '+esc(v.city)+'</summary><form data-admin-venue="'+esc(v.id)+'" class="form-grid"><label>Название<input name="name" value="'+esc(v.name)+'" required></label><label>Город<input name="city" value="'+esc(v.city)+'" required></label><label class="wide">Адрес<input name="address" value="'+esc(v.address)+'" required></label><label class="wide">Описание<textarea name="description">'+esc(v.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить</button></form></details>').join('');
+    const ticketRows=(tickets.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.email||'')+'</small></td><td>'+esc(t.status)+'</td><td>'+esc(money(t.price_paid))+'</td><td>'+(t.status==='valid'?'<button class="button button-danger button-small" data-cancel-ticket="'+esc(t.id)+'">Аннулировать</button>':'—')+'</td></tr>').join('');
+    const paymentRows=(payments.payments||[]).map(p=>'<tr><td>'+esc(new Date(p.created_at).toLocaleString('ru'))+'</td><td>'+esc(p.users?.email||'—')+'</td><td>'+esc(p.tickets?.events?.title||p.tickets?.ticket_number||'—')+'</td><td>'+esc(money(p.amount))+'</td><td>'+esc(p.status)+' · '+esc(p.payment_method||'—')+'</td></tr>').join('');
+    const complaintRows=(complaints.complaints||[]).map(x=>'<tr><td>'+esc(x.reason)+'<br><small>'+esc(x.details||'')+'</small></td><td>'+esc(x.users?.email||'—')+'</td><td><select data-complaint="'+esc(x.id)+'">'+['new','in_review','resolved','rejected'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td></tr>').join('');
+    const reviewRows=(reviews.reviews||[]).map(x=>'<tr><td>'+esc(x.events?.title||'—')+'</td><td>'+esc(x.users?.email||'—')+'</td><td>'+esc(x.overall_rating)+'/5</td><td>'+esc(x.comment||'')+'</td><td><button class="button button-danger button-small" data-delete-review="'+esc(x.id)+'">Удалить</button></td></tr>').join('');
+    const s=settings.settings||{};
+    const settingsForm='<form id="adminSettingsForm" class="form-grid"><label>Название сервиса<input name="site_name" value="'+esc(s.site_name||'FlowTix')+'" required></label><label>Почта поддержки<input name="support_email" type="email" value="'+esc(s.support_email||'')+'"></label><label>Режим обслуживания<select name="maintenance_mode"><option value="false" '+(s.maintenance_mode?'':'selected')+'>Выключен</option><option value="true" '+(s.maintenance_mode?'selected':'')+'>Включён</option></select></label><button class="button button-accent">Сохранить</button></form>';
+    const logsHtml=(logs.logs||[]).map(x=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.entity_type)+' '+esc(x.entity_id||'')+'</td></tr>').join('');
+    const panels={
+      users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody>'+userRows+'</tbody></table></div></div>',
+      events:'<div class="workspace-card"><h3>Мероприятия</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Мероприятие / организатор</th><th>Дата</th><th>Статус</th><th>Места</th></tr></thead><tbody>'+eventRows+'</tbody></table></div></div>',
+      venues:'<div class="workspace-card"><h3>Площадки</h3>'+(venueRows||empty('Площадок пока нет.'))+'</div>',
+      tickets:'<div class="workspace-card"><h3>Билеты</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Номер</th><th>Событие / владелец</th><th>Статус</th><th>Цена</th><th></th></tr></thead><tbody>'+ticketRows+'</tbody></table></div></div>',
+      payments:'<div class="workspace-card"><h3>Платежи</h3><p>Платёжные записи для сверки. Статус не меняется вручную без платёжного провайдера.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Дата</th><th>Аккаунт</th><th>Билет</th><th>Сумма</th><th>Статус</th></tr></thead><tbody>'+paymentRows+'</tbody></table></div></div>',
+      complaints:'<div class="workspace-card"><h3>Жалобы</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Обращение</th><th>Автор</th><th>Статус</th></tr></thead><tbody>'+complaintRows+'</tbody></table></div></div>',
+      reviews:'<div class="workspace-card"><h3>Отзывы</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Событие</th><th>Автор</th><th>Оценка</th><th>Текст</th><th></th></tr></thead><tbody>'+reviewRows+'</tbody></table></div></div>',
+      settings:'<div class="workspace-card"><h3>Настройки системы</h3>'+settingsForm+'</div>',
+      logs:'<div class="workspace-card"><h3>Журнал действий</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th></tr></thead><tbody>'+logsHtml+'</tbody></table></div></div>'
+    };
+    const tabs=Object.entries({users:'Аккаунты',events:'Мероприятия',venues:'Площадки',tickets:'Билеты',payments:'Платежи',complaints:'Жалобы',reviews:'Отзывы',settings:'Настройки',logs:'Журнал'});
+    root.innerHTML='<div class="stats-grid">'+[['Пользователи',stats.users],['Мероприятия',stats.events],['Билеты',stats.tickets],['Выручка',money(stats.revenue)],['Открытые жалобы',stats.openComplaints]].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div id="adminTabs" class="category-bar">'+tabs.map(([key,label],i)=>'<button type="button" class="category '+(!i?'active':'')+'" data-admin-tab="'+key+'">'+label+'</button>').join('')+'</div><div id="adminPanel">'+panels.users+'</div>';
+    const panel=$('#adminPanel',root);
+    $('#adminTabs',root).onclick=(e)=>{const b=e.target.closest('[data-admin-tab]');if(!b)return;$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===b));panel.innerHTML=panels[b.dataset.adminTab]||''};
+    root.onchange=async(e)=>{
+      if(e.target.matches('[data-role-user]')){try{await api('/api/admin/users/'+e.target.dataset.roleUser+'/role',{method:'PATCH',body:JSON.stringify({role:e.target.value})});toast('Роль обновлена');await adminView()}catch(x){toast(x.message);await adminView()}}
+      if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён')}catch(x){toast(x.message);await adminView()}}
+      if(e.target.matches('[data-complaint]')){try{await api('/api/moderation/complaints/'+e.target.dataset.complaint,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус жалобы обновлён')}catch(x){toast(x.message)}}
+    };
+    root.onclick=async(e)=>{
+      const block=e.target.closest('[data-block]');if(block){try{await api('/api/admin/users/'+block.dataset.block+'/block',{method:'PATCH',body:JSON.stringify({blocked:block.dataset.value==='true'})});toast('Доступ обновлён');await adminView()}catch(x){toast(x.message)}return}
+      const cancel=e.target.closest('[data-cancel-ticket]');if(cancel){try{await api('/api/admin/tickets/'+cancel.dataset.cancelTicket+'/cancel',{method:'PATCH'});toast('Билет аннулирован');await adminView()}catch(x){toast(x.message)}return}
+      const review=e.target.closest('[data-delete-review]');if(review&&confirm('Удалить отзыв?')){try{await api('/api/admin/reviews/'+review.dataset.deleteReview,{method:'DELETE'});toast('Отзыв удалён');await adminView()}catch(x){toast(x.message)}}
+    };
+    root.onsubmit=async(e)=>{
+      if(e.target.matches('[data-admin-venue]')){e.preventDefault();try{await api('/api/admin/venues/'+e.target.dataset.adminVenue,{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Площадка обновлена');await adminView()}catch(x){toast(x.message)}}
+      if(e.target.id==='adminSettingsForm'){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.maintenance_mode=data.maintenance_mode==='true';try{await api('/api/admin/settings',{method:'PATCH',body:JSON.stringify(data)});toast('Настройки сохранены');await adminView()}catch(x){toast(x.message)}}
+    };
+  }catch(error){root.innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(error.message)+'</p></div>'}
 }
 document.addEventListener('click',async(e)=>{
   const profileToggle=e.target.closest('#profileMenuToggle');
@@ -335,6 +392,7 @@ document.addEventListener('click',async(e)=>{
     if(accountAction.dataset.accountAction==='profile')return window.location.assign('/profile/');
     if(accountAction.dataset.accountAction==='workspace')return window.location.assign('/dashboard/');
     if(accountAction.dataset.accountAction==='notifications')return window.location.assign('/notifications/');
+    if(accountAction.dataset.accountAction==='admin')return window.location.assign('/admin/');
     if(accountAction.dataset.accountAction==='logout')return logoutAccount();
   }
   if(!e.target.closest('#profileMenuWrap')){$('#profileDropdown').hidden=true;$('#profileMenuToggle').setAttribute('aria-expanded','false')}
