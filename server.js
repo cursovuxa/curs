@@ -1,5 +1,6 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
+import { randomUUID } from 'node:crypto';
 
 const app = express();
 const port = Number(process.env.PORT || 10000);
@@ -22,7 +23,7 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '4mb' }));
 
 app.get('/api/health', async (_req, res) => {
   if (!supabase) return res.status(503).json({ status: 'misconfigured', database: false });
@@ -66,6 +67,7 @@ const requireUser = asyncRoute(async (req, res, next) => {
     const created = await supabase.from('users').insert({
       id: authData.user.id, email: authData.user.email,
       full_name: authData.user.user_metadata?.full_name || '',
+      username: (String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user') + '_' + authData.user.id.slice(0, 8),
       role: (process.env.FLOWTIX_ADMIN_EMAIL || '').toLowerCase() === String(authData.user.email || '').toLowerCase() ? 'admin' : 'visitor'
     }).select('*').single();
     profile = created.data;
@@ -73,6 +75,12 @@ const requireUser = asyncRoute(async (req, res, next) => {
   }
   if (error || !profile) return res.status(500).json({ error: 'Не удалось создать профиль' });
   if (profile.is_blocked) return res.status(403).json({ error: 'Аккаунт заблокирован' });
+  if (!profile.username) {
+    const base = String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user';
+    const { data: namedProfile, error: usernameError } = await supabase.from('users')
+      .update({ username: base + '_' + authData.user.id.slice(0, 8) }).eq('id', profile.id).select('*').single();
+    if (!usernameError && namedProfile) profile = namedProfile;
+  }
   req.user = profile;
   next();
 });
@@ -111,21 +119,81 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   if (profile?.is_blocked) return res.status(403).json({ error: 'Аккаунт заблокирован' });
   res.json({ accessToken: data.session.access_token, user: profile });
 }));
-app.get('/api/me', requireUser, (req, res) => res.json({ user: req.user }));
+app.get('/api/me', requireUser, asyncRoute(async (req, res) => {
+  const profile = { ...req.user };
+  delete profile.avatar_path;
+  if (req.user.avatar_path) {
+    const { data, error } = await supabase.storage.from('avatars').createSignedUrl(req.user.avatar_path, 3600);
+    if (!error && data?.signedUrl) profile.avatar_url = data.signedUrl;
+  }
+  res.json({ user: profile });
+}));
 app.patch('/api/me/profile', requireUser, asyncRoute(async (req, res) => {
   const full_name = String(req.body.full_name || '').trim().slice(0, 120);
+  const username = String(req.body.username || '').trim().toLowerCase();
   const phone = String(req.body.phone || '').trim().slice(0, 40);
   const city = String(req.body.city || '').trim().slice(0, 100);
   const about = String(req.body.about || '').trim().slice(0, 1000);
   if (!full_name) return res.status(400).json({ error: 'Укажите имя для профиля' });
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) {
+    return res.status(400).json({ error: 'Юзернейм: 3–24 символа, латинские буквы, цифры и _' });
+  }
   const preferences = { ...(req.user.preferences || {}), about };
   const { data, error } = await supabase.from('users')
-    .update({ full_name, phone: phone || null, city: city || null, preferences })
+    .update({ full_name, username, phone: phone || null, city: city || null, preferences })
     .eq('id', req.user.id)
-    .select('id,email,full_name,phone,city,preferences')
+    .select('id,email,full_name,username,phone,city,avatar_url,preferences')
     .single();
+  if (error?.code === '23505') return res.status(409).json({ error: 'Этот юзернейм уже занят' });
   if (error) return res.status(500).json({ error: 'Не удалось сохранить профиль' });
   res.json({ user: data });
+}));
+let avatarBucketPromise;
+async function ensureAvatarBucket() {
+  if (!avatarBucketPromise) avatarBucketPromise = (async () => {
+    const { data: buckets, error } = await supabase.storage.listBuckets();
+    if (error) throw error;
+    if (buckets.some((bucket) => bucket.name === 'avatars')) return;
+    const { error: createError } = await supabase.storage.createBucket('avatars', {
+      public: false,
+      fileSizeLimit: 2097152,
+      allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp']
+    });
+    if (createError && !/already exists/i.test(createError.message || '')) throw createError;
+  })();
+  return avatarBucketPromise;
+}
+app.post('/api/me/avatar', requireUser, asyncRoute(async (req, res) => {
+  const contentType = String(req.body.contentType || '');
+  const base64 = String(req.body.imageData || '');
+  const formats = {
+    'image/jpeg': { ext: 'jpg', valid: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+    'image/png': { ext: 'png', valid: (b) => b.length > 8 && b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) },
+    'image/webp': { ext: 'webp', valid: (b) => b.length > 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP' }
+  };
+  const format = formats[contentType];
+  if (!format || !base64 || base64.length > 2800000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    return res.status(400).json({ error: 'Загрузи изображение JPG, PNG или WebP до 2 МБ' });
+  }
+  const image = Buffer.from(base64, 'base64');
+  if (image.length > 2097152 || !format.valid(image)) {
+    return res.status(400).json({ error: 'Файл не похож на корректное изображение до 2 МБ' });
+  }
+  await ensureAvatarBucket();
+  const path = req.user.id + '/' + randomUUID() + '.' + format.ext;
+  const { data: uploaded, error: uploadError } = await supabase.storage.from('avatars')
+    .upload(path, image, { contentType, cacheControl: '3600', upsert: false });
+  if (uploadError) return res.status(500).json({ error: 'Не удалось загрузить аватар' });
+  const { data, error } = await supabase.from('users').update({ avatar_path: uploaded.path, avatar_url: null })
+    .eq('id', req.user.id).select('avatar_path').single();
+  if (error) {
+    await supabase.storage.from('avatars').remove([uploaded.path]);
+    return res.status(500).json({ error: 'Не удалось сохранить аватар профиля' });
+  }
+  if (req.user.avatar_path) await supabase.storage.from('avatars').remove([req.user.avatar_path]);
+  const { data: signed, error: signedError } = await supabase.storage.from('avatars').createSignedUrl(data.avatar_path, 3600);
+  if (signedError) return res.status(500).json({ error: 'Аватар сохранён, но не удалось открыть изображение' });
+  res.json({ avatar_url: signed.signedUrl });
 }));
 app.patch('/api/me/preferences', requireUser, asyncRoute(async (req, res) => {
   const theme = String(req.body.theme || '');
