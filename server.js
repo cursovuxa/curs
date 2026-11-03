@@ -71,7 +71,7 @@ app.get('/api/events', async (req, res) => {
   const term = String(req.query.q || '').trim().slice(0, 100);
   const city = String(req.query.city || '').trim().slice(0, 100);
   let query = supabase.from('events')
-    .select('id,title,description,cover_image,start_date,start_time,end_time,base_price,current_price,total_seats,available_seats,status,age_limit,dynamic_pricing_enabled,popularity_score,venue_id,category_id,event_categories(name),venues(name,address,city),event_program(*)')
+    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,base_price,current_price,total_seats,available_seats,status,age_limit,dynamic_pricing_enabled,popularity_score,venue_id,category_id,event_categories(name),venues(name,address,city),event_program(*)')
     .eq('status', 'published').order('start_date', { ascending: true });
   if (term) query = query.ilike('title', '%' + term.replace(/[,%()]/g, '') + '%');
   if (city) query = query.ilike('venues.city', city);
@@ -319,15 +319,41 @@ app.patch('/api/notifications/:id/read', requireUser, asyncRoute(async (req, res
   res.json({ success: true });
 }));
 
+app.post('/api/uploads/event-cover', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const dataUrl = String(req.body.dataUrl || '');
+  const match = /^data:(image\\/(?:webp|jpeg|png));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) return res.status(400).json({ error: 'Выберите изображение PNG, JPG или WebP' });
+  const contentType = match[1];
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > 2 * 1024 * 1024) return res.status(413).json({ error: 'Обложка после сжатия должна быть не больше 2 МБ' });
+  const extension = contentType === 'image/jpeg' ? 'jpg' : contentType.split('/')[1];
+  const path = req.user.id + '/' + randomUUID() + '.' + extension;
+  const { error } = await supabase.storage.from('event-covers').upload(path, buffer, {
+    contentType, cacheControl: '31536000', upsert: false
+  });
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить обложку в хранилище' });
+  const { data } = supabase.storage.from('event-covers').getPublicUrl(path);
+  res.status(201).json({ url: data.publicUrl });
+}));
 app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
-  const { title, description, category_id, venue_id, hall_id, start_date, start_time, end_time, age_limit, total_seats, base_price, cover_image } = req.body;
+  const { title, description, category_id, venue_id, hall_id, start_date, start_time, end_time, age_limit, total_seats, base_price, cover_image, location_address } = req.body;
   if (!title || !start_date || !start_time || !end_time || !Number.isInteger(Number(total_seats)) || Number(total_seats) < 1) {
     return res.status(400).json({ error: 'Заполните название, даты, время и вместимость' });
   }
+  let eventAddress = String(location_address || '').trim().slice(0, 500);
+  if (venue_id) {
+    const { data: venue, error: venueError } = await supabase.from('venues').select('id,address,owner_id').eq('id', venue_id).maybeSingle();
+    if (venueError || !venue || (venue.owner_id && venue.owner_id !== req.user.id && req.user.role !== 'admin')) {
+      return res.status(400).json({ error: 'Выберите свою площадку или укажите адрес вручную' });
+    }
+    if (!eventAddress) eventAddress = String(venue.address || '').trim();
+  }
+  if (!eventAddress) return res.status(400).json({ error: 'Укажите адрес мероприятия или выберите площадку с адресом' });
   const { data, error } = await supabase.from('events').insert({
-    organizer_id: req.user.id, title: String(title).slice(0, 180),
+    organizer_id: req.user.id, title: String(title).trim().slice(0, 180),
     description: String(description || '').slice(0, 10000),
     category_id: category_id || null, venue_id: venue_id || null, hall_id: hall_id || null,
+    location_address: eventAddress,
     start_date, start_time, end_time, age_limit: age_limit || 'Для всех',
     total_seats: Number(total_seats), available_seats: Number(total_seats),
     base_price: Number(base_price || 0), current_price: Number(base_price || 0),
@@ -337,7 +363,7 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
   res.status(201).json({ event: data });
 }));
 app.get('/api/organizer/events', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
-  const { data, error } = await supabase.from('events').select('*,venues(name,city),event_categories(name)')
+  const { data, error } = await supabase.from('events').select('*,venues(name,city,address),event_categories(name)')
     .eq('organizer_id', req.user.id).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия организатора' });
   res.json({ events: data });
@@ -347,6 +373,7 @@ app.patch('/api/events/:id', requireUser, allowRoles('organizer', 'admin'), asyn
   for (const key of ['title','description','category_id','venue_id','hall_id','start_date','start_time','end_time','age_limit','total_seats','base_price','cover_image']) {
     if (req.body[key] !== undefined) changes[key] = req.body[key];
   }
+  if (req.body.location_address !== undefined) changes.location_address = String(req.body.location_address || '').trim().slice(0, 500);
   const { data, error } = await supabase.from('events').update(changes)
     .eq('id', req.params.id).eq('organizer_id', req.user.id).select('*').maybeSingle();
   if (error) return res.status(400).json({ error: 'Не удалось изменить мероприятие' });
@@ -467,7 +494,7 @@ app.get('/api/organizer/registrations', requireUser, allowRoles('organizer', 'ad
   const ids = (events || []).map((event) => event.id);
   if (!ids.length) return res.json({ registrations: [] });
   const { data, error } = await supabase.from('tickets')
-    .select('ticket_number,status,seat_label,price_paid,created_at,events(id,title),users(full_name,email)')
+    .select('ticket_number,status,seat_label,price_paid,created_at,events(id,title),users!tickets_user_id_fkey(full_name,email)')
     .in('event_id', ids).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить участников' });
   res.json({ registrations: data });
@@ -683,7 +710,7 @@ app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (_re
 
 app.get('/api/admin/events', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('events')
-    .select('id,title,status,start_date,start_time,total_seats,available_seats,base_price,organizer_id,venue_id,users!events_organizer_id_fkey(full_name,email),venues(name,city)')
+    .select('id,title,status,start_date,start_time,total_seats,available_seats,base_price,organizer_id,venue_id,location_address,users!events_organizer_id_fkey(full_name,email),venues(name,city,address)')
     .order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
   res.json({ events: data });
