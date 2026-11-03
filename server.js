@@ -119,8 +119,10 @@ app.get('/api/favorites', requireUser, asyncRoute(async (req, res) => {
   res.json({ favorites: data });
 }));
 app.post('/api/favorites/:eventId', requireUser, asyncRoute(async (req, res) => {
+  const { data: existing } = await supabase.from('favorites').select('id').eq('user_id', req.user.id).eq('event_id', req.params.eventId).maybeSingle();
+  if (existing) return res.json({ success: true });
   const { error } = await supabase.from('favorites').insert({ user_id: req.user.id, event_id: req.params.eventId });
-  if (error && error.code !== '23505') return res.status(400).json({ error: 'Не удалось добавить мероприятие' });
+  if (error) return res.status(400).json({ error: 'Не удалось добавить мероприятие' });
   res.status(201).json({ success: true });
 }));
 app.delete('/api/favorites/:eventId', requireUser, asyncRoute(async (req, res) => {
@@ -251,6 +253,8 @@ app.post('/api/reviews', requireUser, asyncRoute(async (req, res) => {
   const { count } = await supabase.from('tickets').select('id', { count: 'exact', head: true })
     .eq('event_id', eventId).eq('user_id', req.user.id).in('status', ['valid', 'used']);
   if (!count) return res.status(403).json({ error: 'Оставлять отзыв могут участники с билетом' });
+  const { data: prior } = await supabase.from('reviews').select('id').eq('event_id', eventId).eq('user_id', req.user.id).maybeSingle();
+  if (prior) return res.status(409).json({ error: 'Вы уже оставили отзыв на это событие' });
   const { data, error } = await supabase.from('reviews').insert({
     event_id: eventId, user_id: req.user.id,
     org_rating: ratings[0], venue_rating: ratings[1], program_rating: ratings[2],
@@ -367,11 +371,13 @@ app.post('/api/organizer/events/:eventId/staff', requireUser, allowRoles('organi
   const { data: event } = await supabase.from('events').select('id').eq('id', req.params.eventId).eq('organizer_id', req.user.id).maybeSingle();
   if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
   const employeeId = String(req.body.employeeId || '');
-  const { data, error } = await supabase.from('event_staff_assignments').upsert({
-    event_id: event.id, employee_id: employeeId, role_at_event: String(req.body.role || 'staff'), status: 'assigned'
-  }, { onConflict: 'event_id,employee_id' }).select('*').single();
-  if (error) return res.status(400).json({ error: 'Не удалось назначить сотрудника' });
-  res.status(201).json({ assignment: data });
+  const { data: existing } = await supabase.from('event_staff_assignments').select('id')
+    .eq('event_id', event.id).eq('employee_id', employeeId).maybeSingle();
+  const write = existing
+    ? await supabase.from('event_staff_assignments').update({ role_at_event: String(req.body.role || 'staff'), status: 'assigned' }).eq('id', existing.id).select('*').single()
+    : await supabase.from('event_staff_assignments').insert({ event_id: event.id, employee_id: employeeId, role_at_event: String(req.body.role || 'staff'), status: 'assigned' }).select('*').single();
+  if (write.error) return res.status(400).json({ error: 'Не удалось назначить сотрудника' });
+  res.status(201).json({ assignment: write.data });
 }));
 app.post('/api/organizer/events/:eventId/notify', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
   const { data: event } = await supabase.from('events').select('id,title').eq('id', req.params.eventId).eq('organizer_id', req.user.id).maybeSingle();
