@@ -6,7 +6,23 @@ const app = express();
 const port = Number(process.env.PORT || 10000);
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const frontendOrigin = process.env.FRONTEND_ORIGIN || 'https://flowtix.online';
+const normalizeOrigin = (value) => {
+  try {
+    const url = new URL(String(value).trim());
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    return url.origin.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+const frontendOrigins = new Set([
+  ...String(process.env.FRONTEND_ORIGIN || 'https://flowtix.online')
+    .split(',')
+    .map(normalizeOrigin)
+    .filter(Boolean),
+  'https://flowtix.online',
+  'https://www.flowtix.online'
+]);
 const supabase = supabaseUrl && serviceKey
   ? createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
@@ -14,8 +30,9 @@ const supabase = supabaseUrl && serviceKey
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin === frontendOrigin || origin === 'https://www.flowtix.online') {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+  const normalizedOrigin = origin ? normalizeOrigin(origin) : null;
+  if (normalizedOrigin && frontendOrigins.has(normalizedOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', normalizedOrigin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
