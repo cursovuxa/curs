@@ -5,6 +5,14 @@ let supabaseAuth = null;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const tokenKey = 'flowtix_access_token';
+const PROFILE_ROUTE = /^\/profile\/?$/.test(window.location.pathname);
+if (PROFILE_ROUTE) {
+  document.body.classList.add('profile-page');
+  $('.hero').hidden = true;
+  $('#events').hidden = true;
+  $('.footer').hidden = true;
+  $('#workspace').hidden = false;
+}
 let user = null;
 let events = [];
 let categories = [];
@@ -191,8 +199,8 @@ function themePickerMarkup(){
 function showSettings(){
   if(!signedIn())return authOpen();
   $('#workspace').hidden=false;
-  $('#workspaceTitle').textContent='Настройки профиля';
-  $('#workspaceRefresh').textContent='← В кабинет';
+  $('#workspaceTitle').textContent='Профиль и настройки';
+  $('#workspaceRefresh').textContent=PROFILE_ROUTE?'← На главную':'← В кабинет';
   $('#workspaceContent').innerHTML='<div class="settings-layout"><div class="workspace-card settings-intro"><p class="eyebrow dark-eyebrow">ТВОЙ FLOWTIX</p><h3>Твой профиль</h3><p>Настрой, как ты будешь отображаться в FlowTix. Изменения профиля сохраняются в аккаунте.</p></div><div class="workspace-card"><form id="profileSettingsForm" class="form-grid settings-form"><div class="wide avatar-editor"><span id="profileAvatarPreview" class="profile-avatar profile-avatar-large"></span><div class="avatar-copy"><b>Фото профиля</b><p>JPG, PNG или WebP · до 2 МБ</p><label class="button button-light avatar-upload-button">Загрузить фото<input id="avatarInput" type="file" accept="image/jpeg,image/png,image/webp" hidden></label></div></div><label>Отображаемое имя<input name="full_name" value="'+esc(user.full_name||'')+'" required maxlength="120" autocomplete="name"></label><label>Юзернейм<input name="username" value="'+esc(user.username||'')+'" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username"><small>Латинские буквы, цифры и _</small></label><label>Email аккаунта<input value="'+esc(user.email||'')+'" disabled></label><label>Город<input name="city" value="'+esc(user.city||'')+'" maxlength="100" placeholder="Например, Алматы"></label><label>Телефон<input name="phone" type="tel" value="'+esc(user.phone||'')+'" maxlength="40" autocomplete="tel" placeholder="+7 ..."></label><label class="wide">О себе<textarea name="about" rows="4" maxlength="1000" placeholder="Расскажи, какие события тебе интересны">'+esc(user.preferences?.about||'')+'</textarea></label><div class="wide settings-theme"><div><b>Оформление</b><p>Выбранная тема сохраняется в аккаунте и на этом устройстве.</p></div>'+themePickerMarkup()+'</div><div class="wide form-actions"><button class="button button-accent" type="submit">Сохранить профиль</button></div></form></div></div>';
   putAvatar($('#profileAvatarPreview'),user.avatar_url,user.full_name);
   $('#workspace').scrollIntoView({behavior:'smooth'});
@@ -260,7 +268,7 @@ document.addEventListener('click',async(e)=>{
   const accountAction=e.target.closest('[data-account-action]');
   if(accountAction){
     $('#profileDropdown').hidden=true;$('#profileMenuToggle').setAttribute('aria-expanded','false');
-    if(accountAction.dataset.accountAction==='profile'||accountAction.dataset.accountAction==='settings')return showSettings();
+    if(accountAction.dataset.accountAction==='profile')return window.location.assign('/profile/');
     if(accountAction.dataset.accountAction==='workspace')return showWorkspace();
     if(accountAction.dataset.accountAction==='logout')return logoutAccount();
   }
@@ -303,7 +311,7 @@ document.addEventListener('change',async(e)=>{
 document.addEventListener('submit',async(e)=>{
   if(e.target.id==='searchForm'){e.preventDefault();loadEvents();$('#events').scrollIntoView({behavior:'smooth'});}
   if(e.target.id==='authForm'){e.preventDefault();const mode=$('[data-auth].active').dataset.auth;const button=$('#authSubmit');setBusy(button,true);$('#authError').textContent='';
-    try{const result=await api('/api/auth/'+mode,{method:'POST',body:JSON.stringify({fullName:$('#name').value.trim(),email:$('#email').value.trim(),password:$('#password').value})});if(!result.accessToken){$('#authError').textContent=result.message;return}sessionStorage.setItem(tokenKey,result.accessToken);const loaded=await loadSession(result.user);if(!loaded)throw new Error('Не удалось загрузить профиль аккаунта');authClose();toast(mode==='login'?'Вход выполнен':'Аккаунт создан');}
+    try{const result=await api('/api/auth/'+mode,{method:'POST',body:JSON.stringify({fullName:$('#name').value.trim(),email:$('#email').value.trim(),password:$('#password').value})});if(!result.accessToken){$('#authError').textContent=result.message;return}sessionStorage.setItem(tokenKey,result.accessToken);const loaded=await loadSession(result.user);if(!loaded)throw new Error('Не удалось загрузить профиль аккаунта');authClose();if(PROFILE_ROUTE)showSettings();toast(mode==='login'?'Вход выполнен':'Аккаунт создан');}
     catch(x){$('#authError').textContent=x.message}finally{setBusy(button,false)}
   }
   if(e.target.id==='profileSettingsForm'){e.preventDefault();const button=e.target.querySelector('[type="submit"]');setBusy(button,true,'Сохраняем профиль…');try{const data=Object.fromEntries(new FormData(e.target));const result=await api('/api/me/profile',{method:'PATCH',body:JSON.stringify(data)});user={...user,...result.user};renderAccountMenu();toast('Профиль сохранён')}catch(error){toast(error.message)}finally{setBusy(button,false)}}
@@ -320,7 +328,7 @@ $('#authOpen').addEventListener('click',()=>authOpen());
 
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
-$('#workspaceRefresh').addEventListener('click',showWorkspace);
+$('#workspaceRefresh').addEventListener('click',()=>PROFILE_ROUTE?window.location.assign('/'):showWorkspace());
 const themeKey='flowtix_theme';
 const themeNames={rose:'Розовая',sky:'Голубая',dark:'Тёмная',halloween:'Хэллоуин'};
 const allowedThemes=Object.keys(themeNames);
@@ -390,6 +398,7 @@ async function setupGoogleButton(){
         const loaded=await loadSession(data.user);
         if(!loaded)throw new Error('Вход прошёл, но профиль не удалось загрузить. Попробуй ещё раз.');
         authClose();
+        if(PROFILE_ROUTE)showSettings();
         toast('Вход выполнен через Google');
       }catch(error){$('#authError').textContent=error.message||'Не удалось войти через Google'}
     }
@@ -418,7 +427,8 @@ async function init(){
     console.error('Supabase Auth init failed:',error);
     $('#authError').textContent='Не удалось загрузить Google-вход: '+(error.message||'попробуй снова');
   }
-  await Promise.all([loadSession(),loadCategories()]);
+  const [hasSession]=await Promise.all([loadSession(),loadCategories()]);
   await loadEvents();
+  if(PROFILE_ROUTE){if(hasSession)showSettings();else authOpen('login')}
 }
 init();
