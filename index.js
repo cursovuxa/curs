@@ -30,7 +30,15 @@ function signedIn() { return Boolean(user && sessionStorage.getItem(tokenKey)); 
 function authOpen(mode='login') { $('#authModal').hidden=false; setAuthMode(mode); }
 function authClose() { $('#authModal').hidden=true; }
 function setAuthMode(mode) {
-  $$('#authForm [data-auth]').forEach((x)=>x.classList.toggle('active',x.dataset.auth===mode));
+  const register=mode==='register';
+  $('[data-auth]').forEach((tab)=>tab.classList.toggle('active',tab.dataset.auth===mode));
+  $('#nameWrap').hidden=!register;
+  $('#name').required=register;
+  $('#password').autocomplete=register?'new-password':'current-password';
+  $('#authSubmit').textContent=register?'Создать аккаунт':'Войти в FlowTix';
+  $('#authTitle').textContent=register?'Создай свой FlowTix':'С возвращением';
+  $('.auth-intro').textContent=register?'Создай аккаунт, чтобы находить события по душе.':'Войди, чтобы сохранять события и билеты в одном месте.';
+  $('#authError').textContent='';
 }
 function eventCard(event) {
   const title=esc(event.title), id=esc(event.id), image=event.cover_image || event.cover;
@@ -98,6 +106,7 @@ async function loadSession() {
   const token=sessionStorage.getItem(tokenKey); if(!token)return;
   try {
     const result=await api('/api/me'); user={...result.user,favorites:[]};
+    applyTheme(user.preferences?.theme||localStorage.getItem(themeKey)||'rose',{save:!user.preferences?.theme});
     const fav=await api('/api/favorites');user.favorites=(fav.favorites||[]).map(x=>x.event_id);
     $('#accountName').textContent=user.full_name||user.email;
     $('#authOpen').textContent='Выйти';
@@ -180,20 +189,26 @@ document.addEventListener('submit',async(e)=>{
 });
 $('#authOpen').addEventListener('click',async()=>{if(signedIn()){sessionStorage.removeItem(tokenKey);if(supabaseAuth)await supabaseAuth.auth.signOut();user=null;$('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';$('#workspaceNav').hidden=true;$('#workspace').hidden=true;renderEvents();toast('Вы вышли из аккаунта')}else authOpen()});
 
-$$('[data-auth]').forEach(x=>x.addEventListener('click',()=>{ $$('[data-auth]').forEach(t=>t.classList.toggle('active',t===x));const reg=x.dataset.auth==='register';$('#nameWrap').hidden=!reg;$('#name').required=reg;$('#password').autocomplete=reg?'new-password':'current-password';$('#authSubmit').textContent=reg?'Создать аккаунт':'Войти в FlowTix';$('#authTitle').textContent=reg?'Создай свой FlowTix':'С возвращением';$('.auth-intro').textContent=reg?'Создай аккаунт, чтобы находить события по душе.':'Войди, чтобы сохранять события и билеты в одном месте.';$('#authError').textContent=''}));
+$('[data-auth]').forEach(x=>x.addEventListener('click',()=>setAuthMode(x.dataset.auth)));
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
 $('#workspaceRefresh').addEventListener('click',showWorkspace);
 const themeKey='flowtix_theme';
-function applyTheme(theme){
-  const allowed=['rose','sky','dark','halloween'];
-  const next=allowed.includes(theme)?theme:'rose';
+const allowedThemes=['rose','sky','dark','halloween'];
+function applyTheme(theme,{save=true}={}){
+  const next=allowedThemes.includes(theme)?theme:'rose';
   document.body.dataset.theme=next;
   const picker=$('#themeSelect');if(picker)picker.value=next;
   localStorage.setItem(themeKey,next);
+  if(save&&signedIn()){
+    const previous=user.preferences?.theme;
+    user.preferences={...(user.preferences||{}),theme:next};
+    api('/api/me/preferences',{method:'PATCH',body:JSON.stringify({theme:next})})
+      .catch((error)=>{user.preferences={...(user.preferences||{}),theme:previous};toast('Тема сохранена на этом устройстве, но не в аккаунте: '+error.message)});
+  }
 }
 $('#themeSelect').addEventListener('change',(event)=>applyTheme(event.target.value));
-applyTheme(localStorage.getItem(themeKey)||'rose');
+applyTheme(localStorage.getItem(themeKey)||'rose',{save:false});
 $('#googleFallback').addEventListener('click',async()=>{
   try{await setupGoogleButton();toast('Нажми кнопку Google, чтобы продолжить')}
   catch(error){$('#authError').textContent=error.message||'Google-вход временно недоступен'}
