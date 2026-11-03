@@ -721,7 +721,7 @@ app.patch('/api/admin/venues/:id', requireUser, requireRootAdmin, asyncRoute(asy
 }));
 app.get('/api/admin/tickets', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('tickets')
-    .select('id,ticket_number,status,price_paid,seat_label,created_at,event_id,user_id,events(title,start_date),users(full_name,email)')
+    .select('id,ticket_number,status,price_paid,seat_label,created_at,event_id,user_id,events(title,start_date),users!tickets_user_id_fkey(full_name,email)')
     .order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить билеты' });
   res.json({ tickets: data });
