@@ -22,6 +22,7 @@ let notificationsChannel = null;
 let notificationsChannelUserId = null;
 let notificationsConnection = 'CONNECTING';
 let events = [];
+let organizerEvents = [];
 let categories = [];
 let activeCategory = '';
 let searchTimer;
@@ -37,6 +38,34 @@ const api = async (path, options = {}) => {
 };
 const esc = (value = '') => String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (amount) => Number(amount || 0) === 0 ? 'Бесплатно' : new Intl.NumberFormat('ru-RU').format(Number(amount)) + ' ₸';
+const eventStatusLabel = (status) => ({
+  draft:'Черновик', pending_moderation:'На модерации', published:'Опубликовано',
+  rejected:'Отклонено', cancelled:'Отменено', completed:'Завершено'
+}[status] || status || 'Статус не указан');
+async function eventCoverDataUrl(file) {
+  if (!file || !/^image\/(?:jpeg|png|webp)$/.test(file.type)) throw new Error('Выберите изображение JPG, PNG или WebP');
+  if (typeof createImageBitmap !== 'function') {
+    if (file.size > 1400000) throw new Error('Этот браузер не может сжать изображение. Выберите файл меньше 1,4 МБ.');
+    return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Не удалось прочитать изображение'));reader.readAsDataURL(file)});
+  }
+  const bitmap=await createImageBitmap(file);
+  const scale=Math.min(1,1800/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
+  let blob=null;
+  for(const quality of [.86,.78,.68,.58,.5]) {
+    blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));
+    if(blob&&blob.size<=2*1024*1024)break;
+  }
+  if(!blob||blob.size>2*1024*1024)throw new Error('Изображение слишком большое даже после сжатия');
+  return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Не удалось подготовить изображение'));reader.readAsDataURL(blob)});
+}
+async function uploadEventCover(file) {
+  const dataUrl=await eventCoverDataUrl(file);
+  const result=await api('/api/uploads/event-cover',{method:'POST',body:JSON.stringify({dataUrl})});
+  return result.url;
+}
 let toastTimer;
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3200); }
 function empty(message = 'Когда появятся данные, они отобразятся в этом разделе.') { return '<div class="empty-state"><span class="empty-star">✳</span><h3>Пока здесь тихо</h3><p>'+esc(message)+'</p></div>'; }
@@ -85,17 +114,18 @@ function eventCard(event) {
   const fav=signedIn() && (user.favorites||[]).includes(event.id);
   const date=[event.start_date,event.start_time].filter(Boolean).join(' · ');
   const place=[event.venues?.city,event.venues?.name].filter(Boolean).join(' · ');
+  const address=event.location_address||event.venues?.address||'';
   const price=event.current_price ?? event.base_price;
   return '<article class="event-card"><div class="event-image">'+(image?'<img src="'+esc(image)+'" alt="" loading="lazy">':'')+
     '<span class="event-category">'+esc(event.event_categories?.name || event.category || 'Мероприятие')+'</span><button class="fav-button '+(fav?'active':'')+'" data-favorite="'+id+'" aria-label="Избранное">'+(fav?'♥':'♡')+'</button></div>'+
-    '<div class="event-info"><div class="event-date">'+esc(date || 'Дата уточняется')+'</div><h3>'+title+'</h3><div class="event-place">⌖ '+esc(place || 'Площадка уточняется')+'</div>'+
+    '<div class="event-info"><div class="event-date">'+esc(date || 'Дата уточняется')+'</div><h3>'+title+'</h3><div class="event-place">⌖ '+esc(place || address || 'Место уточняется')+'</div>'+(place&&address?'<div class="event-address">'+esc(address)+'</div>':'')+
     '<div class="event-foot"><span class="event-price">'+esc(money(price))+'</span><div class="event-actions"><button class="button button-light" data-details="'+id+'">Подробнее</button><button class="button button-dark" data-register="'+id+'">Участвовать</button></div></div></div></article>';
 }
 function renderEvents() {
   const query=$('#searchInput').value.trim().toLocaleLowerCase('ru');
   const city=$('#cityInput').value.trim().toLocaleLowerCase('ru');
   const filtered=events.filter((e)=>{
-    const text=[e.title,e.description,e.event_categories?.name,e.venues?.city,e.venues?.name].join(' ').toLocaleLowerCase('ru');
+    const text=[e.title,e.description,e.location_address,e.venues?.address,e.event_categories?.name,e.venues?.city,e.venues?.name].join(' ').toLocaleLowerCase('ru');
     return (!query||text.includes(query))&&(!city||(e.venues?.city||'').toLocaleLowerCase('ru').includes(city))&&(!activeCategory||e.category_id===activeCategory);
   });
   $('#eventCount').textContent=filtered.length+' '+plural(filtered.length,['событие','события','событий']);
@@ -124,7 +154,7 @@ async function loadEvents() {
 function openEvent(id) {
   api('/api/events/'+encodeURIComponent(id)).then(({event:e})=>{
     const image=e.cover_image||'';
-    $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">'+esc(e.event_categories?.name||'Мероприятие')+'</p><h2>'+esc(e.title)+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · '))+'</b> · '+esc([e.venues?.city,e.venues?.name,e.venues?.address].filter(Boolean).join(', '))+'</p><p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.current_price??e.base_price))+' · Осталось мест: '+esc(e.available_seats??'—')+'</p><div class="workspace-card"><h3>Расписание</h3>'+((e.event_program||[]).length?e.event_program.map(x=>'<p><b>'+esc([x.start_time,x.end_time].filter(Boolean).join('–'))+'</b> '+esc(x.title)+' '+esc(x.speaker_name||'')+'</p>').join(''): '<p>Расписание ещё не опубликовано.</p>')+'</div><div class="inline-actions"><button class="button button-dark" data-register="'+esc(e.id)+'">Участвовать</button><button class="button button-light" data-report="'+esc(e.id)+'">Пожаловаться</button></div><div id="reportForm"></div></div>';
+    $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">'+esc(e.event_categories?.name||'Мероприятие')+'</p><h2>'+esc(e.title)+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · '))+'</b> · '+esc([e.venues?.city,e.venues?.name,e.location_address||e.venues?.address].filter(Boolean).join(', '))+'</p><p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.current_price??e.base_price))+' · Осталось мест: '+esc(e.available_seats??'—')+'</p><div class="workspace-card"><h3>Расписание</h3>'+((e.event_program||[]).length?e.event_program.map(x=>'<p><b>'+esc([x.start_time,x.end_time].filter(Boolean).join('–'))+'</b> '+esc(x.title)+' '+esc(x.speaker_name||'')+'</p>').join(''): '<p>Расписание ещё не опубликовано.</p>')+'</div><div class="inline-actions"><button class="button button-dark" data-register="'+esc(e.id)+'">Участвовать</button><button class="button button-light" data-report="'+esc(e.id)+'">Пожаловаться</button></div><div id="reportForm"></div></div>';
     $('#eventModal').hidden=false;
   }).catch(e=>toast(e.message));
 }
@@ -298,15 +328,30 @@ async function subscribeToNotifications(){
 }
 
 async function organizerView() {
-  try {
-    const [ev,venues,cats,registrations,employees]=await Promise.all([
-      api('/api/organizer/events'),api('/api/organizer/venues'),api('/api/categories'),
-      api('/api/organizer/registrations'),api('/api/organizer/employees')
-    ]);
-    const staff=employees.employees||[];
-    const myEvents=ev.events||[];
-    $('#workspaceContent').innerHTML='<div class="stats-grid"><div class="workspace-card"><small>Мои мероприятия</small><h3>'+myEvents.length+'</h3></div><div class="workspace-card"><small>Регистрации</small><h3>'+(registrations.registrations||[]).length+'</h3></div></div><div class="workspace-card"><h3>Новое мероприятие</h3><form id="createEventForm" class="form-grid"><label>Название<input name="title" required maxlength="180"></label><label>Категория<select name="category_id">'+(cats.categories||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join('')+'</select></label><label>Площадка<select name="venue_id"><option value="">Без площадки</option>'+(venues.venues||[]).map(v=>'<option value="'+esc(v.id)+'">'+esc(v.name+' · '+v.city)+'</option>').join('')+'</select></label><label>Дата<input name="start_date" type="date" required></label><label>Начало<input name="start_time" type="time" required></label><label>Окончание<input name="end_time" type="time" required></label><label>Вместимость<input name="total_seats" type="number" min="1" required></label><label>Цена, ₸<input name="base_price" type="number" min="0" value="0"></label><label class="wide">Описание<textarea name="description" rows="3"></textarea></label><div class="wide form-actions"><button class="button button-dark">Отправить на модерацию</button></div></form></div><div class="workspace-card"><h3>Мои мероприятия ('+myEvents.length+')</h3>'+(myEvents.length?myEvents.map(e=>'<details class="event-tools"><summary><b>'+esc(e.title)+'</b> · <span class="status-pill">'+esc(e.status)+'</span></summary><form class="event-edit-form form-grid" data-event-edit="'+esc(e.id)+'"><label>Название<input name="title" value="'+esc(e.title)+'" required></label><label>Дата<input name="start_date" type="date" value="'+esc(e.start_date)+'" required></label><label>Начало<input name="start_time" type="time" value="'+esc(e.start_time)+'" required></label><label>Окончание<input name="end_time" type="time" value="'+esc(e.end_time)+'" required></label><label>Цена, ₸<input name="base_price" type="number" min="0" value="'+esc(e.base_price)+'"></label><label class="wide">Описание<textarea name="description">'+esc(e.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить изменения</button></form><div class="tool-grid"><form class="program-form" data-event="'+esc(e.id)+'"><b>Добавить пункт расписания</b><input name="title" placeholder="Тема / пункт программы" required><div class="inline-actions"><input name="start_time" type="time" required><input name="end_time" type="time" required></div><input name="speaker_name" placeholder="Спикер"><input name="room_name" placeholder="Зал"><button class="button button-light button-small">Добавить в расписание</button></form><form class="assign-form" data-event="'+esc(e.id)+'"><b>Назначить сотрудника</b><select name="employeeId" required>'+staff.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.users?.full_name||s.users?.email||'Сотрудник')+' · '+esc(s.position)+'</option>').join('')+'</select><input name="role" placeholder="Роль на событии" value="Контролёр"><button class="button button-light button-small">Назначить</button></form><form class="notify-form" data-event="'+esc(e.id)+'"><b>Уведомить участников</b><input name="title" placeholder="Заголовок" value="'+esc(e.title)+'"><textarea name="message" placeholder="Текст уведомления" required></textarea><button class="button button-light button-small">Отправить уведомление</button></form></div></details>').join(''):empty('Создайте первое событие.'))+'</div><div class="workspace-card"><h3>Участники ('+(registrations.registrations||[]).length+')</h3>'+((registrations.registrations||[]).length?(registrations.registrations||[]).map(r=>'<p>'+esc(r.users?.full_name||r.users?.email)+' · '+esc(r.events?.title)+' · '+esc(r.ticket_number)+'</p>').join(''):empty('Регистраций пока нет.'))+'</div><div class="workspace-card"><h3>Ваши площадки ('+(venues.venues||[]).length+')</h3><form id="createVenueForm" class="form-grid"><label>Название<input name="name" required></label><label>Город<input name="city" required></label><label class="wide">Адрес<input name="address" required></label><label class="wide">Описание<textarea name="description"></textarea></label><div class="wide form-actions"><button class="button button-light">Добавить площадку</button></div></form></div>';
-  }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
+  const load=async(path)=>{try{return await api(path)}catch(error){return {error:error.message}}};
+  const [ev,venuesData,cats,registrations,employees]=await Promise.all([
+    load('/api/organizer/events'),load('/api/organizer/venues'),load('/api/categories'),
+    load('/api/organizer/registrations'),load('/api/organizer/employees')
+  ]);
+  const myEvents=ev.events||[];
+  const venues=venuesData.venues||[];
+  const categories=cats.categories||[];
+  const staff=employees.employees||[];
+  organizerEvents=myEvents;
+  const warnings=[ev,venuesData,cats,registrations,employees].filter(x=>x.error).map(x=>esc(x.error));
+  const warningHtml=warnings.length?'<div class="connection-state organizer-load-warning">Некоторые данные кабинета не загрузились: '+warnings.join(' · ')+'</div>':'';
+  const venueOptions=(selected)=>'<option value="">Без площадки</option>'+venues.map(v=>'<option value="'+esc(v.id)+'" data-address="'+esc(v.address||'')+'" '+(String(selected||'')===String(v.id)?'selected':'')+'>'+esc(v.name+' · '+v.city)+'</option>').join('');
+  const categoryOptions='<option value="">Выберите категорию</option>'+categories.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join('');
+  const venueForm='<div class="workspace-card organizer-venue-card" id="organizerVenues"><div class="workspace-card-heading"><div><p class="eyebrow dark-eyebrow">СНАЧАЛА МЕСТО</p><h3>Площадки</h3></div><span class="event-count">'+venues.length+' площадок</span></div><p class="workspace-help">Создай площадку с городом и адресом. Затем выбери её при создании мероприятия — или укажи отдельный адрес события.</p><form id="createVenueForm" class="form-grid"><label>Название площадки<input name="name" required maxlength="160" placeholder="Например, Конгресс-холл"></label><label>Город<input name="city" required maxlength="100"></label><label class="wide">Адрес площадки<input name="address" required maxlength="240" placeholder="Улица, дом, вход"></label><label class="wide">Описание<textarea name="description" rows="2" maxlength="3000"></textarea></label><div class="wide form-actions"><button class="button button-light">Добавить площадку</button></div></form></div>';
+  const createForm='<div class="workspace-card"><div class="workspace-card-heading"><div><p class="eyebrow dark-eyebrow">НОВОЕ СОБЫТИЕ</p><h3>Создать мероприятие</h3></div></div><p class="workspace-help">Укажи площадку и адрес, добавь обложку и проверь карточку в предпросмотре. После отправки мероприятие появится после модерации.</p><form id="createEventForm" class="form-grid"><label class="wide">Название<input name="title" required maxlength="180" placeholder="Как называется событие?"></label><label>Категория<select name="category_id">'+categoryOptions+'</select></label><label>Площадка<select name="venue_id" data-venue-select>'+venueOptions('')+'</select></label><label class="wide">Адрес мероприятия<input name="location_address" data-event-address required maxlength="500" placeholder="Город, улица, дом, площадка"></label><label>Дата<input name="start_date" type="date" required></label><label>Начало<input name="start_time" type="time" required></label><label>Окончание<input name="end_time" type="time" required></label><label>Вместимость<input name="total_seats" type="number" min="1" max="100000" required></label><label>Цена, ₸<input name="base_price" type="number" min="0" step="1" value="0"></label><label class="wide">Описание<textarea name="description" rows="4" maxlength="10000" placeholder="Расскажи, что ждёт гостей"></textarea></label><label class="wide cover-file-label">Обложка мероприятия<input id="eventCoverInput" type="file" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG или WebP. Изображение автоматически сожмётся.</small></label><div id="createCoverPreview" class="wide cover-preview" hidden></div><div class="wide form-actions"><button class="button button-light" type="button" data-preview-create-event>Предпросмотр</button><button class="button button-dark" type="submit">Отправить на модерацию</button></div></form></div>';
+  const eventRows=myEvents.map(e=>{
+    const venueId=e.venue_id||e.venues?.id||'';
+    const venueAddress=e.location_address||e.venues?.address||'';
+    const editCategories='<option value="">Без категории</option>'+categories.map(c=>'<option value="'+esc(c.id)+'" '+(String(e.category_id||'')===String(c.id)?'selected':'')+'>'+esc(c.name)+'</option>').join('');
+    return '<details class="event-tools organizer-event-item"><summary><b>'+esc(e.title)+'</b><span class="status-pill">'+esc(eventStatusLabel(e.status))+'</span></summary><div class="event-tools-actions"><span>'+esc([e.venues?.name,e.venues?.city,e.location_address||e.venues?.address].filter(Boolean).join(' · ')||'Адрес не указан')+'</span><button type="button" class="button button-light button-small" data-organizer-preview="'+esc(e.id)+'">Предпросмотр</button></div><form class="event-edit-form form-grid" data-event-edit="'+esc(e.id)+'"><label>Название<input name="title" value="'+esc(e.title)+'" required maxlength="180"></label><label>Категория<select name="category_id">'+editCategories+'</select></label><label>Площадка<select name="venue_id" data-venue-select>'+venueOptions(venueId)+'</select></label><label>Адрес мероприятия<input name="location_address" data-event-address value="'+esc(venueAddress)+'" required maxlength="500"></label><label>Дата<input name="start_date" type="date" value="'+esc(e.start_date)+'" required></label><label>Начало<input name="start_time" type="time" value="'+esc(e.start_time)+'" required></label><label>Окончание<input name="end_time" type="time" value="'+esc(e.end_time)+'" required></label><label>Цена, ₸<input name="base_price" type="number" min="0" value="'+esc(e.base_price)+'"></label><label class="wide">Описание<textarea name="description" rows="3">'+esc(e.description||'')+'</textarea></label><input type="hidden" name="cover_image" value="'+esc(e.cover_image||'')+'"><label class="wide cover-file-label">Заменить обложку<input type="file" data-event-cover-file accept="image/jpeg,image/png,image/webp"><small>Текущая обложка сохранится, если новый файл не выбрать.</small></label><button class="button button-light button-small">Сохранить изменения</button></form><div class="tool-grid"><form class="program-form" data-event="'+esc(e.id)+'"><b>Добавить пункт расписания</b><input name="title" placeholder="Тема / пункт программы" required><div class="inline-actions"><input name="start_time" type="time" required><input name="end_time" type="time" required></div><input name="speaker_name" placeholder="Спикер"><input name="room_name" placeholder="Зал"><button class="button button-light button-small">Добавить в расписание</button></form><form class="assign-form" data-event="'+esc(e.id)+'"><b>Назначить сотрудника</b><select name="employeeId" required>'+(staff.length?staff.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.users?.full_name||s.users?.email||'Сотрудник')+' · '+esc(s.position)+'</option>').join(''):'<option value="">Нет сотрудников с ролью «Сотрудник»</option>')+'</select><input name="role" placeholder="Роль на событии" value="Контролёр"><button class="button button-light button-small">Назначить</button></form><form class="notify-form" data-event="'+esc(e.id)+'"><b>Уведомить участников</b><input name="title" placeholder="Заголовок" value="'+esc(e.title)+'"><textarea name="message" placeholder="Текст уведомления" required></textarea><button class="button button-light button-small">Отправить уведомление</button></form></div></details>';
+  }).join('');
+  const participantRows=(registrations.registrations||[]).map(r=>'<tr><td>'+esc(r.ticket_number||'—')+'</td><td>'+esc(r.users?.full_name||r.users?.email||'—')+'</td><td>'+esc(r.events?.title||'—')+'</td><td>'+esc(r.seat_label||'—')+'</td><td>'+esc(eventStatusLabel(r.status))+'</td></tr>').join('');
+  $('#workspaceContent').innerHTML=warningHtml+'<div class="stats-grid"><div class="workspace-card"><small>Мои мероприятия</small><h3>'+myEvents.length+'</h3></div><div class="workspace-card"><small>Регистрации</small><h3>'+(registrations.registrations||[]).length+'</h3></div><div class="workspace-card"><small>Площадки</small><h3>'+venues.length+'</h3></div></div>'+venueForm+createForm+'<div class="workspace-card"><h3>Мои мероприятия ('+myEvents.length+')</h3>'+(eventRows||empty(ev.error?'Не удалось загрузить ваши мероприятия.': 'Создайте первое мероприятие с адресом и обложкой.'))+'</div><div class="workspace-card"><h3>Участники ('+(registrations.registrations||[]).length+')</h3>'+(participantRows?'<div class="scroll-table"><table class="data-table"><thead><tr><th>Билет</th><th>Участник</th><th>Мероприятие</th><th>Место</th><th>Статус</th></tr></thead><tbody>'+participantRows+'</tbody></table></div>':empty(registrations.error?'Не удалось загрузить участников.':'Регистраций пока нет.'))+'</div>';
 }
 async function staffView() {
   try {
