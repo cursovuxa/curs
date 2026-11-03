@@ -34,9 +34,21 @@
     <div class="hero-art" aria-hidden="true"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="art-card"><span class="art-kicker">LIVE · 2026</span><div class="art-wave">✳</div><div class="art-label">make<br>memories<span>.</span></div><div class="art-bottom"><span>FLOWTIX SELECTS</span><span>01 / 04</span></div></div><span class="float-tag tag-a">✦ Встречайся</span><span class="float-tag tag-b">Город — твоя сцена ↗</span></div>
   </section>
   <section id="events" class="events-section">
-    <div class="section-head"><div><p class="eyebrow dark-eyebrow">ВЫБИРАЙ СВОЁ</p><h2>Ближайшие события</h2></div><div id="eventCount" class="event-count"></div></div>
+    <div class="section-head"><div><p class="eyebrow dark-eyebrow">ВЫБИРАЙ СВОЁ</p><h2>События рядом с тобой</h2></div><div id="eventCount" class="event-count"></div></div>
+    <div class="event-pulse-grid" aria-label="События по датам">
+      <button class="event-pulse" type="button" data-period="today"><span>Сегодня</span><b id="todayCount">0</b><small>мероприятий</small></button>
+      <button class="event-pulse" type="button" data-period="tomorrow"><span>Завтра</span><b id="tomorrowCount">0</b><small>мероприятий</small></button>
+      <button class="event-pulse" type="button" data-period="week"><span>На этой неделе</span><b id="weekCount">0</b><small>мероприятий</small></button>
+    </div>
     <div id="categoryBar" class="category-bar"><button class="category active" data-category="">Все события</button></div>
     <div id="connectionState" class="connection-state" role="status"></div>
+    <section id="nearbySection" class="discovery-block" hidden><div class="section-head compact-head"><div><p class="eyebrow dark-eyebrow">ПОБЛИЗОСТИ</p><h3>Рядом с тобой</h3></div><span id="nearbyCaption" class="event-count"></span></div><div id="nearbyEventsGrid" class="events-grid"></div></section>
+    <section id="popularSection" class="discovery-block" hidden><div class="section-head compact-head"><div><p class="eyebrow dark-eyebrow">ВЫБОР ГОРОДА</p><h3>Популярные мероприятия</h3></div></div><div id="popularEventsGrid" class="events-grid"></div></section>
+    <section id="newSection" class="discovery-block" hidden><div class="section-head compact-head"><div><p class="eyebrow dark-eyebrow">СВЕЖЕЕ</p><h3>Новые мероприятия</h3></div></div><div id="newEventsGrid" class="events-grid"></div></section>
+    <section id="recommendedSection" class="discovery-block" hidden><div class="section-head compact-head"><div><p class="eyebrow dark-eyebrow">ПОДБОРКА</p><h3>Может понравиться</h3></div><span id="recommendationCaption" class="event-count"></span></div><div id="recommendedEventsGrid" class="events-grid"></div></section>
+    <section class="discovery-block calendar-block"><div class="section-head compact-head"><div><p class="eyebrow dark-eyebrow">ПЛАНИРУЙ</p><h3>Календарь событий</h3></div></div><div class="calendar-panel"><div class="calendar-heading"><button class="calendar-nav" type="button" data-calendar-shift="-1" aria-label="Предыдущий месяц">‹</button><h4 id="calendarMonth"></h4><button class="calendar-nav" type="button" data-calendar-shift="1" aria-label="Следующий месяц">›</button></div><div class="calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div><div id="calendarGrid" class="calendar-grid"></div></div><div id="calendarEvents" class="calendar-events"></div></section>
+    <section class="discovery-block map-block"><div class="section-head compact-head"><div><p class="eyebrow dark-eyebrow">НАЙДИ МЕСТО</p><h3>Карта мероприятий</h3></div></div><div id="mapContent" class="map-layout"></div></section>
+    <div class="section-head compact-head all-events-head"><div><p class="eyebrow dark-eyebrow">ВСЯ АФИША</p><h3>Ближайшие события</h3></div></div>
     <div id="eventsGrid" class="events-grid"></div>
   </section>
   <section id="workspace" class="workspace" hidden><div class="section-head"><div><p class="eyebrow dark-eyebrow">FLOWTIX SPACE</p><h2 id="workspaceTitle">Личный кабинет</h2></div><button id="workspaceRefresh" class="button button-light">Обновить данные ↻</button></div><div id="workspaceContent"></div></section>
