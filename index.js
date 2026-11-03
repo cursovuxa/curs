@@ -183,7 +183,7 @@ function previewNewEvent(form) {
 }
 async function register(id) {
   if(!signedIn())return authOpen();
-  try { const result=await api('/api/registrations',{method:'POST',body:JSON.stringify({eventId:id})}); toast('Готово! Билет '+result.ticket.ticket_number); await loadEvents(); }
+  try { const result=await api('/api/registrations',{method:'POST',body:JSON.stringify({eventId:id})}); const event=events.find(item=>String(item.id)===String(id)); const visualFree=Number(event?.current_price??event?.base_price??0)>0&&Number(result.ticket?.price_paid||0)===0; toast(visualFree?'Билет оформлен без оплаты · '+result.ticket.ticket_number:'Готово! Билет '+result.ticket.ticket_number); await loadEvents(); }
   catch(error){toast(error.message)}
 }
 async function toggleFavorite(id) {
@@ -434,7 +434,8 @@ async function adminView() {
     const complaintRows=(complaints.complaints||[]).map(x=>'<tr><td>'+esc(x.reason)+'<br><small>'+esc(x.details||'')+'</small></td><td>'+esc(x.users?.email||'—')+'</td><td><select data-complaint="'+esc(x.id)+'">'+['new','in_review','resolved','rejected'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td></tr>').join('');
     const reviewRows=(reviews.reviews||[]).map(x=>'<tr><td>'+esc(x.events?.title||'—')+'</td><td>'+esc(x.users?.email||'—')+'</td><td>'+esc(x.overall_rating)+'/5</td><td>'+esc(x.comment||'')+'</td><td><button class="button button-danger button-small" data-delete-review="'+esc(x.id)+'">Удалить</button></td></tr>').join('');
     const s=settings.settings||{};
-    const settingsForm='<form id="adminSettingsForm" class="form-grid"><label>Название сервиса<input name="site_name" value="'+esc(s.site_name||'FlowTix')+'" required></label><label>Почта поддержки<input name="support_email" type="email" value="'+esc(s.support_email||'')+'"></label><label>Режим обслуживания<select name="maintenance_mode"><option value="false" '+(s.maintenance_mode?'':'selected')+'>Выключен</option><option value="true" '+(s.maintenance_mode?'selected':'')+'>Включён</option></select></label><button class="button button-accent">Сохранить</button></form>';
+    const visualPaymentsEnabled=s.visual_payments_enabled===true;
+    const settingsForm='<form id="adminSettingsForm" class="form-grid"><label>Название сервиса<input name="site_name" value="'+esc(s.site_name||'FlowTix')+'" required></label><label>Почта поддержки<input name="support_email" type="email" value="'+esc(s.support_email||'')+'"></label><label>Режим обслуживания<select name="maintenance_mode"><option value="false" '+(s.maintenance_mode?'':'selected')+'>Выключен</option><option value="true" '+(s.maintenance_mode?'selected':'')+'>Включён</option></select></label><div class="wide visual-payment-option"><label class="admin-switch"><input type="checkbox" name="visual_payments_enabled" '+(visualPaymentsEnabled?'checked':'')+'><span class="admin-switch-track" aria-hidden="true"></span><span class="admin-switch-copy"><b>Активировать визуальные платежи</b><small>При включении билет на платное мероприятие выдаётся без списания денег.</small></span></label><p class="payment-provider-note">Если выключить режим, платные регистрации будут недоступны, пока к FlowTix не подключён платёжный провайдер.</p></div><div class="wide"><button class="button button-accent" type="submit">Сохранить настройки</button></div></form>';
     const logsHtml=(logs.logs||[]).map(x=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.entity_type)+' '+esc(x.entity_id||'')+'</td></tr>').join('');
     const panels={
       users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody>'+userRows+'</tbody></table></div></div>',
@@ -466,7 +467,7 @@ async function adminView() {
     };
     root.onsubmit=async(e)=>{
       if(e.target.matches('[data-admin-venue]')){e.preventDefault();try{await api('/api/admin/venues/'+e.target.dataset.adminVenue,{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Площадка обновлена');await adminView()}catch(x){toast(x.message)}}
-      if(e.target.id==='adminSettingsForm'){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.maintenance_mode=data.maintenance_mode==='true';try{await api('/api/admin/settings',{method:'PATCH',body:JSON.stringify(data)});toast('Настройки сохранены');await adminView()}catch(x){toast(x.message)}}
+      if(e.target.id==='adminSettingsForm'){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.maintenance_mode=data.maintenance_mode==='true';data.visual_payments_enabled=e.target.elements.visual_payments_enabled.checked;try{await api('/api/admin/settings',{method:'PATCH',body:JSON.stringify(data)});toast('Настройки сохранены');await adminView()}catch(x){toast(x.message)}}
     };
   }catch(error){root.innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(error.message)+'</p></div>'}
 }
