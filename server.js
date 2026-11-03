@@ -6,6 +6,9 @@ const app = express();
 const port = Number(process.env.PORT || 10000);
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const rootAdminEmail = String(process.env.FLOWTIX_ROOT_ADMIN_EMAIL || process.env.FLOWTIX_ADMIN_EMAIL || '').trim().toLowerCase();
+const isRootEmail = (email) => Boolean(rootAdminEmail) && String(email || '').trim().toLowerCase() === rootAdminEmail;
+const validRoles = new Set(['visitor', 'organizer', 'staff', 'moderator', 'admin']);
 const normalizeOrigin = (value) => {
   try {
     const url = new URL(String(value).trim());
@@ -78,6 +81,11 @@ const requireUser = asyncRoute(async (req, res, next) => {
   if (!token || !supabase) return res.status(401).json({ error: 'Требуется вход в аккаунт' });
   const { data: authData, error: authError } = await supabase.auth.getUser(token);
   if (authError || !authData.user) return res.status(401).json({ error: 'Сессия недействительна' });
+  const isRootAdmin = isRootEmail(authData.user.email);
+  const appMetadata = authData.user.app_metadata || {};
+  const claimRole = validRoles.has(appMetadata.flowtix_role) ? appMetadata.flowtix_role : 'visitor';
+  const claimBlocked = appMetadata.flowtix_blocked === true;
+  if (claimBlocked && !isRootAdmin) return res.status(403).json({ error: 'Аккаунт заблокирован' });
   let { data: profile, error } = await supabase.from('users').select('*').eq('id', authData.user.id).maybeSingle();
   if (error) return res.status(500).json({ error: 'Не удалось проверить профиль' });
   if (!profile) {
@@ -85,13 +93,19 @@ const requireUser = asyncRoute(async (req, res, next) => {
       id: authData.user.id, email: authData.user.email,
       full_name: authData.user.user_metadata?.full_name || '',
       username: (String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user') + '_' + authData.user.id.slice(0, 8),
-      role: (process.env.FLOWTIX_ADMIN_EMAIL || '').toLowerCase() === String(authData.user.email || '').toLowerCase() ? 'admin' : 'visitor'
+      role: 'visitor'
     }).select('*').single();
     profile = created.data;
     error = created.error;
+    if (!error && profile) {
+      const claim = await supabase.auth.admin.updateUserById(authData.user.id, {
+        app_metadata: { ...appMetadata, flowtix_role: isRootAdmin ? 'admin' : claimRole, flowtix_blocked: false }
+      });
+      if (claim.error) return res.status(500).json({ error: 'Не удалось создать защищённые права аккаунта' });
+    }
   }
   if (error || !profile) return res.status(500).json({ error: 'Не удалось создать профиль' });
-  if (profile.is_blocked) return res.status(403).json({ error: 'Аккаунт заблокирован' });
+  profile = { ...profile, role: isRootAdmin ? 'admin' : claimRole, is_blocked: !isRootAdmin && claimBlocked, is_root_admin: isRootAdmin };
   if (!profile.username) {
     const base = String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user';
     const { data: namedProfile, error: usernameError } = await supabase.from('users')
@@ -101,8 +115,16 @@ const requireUser = asyncRoute(async (req, res, next) => {
   req.user = profile;
   next();
 });
-const allowRoles = (...roles) => (req, res, next) =>
-  roles.includes(req.user.role) ? next() : res.status(403).json({ error: 'Недостаточно прав' });
+const allowRoles = (...roles) => (req, res, next) => {
+  const allowed = roles.some((role) => role === 'admin'
+    ? req.user.is_root_admin === true
+    : req.user.role === role);
+  return allowed ? next() : res.status(403).json({ error: 'Недостаточно прав' });
+};
+const requireRootAdmin = (req, res, next) => req.user.is_root_admin === true
+  ? next()
+  : res.status(403).json({ error: 'Доступ только главному администратору' });
+app.get('/api/admin/access', requireUser, requireRootAdmin, (_req, res) => res.json({ allowed: true }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
@@ -113,10 +135,13 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   if (data.user) {
     const { error: profileError } = await supabase.from('users').upsert({
-      id: data.user.id, email, full_name: fullName,
-      role: (process.env.FLOWTIX_ADMIN_EMAIL || '').toLowerCase() === email ? 'admin' : 'visitor'
+      id: data.user.id, email, full_name: fullName, role: 'visitor'
     }, { onConflict: 'id' });
     if (profileError) return res.status(500).json({ error: 'Аккаунт создан, но профиль не записан' });
+    const { error: claimError } = await supabase.auth.admin.updateUserById(data.user.id, {
+      app_metadata: { ...(data.user.app_metadata || {}), flowtix_role: isRootEmail(email) ? 'admin' : 'visitor', flowtix_blocked: false }
+    });
+    if (claimError) return res.status(500).json({ error: 'Аккаунт создан, но защищённые права не записаны' });
   }
   res.status(data.session ? 201 : 202).json({
     message: data.session ? 'Аккаунт создан' : 'Проверьте почту и подтвердите адрес для входа',
@@ -134,8 +159,12 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const { data: profile, error: profileError } = await supabase.from('users')
     .select('id,email,full_name,role,is_blocked').eq('id', data.user.id).maybeSingle();
   if (profileError) return res.status(500).json({ error: 'Не удалось загрузить профиль' });
-  if (profile?.is_blocked) return res.status(403).json({ error: 'Аккаунт заблокирован' });
-  res.json({ accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: profile });
+  if (data.user.app_metadata?.flowtix_blocked === true && !isRootEmail(data.user.email)) return res.status(403).json({ error: 'Аккаунт заблокирован' });
+  res.json({
+    accessToken: data.session.access_token,
+    refreshToken: data.session.refresh_token,
+    user: profile ? { ...profile, role: isRootEmail(data.user.email) ? 'admin' : (validRoles.has(data.user.app_metadata?.flowtix_role) ? data.user.app_metadata.flowtix_role : 'visitor'), is_root_admin: isRootEmail(data.user.email) } : null
+  });
 }));
 app.get('/api/me', requireUser, asyncRoute(async (req, res) => {
   const profile = { ...req.user };
@@ -324,21 +353,49 @@ app.patch('/api/moderation/events/:id', requireUser, allowRoles('moderator', 'ad
   if (!data) return res.status(404).json({ error: 'Заявка не найдена' });
   res.json({ event: data });
 }));
-app.patch('/api/admin/users/:id/block', requireUser, allowRoles('admin'), asyncRoute(async (req, res) => {
-  const { data, error } = await supabase.from('users').update({ is_blocked: Boolean(req.body.blocked) })
-    .eq('id', req.params.id).select('id,email,is_blocked').single();
-  if (error) return res.status(400).json({ error: 'Не удалось изменить статус аккаунта' });
+app.patch('/api/admin/users/:id/block', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const { data: target, error: lookupError } = await supabase.from('users').select('id,email,full_name').eq('id', req.params.id).maybeSingle();
+  if (lookupError) return res.status(500).json({ error: 'Не удалось найти аккаунт' });
+  if (!target) return res.status(404).json({ error: 'Аккаунт не найден' });
+  if (isRootEmail(target.email)) return res.status(409).json({ error: 'Главный администратор не может быть заблокирован' });
+  const blocked = req.body.blocked === true;
+  const authTarget = await supabase.auth.admin.getUserById(target.id);
+  if (authTarget.error || !authTarget.data?.user) return res.status(500).json({ error: 'Не удалось проверить права аккаунта' });
+  const oldMeta = authTarget.data.user.app_metadata || {};
+  const claimWrite = await supabase.auth.admin.updateUserById(target.id, {
+    app_metadata: { ...oldMeta, flowtix_role: validRoles.has(oldMeta.flowtix_role) ? oldMeta.flowtix_role : 'visitor', flowtix_blocked: blocked }
+  });
+  if (claimWrite.error) return res.status(500).json({ error: 'Не удалось защитить изменение блокировки' });
+  const { data, error } = await supabase.from('users').update({ is_blocked: blocked })
+    .eq('id', target.id).select('id,email,is_blocked').single();
+  if (error) return res.status(400).json({ error: 'Защищённый статус изменён, но профиль не синхронизирован' });
+  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: blocked ? 'USER_BLOCKED' : 'USER_UNBLOCKED', entity_type: 'user', entity_id: target.id, details: { email: target.email } });
   res.json({ user: data });
 }));
-app.patch('/api/admin/users/:id/role', requireUser, allowRoles('admin'), asyncRoute(async (req, res) => {
-  if (!['visitor','organizer','staff','moderator','admin'].includes(req.body.role)) return res.status(400).json({ error: 'Недопустимая роль' });
-  const { data, error } = await supabase.from('users').update({ role: req.body.role })
-    .eq('id', req.params.id).select('id,email,full_name,role').single();
-  if (error) return res.status(400).json({ error: 'Не удалось изменить роль' });
-  if (data.role === 'staff') {
+app.patch('/api/admin/users/:id/role', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const role = String(req.body.role || '');
+  if (!['visitor','organizer','staff','moderator'].includes(role)) return res.status(400).json({ error: 'Допустимые роли: посетитель, организатор, сотрудник и модератор' });
+  const { data: target, error: lookupError } = await supabase.from('users').select('id,email,full_name,role').eq('id', req.params.id).maybeSingle();
+  if (lookupError) return res.status(500).json({ error: 'Не удалось найти аккаунт' });
+  if (!target) return res.status(404).json({ error: 'Аккаунт не найден' });
+  if (isRootEmail(target.email)) return res.status(409).json({ error: 'Единственный главный администратор не может быть переназначен' });
+  const authTarget = await supabase.auth.admin.getUserById(target.id);
+  if (authTarget.error || !authTarget.data?.user) return res.status(500).json({ error: 'Не удалось проверить права аккаунта' });
+  const oldMeta = authTarget.data.user.app_metadata || {};
+  const newMeta = { ...oldMeta, flowtix_role: role, flowtix_blocked: oldMeta.flowtix_blocked === true };
+  const claimWrite = await supabase.auth.admin.updateUserById(target.id, { app_metadata: newMeta });
+  if (claimWrite.error) return res.status(500).json({ error: 'Не удалось сохранить защищённую роль' });
+  const { data, error } = await supabase.from('users').update({ role })
+    .eq('id', target.id).select('id,email,full_name,role').single();
+  if (error) {
+    await supabase.auth.admin.updateUserById(target.id, { app_metadata: oldMeta });
+    return res.status(400).json({ error: 'Не удалось сохранить роль' });
+  }
+  if (role === 'staff') {
     const { data: employee } = await supabase.from('employees').select('id').eq('user_id', data.id).maybeSingle();
     if (!employee) await supabase.from('employees').insert({ user_id: data.id, position: 'Сотрудник мероприятия' });
   }
+  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'USER_ROLE_CHANGED', entity_type: 'user', entity_id: target.id, details: { role } });
   res.json({ user: data });
 }));
 
@@ -520,10 +577,14 @@ app.post('/api/organizer/events/:eventId/notify', requireUser, allowRoles('organ
   if (error) return res.status(500).json({ error: 'Не удалось отправить уведомления' });
   res.json({ sent: ids.length });
 }));
-app.get('/api/admin/users', requireUser, allowRoles('admin'), asyncRoute(async (_req, res) => {
+app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('users').select('id,email,full_name,role,is_blocked,created_at').order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить пользователей' });
-  res.json({ users: data });
+  res.json({ users: (data || []).map((row) => ({
+    ...row,
+    role: isRootEmail(row.email) ? 'admin' : (row.role === 'admin' ? 'visitor' : row.role),
+    is_blocked: isRootEmail(row.email) ? false : row.is_blocked
+  })) });
 }));
 
 app.get('/api/organizer/employees', requireUser, allowRoles('organizer','admin'), asyncRoute(async (_req, res) => {
