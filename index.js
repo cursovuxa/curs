@@ -2029,7 +2029,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initial UI Render. The published catalog is loaded from the same-origin API.
+  // Render only live data; the database-backed catalog replaces the old sample records.
+  APP_STATE.events = [];
+  APP_STATE.notifications = [];
+  APP_STATE.complaints = [];
+  APP_STATE.auditLogs = [];
+  APP_STATE.myTickets = [];
+  APP_STATE.currentUser = { id: null, name: 'Гость', email: '', role: 'visitor', favorites: [] };
   renderEvents();
   renderPersonalRecommendation();
   renderNotifications();
@@ -2160,6 +2166,20 @@ document.addEventListener('DOMContentLoaded', () => {
   close?.addEventListener('click', () => modal.style.display = 'none');
   modal?.addEventListener('click', (event) => { if (event.target === modal) modal.style.display = 'none'; });
   document.querySelectorAll('[data-auth-mode]').forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.authMode)));
+  const existingToken = sessionStorage.getItem(tokenKey);
+  if (existingToken) {
+    flowTixRequest('/api/me').then(async ({ user }) => {
+      APP_STATE.currentUser = { id: user.id, name: user.full_name, email: user.email, role: user.role, favorites: [] };
+      APP_STATE.currentRole = user.role;
+      document.getElementById('signedInName').textContent = user.full_name || user.email;
+      open.textContent = 'Выйти';
+      const { favorites } = await flowTixRequest('/api/favorites');
+      APP_STATE.currentUser.favorites = favorites.map((row) => row.event_id);
+      const badge = document.getElementById('favCount');
+      if (badge) badge.textContent = APP_STATE.currentUser.favorites.length;
+      renderEvents();
+    }).catch(() => sessionStorage.removeItem(tokenKey));
+  }
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     submit.disabled = true;
@@ -2185,6 +2205,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!current.ok) throw new Error(account.error || 'Не удалось загрузить профиль');
       APP_STATE.currentUser = { id: account.user.id, name: account.user.full_name, email: account.user.email, role: account.user.role, favorites: [] };
       APP_STATE.currentRole = account.user.role;
+      const savedFavorites = await flowTixRequest('/api/favorites');
+      APP_STATE.currentUser.favorites = savedFavorites.favorites.map((row) => row.event_id);
+      const favBadge = document.getElementById('favCount');
+      if (favBadge) favBadge.textContent = APP_STATE.currentUser.favorites.length;
       document.getElementById('signedInName').textContent = account.user.full_name || account.user.email;
       open.textContent = 'Выйти';
       modal.style.display = 'none';
