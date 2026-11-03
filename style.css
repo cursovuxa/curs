@@ -356,3 +356,60 @@ body[data-theme="rose"] .workspace select,
 body[data-theme="rose"] .form-grid select,
 body[data-theme="sky"] .workspace select,
 body[data-theme="sky"] .form-grid select {color-scheme:light}
+
+
+/* Homepage event discovery */
+.event-pulse-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 34px}
+.event-pulse{display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 10px;padding:17px 19px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;transition:transform .16s,border-color .16s,box-shadow .16s}
+.event-pulse:hover{transform:translateY(-2px);border-color:var(--violet);box-shadow:0 12px 30px color-mix(in srgb,var(--ink) 8%,transparent)}
+.event-pulse span{font-size:12px;font-weight:700;color:var(--muted)}
+.event-pulse b{grid-column:2;grid-row:1/3;color:var(--violet);font-size:29px;line-height:1}
+.event-pulse small{font-size:10px;color:var(--muted)}
+.discovery-block{margin-top:58px}
+.discovery-block[hidden]{display:none!important}
+.compact-head{margin-bottom:18px}
+.compact-head h3{margin:0;color:var(--ink);font:750 clamp(22px,3vw,30px)/1.15 "DM Sans",sans-serif;letter-spacing:-.045em}
+.compact-head .eyebrow{margin-bottom:7px}
+.calendar-block,.map-block{padding-top:6px}
+.calendar-panel{padding:20px;border:1px solid var(--line);border-radius:20px;background:var(--surface);color:var(--ink)}
+.calendar-heading{display:flex;align-items:center;justify-content:space-between;max-width:340px;margin:0 auto 16px}
+.calendar-heading h4{margin:0;text-transform:capitalize;font:700 16px "DM Sans",sans-serif;color:var(--ink)}
+.calendar-nav{width:34px;height:34px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--ink);font-size:22px;line-height:1;cursor:pointer}
+.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));max-width:420px;margin:0 auto}
+.calendar-weekdays span{padding:7px 0;text-align:center;color:var(--muted);font-size:10px;font-weight:700}
+.calendar-grid{gap:4px}
+.calendar-day{position:relative;display:grid;place-items:center;align-content:center;gap:2px;aspect-ratio:1;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--ink);font:600 12px "DM Sans",sans-serif;cursor:pointer}
+.calendar-day:hover{background:color-mix(in srgb,var(--violet) 10%,var(--surface))}
+.calendar-day.selected{background:var(--violet);color:#fff}
+.calendar-day.has-events:not(.selected){border-color:color-mix(in srgb,var(--violet) 30%,var(--line))}
+.calendar-day small{font-size:8px;line-height:1;color:var(--violet)}
+.calendar-day.selected small{color:#fff}
+.calendar-day-empty{cursor:default}
+.calendar-events{margin-top:18px}
+.calendar-events-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 14px;color:var(--ink);text-transform:capitalize}
+.calendar-events>.empty-state{padding:26px 18px}
+.map-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(230px,.8fr);gap:14px;align-items:stretch}
+.map-frame{position:relative;min-height:340px;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.map-frame iframe{display:block;width:100%;height:340px;border:0}
+.map-open-link{position:absolute;right:12px;bottom:12px;padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-size:11px;font-weight:700;box-shadow:0 4px 16px #0002}
+.map-event-list{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow:auto;padding:2px}
+.map-event{display:grid;gap:5px;padding:12px 14px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer}
+.map-event.active{border-color:var(--violet);box-shadow:0 0 0 2px color-mix(in srgb,var(--violet) 18%,transparent)}
+.map-event b{font-size:12px}
+.map-event span{color:var(--muted);font-size:10px;line-height:1.5}
+.all-events-head{margin-top:62px}
+@media(max-width:700px){
+  .event-pulse-grid{gap:8px;margin-bottom:26px}
+  .event-pulse{padding:13px 10px;gap:4px 6px;border-radius:13px}
+  .event-pulse span{font-size:10px}
+  .event-pulse b{font-size:24px}
+  .event-pulse small{font-size:9px}
+  .discovery-block{margin-top:42px}
+  .calendar-panel{padding:12px}
+  .calendar-grid{gap:2px}
+  .calendar-day{border-radius:8px;font-size:11px}
+  .calendar-day small{font-size:7px}
+  .map-layout{grid-template-columns:1fr}
+  .map-frame,.map-frame iframe{min-height:260px;height:260px}
+  .map-event-list{max-height:220px}
+}
