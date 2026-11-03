@@ -365,8 +365,7 @@ async function adminView() {
     root.onchange=async(e)=>{
       if(e.target.matches('[data-role-user]')){try{await api('/api/admin/users/'+e.target.dataset.roleUser+'/role',{method:'PATCH',body:JSON.stringify({role:e.target.value})});toast('Роль обновлена');await adminView()}catch(x){toast(x.message);await adminView()}}
       if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён')}catch(x){toast(x.message);await adminView()}}
-      if(e.target.matches('[data-complaint]')){try{await api('/api/moderation/complaints/'+e.target.dataset.complaint,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус жалобы обновлён')}catch(x){toast(x.message)}}
-    };
+        };
     root.onclick=async(e)=>{
       const block=e.target.closest('[data-block]');if(block){try{await api('/api/admin/users/'+block.dataset.block+'/block',{method:'PATCH',body:JSON.stringify({blocked:block.dataset.value==='true'})});toast('Доступ обновлён');await adminView()}catch(x){toast(x.message)}return}
       const cancel=e.target.closest('[data-cancel-ticket]');if(cancel){try{await api('/api/admin/tickets/'+cancel.dataset.cancelTicket+'/cancel',{method:'PATCH'});toast('Билет аннулирован');await adminView()}catch(x){toast(x.message)}return}
@@ -423,12 +422,10 @@ document.addEventListener('click',async(e)=>{
   const close=e.target.closest('[data-close]');if(close){$('#'+close.dataset.close).hidden=true;return}
   const report=e.target.closest('[data-report]');if(report){$('#reportForm').innerHTML='<form id="complaintForm" class="form-grid"><input type="hidden" name="targetId" value="'+esc(report.dataset.report)+'"><label>Причина<input name="reason" required></label><label class="wide">Подробности<textarea name="details" required></textarea></label><button class="button button-dark">Отправить жалобу</button></form>';return}
   const moderate=e.target.closest('[data-moderate]');if(moderate){try{await api('/api/moderation/events/'+moderate.dataset.moderate,{method:'PATCH',body:JSON.stringify({status:moderate.dataset.status})});toast('Решение сохранено');moderatorView()}catch(x){toast(x.message)}return}
-  const block=e.target.closest('[data-block]');if(block){try{await api('/api/admin/users/'+block.dataset.block+'/block',{method:'PATCH',body:JSON.stringify({blocked:block.dataset.value==='true'})});toast('Доступ обновлён');adminView()}catch(x){toast(x.message)}return}
 });
 document.addEventListener('change',async(e)=>{
   if(e.target.id==='avatarInput')return uploadProfileAvatar(e.target);
   if(e.target.matches('[data-category]')){activeCategory=e.target.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===e.target));renderEvents()}
-  if(e.target.matches('[data-role-user]')){try{await api('/api/admin/users/'+e.target.dataset.roleUser+'/role',{method:'PATCH',body:JSON.stringify({role:e.target.value})});toast('Роль обновлена')}catch(x){toast(x.message)}}
   if(e.target.matches('[data-complaint]')){try{await api('/api/moderation/complaints/'+e.target.dataset.complaint,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус жалобы обновлён')}catch(x){toast(x.message)}}
 });
 document.addEventListener('submit',async(e)=>{
