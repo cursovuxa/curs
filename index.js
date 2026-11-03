@@ -194,7 +194,7 @@ $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.clo
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
 $('#workspaceRefresh').addEventListener('click',showWorkspace);
 const themeKey='flowtix_theme';
-const themeNames={rose:'Нежно-розовая',sky:'Нежно-голубая',dark:'Ночная',halloween:'Хэллоуинская'};
+const themeNames={rose:'Розовая',sky:'Голубая',dark:'Тёмная',halloween:'Хэллоуин'};
 const allowedThemes=Object.keys(themeNames);
 function applyTheme(theme,{save=true}={}){
   const next=allowedThemes.includes(theme)?theme:'rose';
@@ -231,6 +231,18 @@ if(themeButton&&themeMenu){
   });
 }
 applyTheme(localStorage.getItem(themeKey)||'rose',{save:false});
+let googleAuthCompleting=false;
+async function finishGoogleLogin(session){
+  if(!session?.access_token||googleAuthCompleting)return;
+  googleAuthCompleting=true;
+  sessionStorage.setItem(tokenKey,session.access_token);
+  try{
+    await loadSession();
+    authClose();
+    toast('Вход выполнен через Google');
+  }catch(error){$('#authError').textContent=error.message||'Не удалось завершить вход'}
+  finally{googleAuthCompleting=false}
+}
 $('#googleFallback').addEventListener('click',()=>{
   if(!supabaseAuth){$('#authError').textContent='Авторизация ещё загружается. Попробуй ещё раз через секунду.';return}
   const popup=window.open('about:blank','flowtix-google-auth','popup,width=520,height=680,left=100,top=80');
@@ -239,14 +251,37 @@ $('#googleFallback').addEventListener('click',()=>{
   button.disabled=true;
   button.setAttribute('aria-busy','true');
   $('#authError').textContent='';
-  supabaseAuth.auth.signInWithOAuth({
-    provider:'google',
-    options:{skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}
+  let startingToken=null;
+  let poll=null;
+  supabaseAuth.auth.getSession().then(({data})=>{
+    startingToken=data.session?.access_token||null;
+    poll=setInterval(async()=>{
+      try{
+        const {data:{session}}=await supabaseAuth.auth.getSession();
+        if(session?.access_token&&session.access_token!==startingToken){
+          clearInterval(poll);
+          await finishGoogleLogin(session);
+          if(!popup.closed)popup.close();
+        }else if(popup.closed){
+          clearInterval(poll);
+          $('#authError').textContent='Окно Google закрыто до завершения входа.';
+        }
+      }catch(error){
+        clearInterval(poll);
+        $('#authError').textContent=error.message||'Не удалось проверить вход';
+      }
+    },700);
+    setTimeout(()=>{if(poll)clearInterval(poll)},120000);
+    return supabaseAuth.auth.signInWithOAuth({
+      provider:'google',
+      options:{skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}
+    });
   }).then(({data,error})=>{
     if(error||!data?.url)throw error||new Error('Не удалось открыть Google OAuth');
     popup.location.replace(data.url);
   }).catch((error)=>{
-    popup.close();
+    if(poll)clearInterval(poll);
+    if(!popup.closed)popup.close();
     $('#authError').textContent=error.message||'Не удалось начать вход через Google';
   }).finally(()=>{
     button.disabled=false;
@@ -258,10 +293,7 @@ window.addEventListener('message',async(event)=>{
   try{
     const {data:{session}}=await supabaseAuth.auth.getSession();
     if(!session?.access_token)throw new Error('Google не вернул сессию. Попробуй войти ещё раз.');
-    sessionStorage.setItem(tokenKey,session.access_token);
-    await loadSession();
-    authClose();
-    toast('Вход выполнен через Google');
+    await finishGoogleLogin(session);
   }catch(error){$('#authError').textContent=error.message}
 });
 
