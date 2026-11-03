@@ -487,6 +487,20 @@ app.get('/api/staff/assignments', requireUser, allowRoles('staff', 'admin'), asy
   if (error) return res.status(500).json({ error: 'Не удалось загрузить назначения' });
   res.json({ assignments: data });
 }));
+app.get('/api/staff/events/:eventId/participants', requireUser, allowRoles('staff','admin'), asyncRoute(async (req, res) => {
+  if (req.user.role === 'staff') {
+    const { data: employee } = await supabase.from('employees').select('id').eq('user_id', req.user.id).maybeSingle();
+    if (!employee) return res.status(403).json({ error: 'Сотрудник не найден' });
+    const { data: assignment } = await supabase.from('event_staff_assignments').select('id')
+      .eq('event_id', req.params.eventId).eq('employee_id', employee.id).eq('status', 'assigned').maybeSingle();
+    if (!assignment) return res.status(403).json({ error: 'Вы не назначены на это мероприятие' });
+  }
+  const { data, error } = await supabase.from('tickets')
+    .select('id,ticket_number,status,seat_label,created_at,users(full_name,email)')
+    .eq('event_id', req.params.eventId).order('created_at', { ascending: true }).limit(1000);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить список участников' });
+  res.json({ participants: data });
+}));
 app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('staff', 'admin'), asyncRoute(async (req, res) => {
   let q = supabase.from('tickets').select('id,event_id,status,user_id').eq('ticket_number', req.params.ticketNumber).maybeSingle();
   const { data: ticket, error } = await q;
@@ -521,6 +535,56 @@ app.patch('/api/moderation/complaints/:id', requireUser, allowRoles('moderator',
   if (error) return res.status(400).json({ error: 'Не удалось обновить жалобу' });
   res.json({ complaint: data });
 }));
+app.get('/api/moderation/users', requireUser, allowRoles('moderator','admin'), asyncRoute(async (_req, res) => {
+  const { data: authResult, error: authError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 500 });
+  if (authError) return res.status(500).json({ error: 'Не удалось загрузить аккаунты' });
+  const accounts = (authResult.users || []).filter((account) => !isRootEmail(account.email));
+  if (!accounts.length) return res.json({ users: [] });
+  const { data: profiles, error } = await supabase.from('users').select('id,full_name').in('id', accounts.map((account) => account.id));
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить профили' });
+  const names = new Map((profiles || []).map((profile) => [profile.id, profile.full_name]));
+  res.json({ users: accounts.map((account) => ({
+    id: account.id, email: account.email, full_name: names.get(account.id) || account.user_metadata?.full_name || '',
+    role: validRoles.has(account.app_metadata?.flowtix_role) ? account.app_metadata.flowtix_role : 'visitor',
+    is_blocked: account.app_metadata?.flowtix_blocked === true
+  })) });
+}));
+app.patch('/api/moderation/users/:id/block', requireUser, allowRoles('moderator','admin'), asyncRoute(async (req, res) => {
+  const { data: authTarget, error: authError } = await supabase.auth.admin.getUserById(req.params.id);
+  if (authError || !authTarget?.user) return res.status(404).json({ error: 'Аккаунт не найден' });
+  const account = authTarget.user;
+  if (isRootEmail(account.email) || account.app_metadata?.flowtix_role === 'admin') return res.status(403).json({ error: 'У модератора нет права блокировать администратора' });
+  const blocked = req.body.blocked === true;
+  const metadata = account.app_metadata || {};
+  const updated = await supabase.auth.admin.updateUserById(account.id, {
+    app_metadata: { ...metadata, flowtix_role: validRoles.has(metadata.flowtix_role) ? metadata.flowtix_role : 'visitor', flowtix_blocked: blocked }
+  });
+  if (updated.error) return res.status(500).json({ error: 'Не удалось сохранить блокировку аккаунта' });
+  await supabase.from('users').update({ is_blocked: blocked }).eq('id', account.id);
+  await supabase.from('audit_logs').insert({
+    actor_id: req.user.id, actor_name: req.user.full_name, action: blocked ? 'MODERATOR_USER_BLOCKED' : 'MODERATOR_USER_UNBLOCKED',
+    entity_type: 'user', entity_id: account.id, details: { email: account.email }
+  });
+  res.json({ user: { id: account.id, email: account.email, is_blocked: blocked } });
+}));
+app.get('/api/moderation/reviews', requireUser, allowRoles('moderator','admin'), asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('reviews')
+    .select('id,event_id,user_id,overall_rating,comment,created_at,users(full_name,email),events(title)')
+    .order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить отзывы' });
+  res.json({ reviews: data });
+}));
+app.delete('/api/moderation/reviews/:id', requireUser, allowRoles('moderator','admin'), asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('reviews').delete().eq('id', req.params.id).select('id,event_id').maybeSingle();
+  if (error) return res.status(400).json({ error: 'Не удалось удалить отзыв' });
+  if (!data) return res.status(404).json({ error: 'Отзыв не найден' });
+  await supabase.from('audit_logs').insert({
+    actor_id: req.user.id, actor_name: req.user.full_name, action: 'MODERATOR_REVIEW_REMOVED',
+    entity_type: 'review', entity_id: data.id, details: { event_id: data.event_id }
+  });
+  res.json({ success: true });
+}));
+
 app.get('/api/admin/audit-logs', requireUser, allowRoles('admin'), asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить журнал' });
