@@ -798,7 +798,11 @@ app.delete('/api/admin/reviews/:id', requireUser, requireRootAdmin, asyncRoute(a
 app.get('/api/admin/settings', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('platform_settings').select('key,value,updated_at').order('key');
   if (error) return res.status(500).json({ error: 'Не удалось загрузить настройки платформы' });
-  res.json({ settings: Object.fromEntries((data || []).map((item) => [item.key, item.value])) });
+  const settings = Object.fromEntries((data || []).map((item) => [item.key, item.value]));
+  for (const key of ['maintenance_mode','visual_payments_enabled']) {
+    if (settings[key] === 'true' || settings[key] === 'false') settings[key] = settings[key] === 'true';
+  }
+  res.json({ settings });
 }));
 app.patch('/api/admin/settings', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
   const allowed = new Set(['site_name','support_email','maintenance_mode','visual_payments_enabled']);
@@ -808,7 +812,7 @@ app.patch('/api/admin/settings', requireUser, requireRootAdmin, asyncRoute(async
   if (entries.some(([key,value]) => booleanKeys.has(key) ? typeof value !== 'boolean' : typeof value !== 'string')) {
     return res.status(400).json({ error: 'Проверьте значения настроек' });
   }
-  const writes = entries.map(([key,value]) => ({ key, value: JSON.stringify(value), updated_by: req.user.id, updated_at: new Date().toISOString() }));
+  const writes = entries.map(([key,value]) => ({ key, value, updated_by: req.user.id, updated_at: new Date().toISOString() }));
   const { error } = await supabase.from('platform_settings').upsert(writes, { onConflict: 'key' });
   if (error) return res.status(400).json({ error: 'Не удалось сохранить настройки платформы' });
   await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_SETTINGS_UPDATED', entity_type: 'platform_settings', details: Object.fromEntries(entries) });
