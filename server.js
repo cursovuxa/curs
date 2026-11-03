@@ -65,7 +65,8 @@ const requireUser = asyncRoute(async (req, res, next) => {
   if (!profile) {
     const created = await supabase.from('users').insert({
       id: authData.user.id, email: authData.user.email,
-      full_name: authData.user.user_metadata?.full_name || ''
+      full_name: authData.user.user_metadata?.full_name || '',
+      role: (process.env.FLOWTIX_ADMIN_EMAIL || '').toLowerCase() === String(authData.user.email || '').toLowerCase() ? 'admin' : 'visitor'
     }).select('*').single();
     profile = created.data;
     error = created.error;
@@ -87,7 +88,8 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   if (data.user) {
     const { error: profileError } = await supabase.from('users').upsert({
-      id: data.user.id, email, full_name: fullName, role: 'visitor'
+      id: data.user.id, email, full_name: fullName,
+      role: (process.env.FLOWTIX_ADMIN_EMAIL || '').toLowerCase() === email ? 'admin' : 'visitor'
     }, { onConflict: 'id' });
     if (profileError) return res.status(500).json({ error: 'Аккаунт создан, но профиль не записан' });
   }
@@ -214,6 +216,10 @@ app.patch('/api/admin/users/:id/role', requireUser, allowRoles('admin'), asyncRo
   const { data, error } = await supabase.from('users').update({ role: req.body.role })
     .eq('id', req.params.id).select('id,email,full_name,role').single();
   if (error) return res.status(400).json({ error: 'Не удалось изменить роль' });
+  if (data.role === 'staff') {
+    const { data: employee } = await supabase.from('employees').select('id').eq('user_id', data.id).maybeSingle();
+    if (!employee) await supabase.from('employees').insert({ user_id: data.id, position: 'Сотрудник мероприятия' });
+  }
   res.json({ user: data });
 }));
 
