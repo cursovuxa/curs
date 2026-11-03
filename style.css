@@ -310,3 +310,49 @@ body.event-modal-open{overflow:hidden}
 .admin-switch-copy b{font-size:13px;color:var(--ink)}
 .admin-switch-copy small,.payment-provider-note{font-size:11px;line-height:1.55;color:var(--muted)}
 .payment-provider-note{margin:12px 0 0}
+
+
+/* Keep form controls legible against each theme's surface */
+body[data-theme] .form-grid input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+body[data-theme] .form-grid textarea,
+body[data-theme] .form-grid select,
+body[data-theme] .workspace input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+body[data-theme] .workspace textarea,
+body[data-theme] .workspace select,
+body[data-theme] .auth-dialog input:not([type="checkbox"]):not([type="radio"]) {
+  background-color:var(--surface)!important;
+  color:var(--ink)!important;
+  border-color:var(--line)!important;
+  -webkit-text-fill-color:var(--ink)!important;
+}
+body[data-theme] .form-grid input::placeholder,
+body[data-theme] .form-grid textarea::placeholder,
+body[data-theme] .workspace input::placeholder,
+body[data-theme] .workspace textarea::placeholder,
+body[data-theme] .auth-dialog input::placeholder {
+  color:var(--muted)!important;
+  opacity:1;
+}
+body[data-theme] .form-grid select option,
+body[data-theme] .workspace select option {
+  background-color:var(--surface);
+  color:var(--ink);
+}
+body[data-theme="dark"] .workspace input,
+body[data-theme="dark"] .workspace textarea,
+body[data-theme="dark"] .workspace select,
+body[data-theme="dark"] .auth-dialog input,
+body[data-theme="dark"] .form-grid input,
+body[data-theme="dark"] .form-grid textarea,
+body[data-theme="dark"] .form-grid select,
+body[data-theme="halloween"] .workspace input,
+body[data-theme="halloween"] .workspace textarea,
+body[data-theme="halloween"] .workspace select,
+body[data-theme="halloween"] .auth-dialog input,
+body[data-theme="halloween"] .form-grid input,
+body[data-theme="halloween"] .form-grid textarea,
+body[data-theme="halloween"] .form-grid select {color-scheme:dark}
+body[data-theme="rose"] .workspace select,
+body[data-theme="rose"] .form-grid select,
+body[data-theme="sky"] .workspace select,
+body[data-theme="sky"] .form-grid select {color-scheme:light}
