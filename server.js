@@ -499,7 +499,7 @@ app.get('/api/tickets/mine', requireUser, asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('tickets')
     .select('*,events(id,title,start_date,start_time,venues(name,city))')
     .eq('user_id', req.user.id).order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: 'Не удалось загрузить билеты' });
+  if (error) { console.error('[admin/tickets] query failed:', error.message); return res.status(500).json({ error: 'Не удалось загрузить билеты' }); }
   res.json({ tickets: data });
 }));
 app.post('/api/reviews', requireUser, asyncRoute(async (req, res) => {
@@ -782,7 +782,7 @@ app.patch('/api/admin/venues/:id', requireUser, requireRootAdmin, asyncRoute(asy
 }));
 app.get('/api/admin/tickets', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('tickets')
-    .select('id,ticket_number,status,price_paid,seat_label,created_at,event_id,user_id,events(title,start_date),users!tickets_user_id_fkey(full_name,email)')
+    .select('id,ticket_number,status,price_paid,seat_label,created_at,event_id,user_id,events!tickets_event_id_fkey(title,start_date),users!tickets_user_id_fkey(full_name,email)')
     .order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить билеты' });
   res.json({ tickets: data });
