@@ -121,6 +121,7 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   res.status(data.session ? 201 : 202).json({
     message: data.session ? 'Аккаунт создан' : 'Проверьте почту и подтвердите адрес для входа',
     accessToken: data.session?.access_token || null,
+    refreshToken: data.session?.refresh_token || null,
     user: data.user ? { id: data.user.id, email: data.user.email, fullName } : null
   });
 }));
@@ -134,7 +135,7 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
     .select('id,email,full_name,role,is_blocked').eq('id', data.user.id).maybeSingle();
   if (profileError) return res.status(500).json({ error: 'Не удалось загрузить профиль' });
   if (profile?.is_blocked) return res.status(403).json({ error: 'Аккаунт заблокирован' });
-  res.json({ accessToken: data.session.access_token, user: profile });
+  res.json({ accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: profile });
 }));
 app.get('/api/me', requireUser, asyncRoute(async (req, res) => {
   const profile = { ...req.user };
