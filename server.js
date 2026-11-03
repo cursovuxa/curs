@@ -351,7 +351,7 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
     description: String(item?.description || '').trim().slice(0, 2000)
   }));
   const completeProgram = program.filter((item) => item.title || item.start_time || item.end_time);
-  if (completeProgram.some((item) => !item.title || !/^\\d{2}:\\d{2}$/.test(item.start_time) || !/^\\d{2}:\\d{2}$/.test(item.end_time) || item.end_time <= item.start_time)) {
+  if (completeProgram.some((item) => !item.title || !/^\d{2}:\d{2}$/.test(item.start_time) || !/^\d{2}:\d{2}$/.test(item.end_time) || item.end_time <= item.start_time)) {
     return res.status(400).json({ error: 'У каждого пункта программы нужны название и корректное время начала и окончания' });
   }
   let eventAddress = String(location_address || '').trim().slice(0, 500);
