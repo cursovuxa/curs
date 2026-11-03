@@ -343,16 +343,32 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
   }
   if (rawProgram.length > 100) return res.status(400).json({ error: 'В программу можно добавить не более 100 пунктов' });
   const program = rawProgram.map((item) => ({
+    client_key: String(item?.client_key || '').trim().slice(0, 80),
+    parent_key: String(item?.parent_key || '').trim().slice(0, 80) || null,
+    item_type: item?.item_type === 'section' ? 'section' : 'activity',
     title: String(item?.title || '').trim().slice(0, 180),
     start_time: String(item?.start_time || '').trim(),
     end_time: String(item?.end_time || '').trim(),
+    duration_minutes: Number(item?.duration_minutes),
     speaker_name: String(item?.speaker_name || '').trim().slice(0, 160),
     room_name: String(item?.room_name || '').trim().slice(0, 120),
+    max_attendees: Number(item?.max_attendees),
     description: String(item?.description || '').trim().slice(0, 2000)
   }));
   const completeProgram = program.filter((item) => item.title || item.start_time || item.end_time);
-  if (completeProgram.some((item) => !item.title || !/^\d{2}:\d{2}$/.test(item.start_time) || !/^\d{2}:\d{2}$/.test(item.end_time) || item.end_time <= item.start_time)) {
-    return res.status(400).json({ error: 'У каждого пункта программы нужны название и корректное время начала и окончания' });
+  const programKeys = new Set();
+  for (const item of completeProgram) {
+    if (!item.client_key || programKeys.has(item.client_key)) return res.status(400).json({ error: 'В программе обнаружены повторяющиеся или пустые ключи элементов' });
+    programKeys.add(item.client_key);
+    if (!item.title || !/^\\d{2}:\\d{2}$/.test(item.start_time) || !/^\\d{2}:\\d{2}$/.test(item.end_time) ||
+        !Number.isInteger(item.duration_minutes) || item.duration_minutes < 1 || item.duration_minutes > 1440 ||
+        !Number.isInteger(item.max_attendees) || item.max_attendees < 1) {
+      return res.status(400).json({ error: 'Каждому пункту нужны название, время, длительность и положительный лимит участников' });
+    }
+    const startMinutes = Number(item.start_time.slice(0, 2)) * 60 + Number(item.start_time.slice(3, 5));
+    const endMinutes = (startMinutes + item.duration_minutes) % 1440;
+    const expectedEnd = String(Math.floor(endMinutes / 60)).padStart(2, '0') + ':' + String(endMinutes % 60).padStart(2, '0');
+    if (expectedEnd !== item.end_time) return res.status(400).json({ error: 'Время окончания должно соответствовать длительности пункта' });
   }
   let eventAddress = String(location_address || '').trim().slice(0, 500);
   if (venue_id) {
@@ -377,15 +393,37 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
     status: 'pending_moderation'
   }).select('*').single();
   if (error) return res.status(400).json({ error: 'Не удалось создать мероприятие' });
-  if (completeProgram.length) {
-    const { error: programError } = await supabase.from('event_program').insert(completeProgram.map((item) => ({ ...item, event_id: data.id })));
+  const insertedProgram = [];
+  const idsByKey = new Map();
+  const typesByKey = new Map();
+  for (const item of completeProgram) {
+    const parentId = item.parent_key ? idsByKey.get(item.parent_key) : null;
+    if (item.parent_key && !parentId) {
+      await supabase.from('events').delete().eq('id', data.id).eq('organizer_id', req.user.id);
+      return res.status(400).json({ error: 'Сначала создайте секцию перед вложенными элементами' });
+    }
+    if (item.parent_key && typesByKey.get(item.parent_key) !== 'section') {
+      await supabase.from('events').delete().eq('id', data.id).eq('organizer_id', req.user.id);
+      return res.status(400).json({ error: 'Вложить пункт можно только в секцию' });
+    }
+    if (item.item_type === 'section' && item.parent_key) {
+      await supabase.from('events').delete().eq('id', data.id).eq('organizer_id', req.user.id);
+      return res.status(400).json({ error: 'Секции размещаются на верхнем уровне программы' });
+    }
+    const { client_key, parent_key, ...values } = item;
+    const { data: savedItem, error: programError } = await supabase.from('event_program').insert({
+      ...values, event_id: data.id, parent_section_id: parentId
+    }).select('*').single();
     if (programError) {
       await supabase.from('events').delete().eq('id', data.id).eq('organizer_id', req.user.id);
       console.error('[events] program insert failed:', programError.message);
-      return res.status(400).json({ error: 'Не удалось сохранить программу. Мероприятие отменено, проверьте время пунктов.' });
+      return res.status(400).json({ error: 'Не удалось сохранить программу. Мероприятие отменено.' });
     }
+    insertedProgram.push(savedItem);
+    idsByKey.set(client_key, savedItem.id);
+    typesByKey.set(client_key, item.item_type);
   }
-  res.status(201).json({ event: data, program: completeProgram });
+  res.status(201).json({ event: data, program: insertedProgram });
 }));
 app.get('/api/organizer/events', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('events').select('*,venues(name,city,address),event_categories(name),event_program(*)')
@@ -859,8 +897,21 @@ app.post('/api/events/:eventId/program', requireUser, allowRoles('organizer','ad
   if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
   const { title, start_time, end_time, speaker_name, room_name, description } = req.body;
   if (!title || !start_time || !end_time) return res.status(400).json({ error: 'Заполните название и время пункта расписания' });
+  const startMinutes = Number(String(start_time).slice(0, 2)) * 60 + Number(String(start_time).slice(3, 5));
+  const endMinutes = Number(String(end_time).slice(0, 2)) * 60 + Number(String(end_time).slice(3, 5));
+  const duration = (endMinutes - startMinutes + 1440) % 1440;
+  if (!duration) return res.status(400).json({ error: 'Укажите длительность больше нуля' });
+  let parentId = null;
+  if (req.body.parent_section_id) {
+    const { data: parent } = await supabase.from('event_program').select('id,item_type')
+      .eq('id', req.body.parent_section_id).eq('event_id', event.id).maybeSingle();
+    if (!parent || parent.item_type !== 'section') return res.status(400).json({ error: 'Выберите секцию этого мероприятия' });
+    parentId = parent.id;
+  }
   const { data, error } = await supabase.from('event_program').insert({
-    event_id: event.id, title: String(title).slice(0,180), start_time, end_time,
+    event_id: event.id, parent_section_id: parentId, item_type: 'activity',
+    title: String(title).trim().slice(0,180), start_time, end_time, duration_minutes: duration,
+    max_attendees: Number.isInteger(Number(req.body.max_attendees)) && Number(req.body.max_attendees) > 0 ? Number(req.body.max_attendees) : 100,
     speaker_name: String(speaker_name || '').slice(0,160),
     room_name: String(room_name || '').slice(0,120),
     description: String(description || '').slice(0,2000)
