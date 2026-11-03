@@ -27,11 +27,7 @@ function toast(message) { const el = $('#toast'); el.textContent = message; el.c
 function empty(message = 'Когда появятся данные, они отобразятся в этом разделе.') { return '<div class="empty-state"><span class="empty-star">✳</span><h3>Пока здесь тихо</h3><p>'+esc(message)+'</p></div>'; }
 function setBusy(button, busy, text) { if (!button) return; button.disabled = busy; if (busy) { button.dataset.label = button.textContent; button.textContent = text || 'Сохраняем…'; } else if (button.dataset.label) button.textContent = button.dataset.label; }
 function signedIn() { return Boolean(user && sessionStorage.getItem(tokenKey)); }
-function authOpen(mode='login') {
-  $('#authModal').hidden=false;
-  setAuthMode(mode);
-  if(supabaseAuth)setupGoogleButton().catch((error)=>{$('#authError').textContent='Google-вход не загрузился: '+error.message});
-}
+function authOpen(mode='login') { $('#authModal').hidden=false; setAuthMode(mode); }
 function authClose() { $('#authModal').hidden=true; }
 function setAuthMode(mode) {
   const register=mode==='register';
