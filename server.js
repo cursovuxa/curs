@@ -578,13 +578,28 @@ app.post('/api/organizer/events/:eventId/notify', requireUser, allowRoles('organ
   res.json({ sent: ids.length });
 }));
 app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
-  const { data, error } = await supabase.from('users').select('id,email,full_name,role,is_blocked,created_at').order('created_at', { ascending: false }).limit(500);
-  if (error) return res.status(500).json({ error: 'Не удалось загрузить пользователей' });
-  res.json({ users: (data || []).map((row) => ({
-    ...row,
-    role: isRootEmail(row.email) ? 'admin' : (row.role === 'admin' ? 'visitor' : row.role),
-    is_blocked: isRootEmail(row.email) ? false : row.is_blocked
-  })) });
+  const { data: authResult, error: authError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 500 });
+  if (authError) return res.status(500).json({ error: 'Не удалось загрузить аккаунты Auth' });
+  const authUsers = authResult.users || [];
+  if (!authUsers.length) return res.json({ users: [] });
+  const { data: profiles, error } = await supabase.from('users')
+    .select('id,full_name,username,avatar_url,role,is_blocked,created_at')
+    .in('id', authUsers.map((account) => account.id));
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить профили пользователей' });
+  const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
+  const users = authUsers.map((account) => {
+    const profile = byId.get(account.id) || {};
+    const metadata = account.app_metadata || {};
+    const isRootAdmin = isRootEmail(account.email);
+    const role = isRootAdmin ? 'admin' : (validRoles.has(metadata.flowtix_role) && metadata.flowtix_role !== 'admin' ? metadata.flowtix_role : 'visitor');
+    return {
+      id: account.id, email: account.email, full_name: profile.full_name || account.user_metadata?.full_name || '',
+      username: profile.username || null, avatar_url: profile.avatar_url || null,
+      role, is_blocked: !isRootAdmin && metadata.flowtix_blocked === true,
+      created_at: account.created_at
+    };
+  }).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  res.json({ users });
 }));
 
 app.get('/api/admin/events', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
