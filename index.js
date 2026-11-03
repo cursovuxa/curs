@@ -1,4 +1,7 @@
 const API_BASE = 'https://cursa.onrender.com';
+const SUPABASE_URL = 'https://rpsvuygarxlnqpxtwuzq.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hIAivAUZ0fCx9KlHsj4YVg_kc2TkPzB';
+let supabaseAuth = null;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const tokenKey = 'flowtix_access_token';
@@ -175,7 +178,13 @@ document.addEventListener('submit',async(e)=>{
   if(e.target.id==='scanForm'){e.preventDefault();try{const x=await api('/api/staff/tickets/'+encodeURIComponent(new FormData(e.target).get('ticket'))+'/check-in',{method:'POST'});$('#scanResult').textContent='Вход отмечен · '+x.ticket.ticket_number;toast('Билет проверен')}catch(x){$('#scanResult').textContent=x.message}}
   if(e.target.id==='complaintForm'){e.preventDefault();if(!signedIn())return authOpen();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/complaints',{method:'POST',body:JSON.stringify({targetType:'event',targetId:d.targetId,reason:d.reason,details:d.details})});$('#eventModal').hidden=true;toast('Жалоба отправлена модератору')}catch(x){toast(x.message)}}
 });
-$('#authOpen').addEventListener('click',()=>{if(signedIn()){sessionStorage.removeItem(tokenKey);user=null;$('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';$('#workspaceNav').hidden=true;$('#workspace').hidden=true;renderEvents();toast('Вы вышли из аккаунта')}else authOpen()});
+$('#authOpen').addEventListener('click',async()=>{if(signedIn()){sessionStorage.removeItem(tokenKey);if(supabaseAuth)await supabaseAuth.auth.signOut();user=null;$('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';$('#workspaceNav').hidden=true;$('#workspace').hidden=true;renderEvents();toast('Вы вышли из аккаунта')}else authOpen()});
+$('#googleAuth').addEventListener('click',async()=>{
+  if(!supabaseAuth){$('#authError').textContent='Вход через Google пока недоступен. Проверьте подключение.';return}
+  const button=$('#googleAuth');setBusy(button,true,'Переходим к Google…');
+  const {error}=await supabaseAuth.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin,queryParams:{prompt:'select_account'}}});
+  if(error){$('#authError').textContent=error.message;setBusy(button,false)}
+});
 $$('[data-auth]').forEach(x=>x.addEventListener('click',()=>{ $$('#authForm [data-auth]').forEach(t=>t.classList.toggle('active',t===x));const reg=x.dataset.auth==='register';$('#nameWrap').hidden=!reg;$('#name').required=reg;$('#authSubmit').textContent=reg?'Создать аккаунт':'Войти в FlowTix';$('#authTitle').textContent=reg?'Создать аккаунт':'С возвращением';$('#authError').textContent=''}));
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
@@ -184,5 +193,14 @@ $('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
 $('#cityInput').addEventListener('change',loadEvents);
 $('#footerYear').textContent=new Date().getFullYear();
-async function init(){await Promise.all([loadSession(),loadCategories()]);await loadEvents()}
+async function init(){
+  try {
+    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');
+    supabaseAuth=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',detectSessionInUrl:true}});
+    const {data:{session}}=await supabaseAuth.auth.getSession();
+    if(session?.access_token)sessionStorage.setItem(tokenKey,session.access_token);
+  } catch(error) { console.error('Supabase Auth init failed:',error); }
+  await Promise.all([loadSession(),loadCategories()]);
+  await loadEvents();
+}
 init();
