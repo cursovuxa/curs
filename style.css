@@ -137,3 +137,45 @@ body[data-theme="halloween"] .theme-picker-icon{color:#ff9c44}
 body[data-theme="halloween"] .settings-intro{background:linear-gradient(145deg,#351a32,#211724)}
 body[data-theme="halloween"] .settings-theme{background:#281b2a}
 @media(max-width:760px){.settings-layout{grid-template-columns:1fr}.settings-theme{align-items:flex-start;flex-direction:column}.settings-theme .theme-select{width:100%;max-width:240px}}
+
+
+/* Account avatar menu */
+.account-actions{position:relative}
+.profile-menu{position:relative}
+.profile-trigger{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:999px;padding:5px 11px 5px 5px;background:var(--surface);color:var(--ink);cursor:pointer;transition:border-color .18s,box-shadow .18s}
+.profile-trigger:hover,.profile-trigger[aria-expanded="true"]{border-color:var(--violet);box-shadow:0 5px 18px #191a2b12}
+.profile-avatar{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;overflow:hidden;border-radius:50%;background:linear-gradient(140deg,var(--violet),var(--coral));color:#fff;font:800 15px Manrope,sans-serif}
+.profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-trigger-copy{display:grid;gap:2px;text-align:left;max-width:132px}
+.profile-trigger-copy strong{font-size:12px;max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-trigger-copy small,.profile-identity small{color:var(--muted);font-size:10px}
+.profile-chevron{width:7px;height:7px;margin-left:4px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(45deg) translateY(-2px)}
+.profile-dropdown{position:absolute;right:0;top:calc(100% + 11px);z-index:60;width:258px;padding:9px;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);box-shadow:0 20px 60px #1113222e}
+.profile-dropdown[hidden]{display:none!important}
+.profile-identity{display:flex;align-items:center;gap:11px;padding:10px 10px 14px;border-bottom:1px solid var(--line);margin-bottom:7px}
+.profile-identity>span:last-child{display:grid;gap:4px;min-width:0}
+.profile-identity strong{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.profile-dropdown button[role="menuitem"]{display:flex;align-items:center;gap:10px;width:100%;padding:11px 10px;border:0;border-radius:11px;background:transparent;color:var(--ink);text-align:left;font-size:12px;font-weight:700;cursor:pointer}
+.profile-dropdown button[role="menuitem"]:hover{background:color-mix(in srgb,var(--violet) 11%,var(--surface))}
+.profile-dropdown [data-account-action="profile"]::before{content:"◉"}
+.profile-dropdown [data-account-action="workspace"]::before{content:"▤"}
+.profile-dropdown [data-account-action="settings"]::before{content:"⚙"}
+.profile-dropdown .profile-menu-divider{height:1px;background:var(--line);margin:6px 4px}
+.profile-dropdown button.profile-logout{color:#d34d60}
+.avatar-editor{display:flex;align-items:center;gap:16px;padding:17px;border:1px solid var(--line);border-radius:15px;background:var(--paper)}
+.profile-avatar-large{width:76px;height:76px;flex-basis:76px;font-size:26px}
+.avatar-copy{display:flex;align-items:center;gap:4px;flex-direction:column;align-items:flex-start}
+.avatar-copy b{font-size:13px}
+.avatar-copy p{margin:1px 0 7px;color:var(--muted);font-size:11px}
+.avatar-upload-button{position:relative;padding:8px 12px;font-size:11px;cursor:pointer}
+.avatar-upload-button input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.settings-form label small{color:var(--muted);font-size:10px;font-weight:500}
+body[data-theme="halloween"] .profile-dropdown{background:#211724;border-color:#553346}
+body[data-theme="halloween"] .profile-trigger{background:#211724;border-color:#553346;color:var(--ink)}
+body[data-theme="halloween"] .profile-dropdown button[role="menuitem"]:hover{background:#382236}
+body[data-theme="halloween"] .avatar-editor{background:#281b2a}
+@media(max-width:700px){
+  .profile-trigger{padding:4px;border:0;background:transparent}
+  .profile-trigger-copy,.profile-chevron{display:none}
+  .profile-dropdown{right:0}
+}
