@@ -2198,3 +2198,50 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+
+const flowTixRequest = async (path, options = {}) => {
+  const token = sessionStorage.getItem('flowtix_access_token');
+  const response = await fetch(API_BASE + path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(options.headers || {}) }
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'Запрос не выполнен');
+  return result;
+};
+
+// Favorites and free registrations are persisted by the backend, never simulated in browser state.
+window.toggleFavorite = async (eventId) => {
+  if (!sessionStorage.getItem('flowtix_access_token')) {
+    document.getElementById('authModal').style.display = 'flex';
+    showToast('Войдите, чтобы сохранить избранное', 'info');
+    return;
+  }
+  const exists = APP_STATE.currentUser.favorites.includes(eventId);
+  try {
+    await flowTixRequest('/api/favorites/' + encodeURIComponent(eventId), { method: exists ? 'DELETE' : 'POST' });
+    APP_STATE.currentUser.favorites = exists
+      ? APP_STATE.currentUser.favorites.filter((id) => id !== eventId)
+      : [...APP_STATE.currentUser.favorites, eventId];
+    const badge = document.getElementById('favCount');
+    if (badge) badge.textContent = APP_STATE.currentUser.favorites.length;
+    renderEvents();
+  } catch (error) { showToast(error.message, 'error'); }
+};
+
+window.selectAndBookEvent = async (eventId) => {
+  if (!sessionStorage.getItem('flowtix_access_token')) {
+    document.getElementById('authModal').style.display = 'flex';
+    showToast('Войдите, чтобы зарегистрироваться', 'info');
+    return;
+  }
+  try {
+    const result = await flowTixRequest('/api/registrations', {
+      method: 'POST', body: JSON.stringify({ eventId })
+    });
+    showToast('Регистрация оформлена. Билет ' + result.ticket.ticket_number, 'success');
+    APP_STATE.myTickets.unshift({ id: result.ticket.ticket_number, status: 'valid', eventId });
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+};
