@@ -158,6 +158,22 @@ function openEvent(id) {
     $('#eventModal').hidden=false;
   }).catch(e=>toast(e.message));
 }
+function renderEventPreview(e) {
+ const location=[e.venues?.city,e.venues?.name,e.location_address||e.venues?.address].filter(Boolean).join(', ');
+ const image=e.cover_image||'';
+ $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">ПРЕДПРОСМОТР · '+esc(eventStatusLabel(e.status||'draft'))+'</p><h2>'+esc(e.title||'Название мероприятия')+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · ')||'Дата и время не указаны')+'</b>'+(location?' · '+esc(location):'')+'</p><p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.base_price))+' · Вместимость: '+esc(e.total_seats||'—')+'</p><p class="preview-note">Предпросмотр виден только организатору. Событие появится в каталоге после модерации.</p></div>';
+ $('#eventModal').hidden=false;
+}
+function openOrganizerPreview(id) {
+ const event=organizerEvents.find(item=>String(item.id)===String(id));
+ if(event)renderEventPreview(event);
+}
+function previewNewEvent(form) {
+ if(!form.reportValidity())return;
+ const data=Object.fromEntries(new FormData(form)), select=form.querySelector('[data-venue-select]'), option=select?.selectedOptions[0];
+ const cover=form.querySelector('#createCoverPreview img')?.src||'';
+ renderEventPreview({...data,status:'draft',base_price:Number(data.base_price||0),total_seats:Number(data.total_seats||0),cover_image:cover,event_categories:categories.find(c=>String(c.id)===String(data.category_id)),venues:option?.value?{name:option.textContent.split(' · ')[0],address:option.dataset.address||''}:null});
+}
 async function register(id) {
   if(!signedIn())return authOpen();
   try { const result=await api('/api/registrations',{method:'POST',body:JSON.stringify({eventId:id})}); toast('Готово! Билет '+result.ticket.ticket_number); await loadEvents(); }
@@ -404,7 +420,7 @@ async function adminView() {
       ?'<span class="role-picker-root">'+roleIcons.admin+'<span>Главный администратор</span></span>'
       :'<div class="role-picker" data-role-picker><button class="role-picker-trigger" type="button" data-role-picker-toggle aria-label="Выбрать роль" aria-haspopup="listbox" aria-expanded="false">'+(roleIcons[current]||roleIcons.visitor)+'<span>'+(roles[current]||'Посетитель')+'</span><svg class="role-picker-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="role-picker-menu" role="listbox" aria-label="Роль пользователя" hidden>'+Object.entries(roles).map(([role,label])=>'<button class="role-picker-option" type="button" role="option" aria-selected="'+(role===current)+'" data-role-picker-option data-role-user="'+esc(id)+'" data-role="'+role+'">'+roleIcons[role]+'<span>'+label+'</span>'+(role===current?'<svg class="role-picker-check" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3.5 8.3 3 3 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':'')+'</button>').join('')+'</div></div>';
     const userRows=(users.users||[]).map(x=>'<tr><td>'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></td><td>'+rolePicker(x.id,x.role)+'</td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>').join('');
-    const eventRows=(events.events||[]).map(x=>'<tr><td>'+esc(x.title)+'<br><small>'+esc(x.users?.email||'')+'</small></td><td>'+esc(x.start_date||'')+'</td><td><select data-event-status="'+esc(x.id)+'">'+['pending_moderation','published','rejected','cancelled','completed'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td><td>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</td></tr>').join('');
+    const eventRows=(events.events||[]).map(x=>'<tr><td>'+esc(x.title)+'<br><small>'+esc(x.users?.email||'')+'</small></td><td>'+esc(x.start_date||'')+'</td><td><select data-event-status="'+esc(x.id)+'">'+['draft','pending_moderation','published','rejected','cancelled','completed'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+esc(eventStatusLabel(s))+'</option>').join('')+'</select></td><td>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</td></tr>').join('');
     const venueRows=(venues.venues||[]).map(v=>'<details class="workspace-row"><summary><b>'+esc(v.name)+'</b> · '+esc(v.city)+'</summary><form data-admin-venue="'+esc(v.id)+'" class="form-grid"><label>Название<input name="name" value="'+esc(v.name)+'" required></label><label>Город<input name="city" value="'+esc(v.city)+'" required></label><label class="wide">Адрес<input name="address" value="'+esc(v.address)+'" required></label><label class="wide">Описание<textarea name="description">'+esc(v.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить</button></form></details>').join('');
     const ticketRows=(tickets.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.email||'')+'</small></td><td>'+esc(t.status)+'</td><td>'+esc(money(t.price_paid))+'</td><td>'+(t.status==='valid'?'<button class="button button-danger button-small" data-cancel-ticket="'+esc(t.id)+'">Аннулировать</button>':'—')+'</td></tr>').join('');
     const paymentRows=(payments.payments||[]).map(p=>'<tr><td>'+esc(new Date(p.created_at).toLocaleString('ru'))+'</td><td>'+esc(p.users?.email||'—')+'</td><td>'+esc(p.tickets?.events?.title||p.tickets?.ticket_number||'—')+'</td><td>'+esc(money(p.amount))+'</td><td>'+esc(p.status)+' · '+esc(p.payment_method||'—')+'</td></tr>').join('');
@@ -488,6 +504,8 @@ document.addEventListener('click',async(e)=>{
   });
   const fav=e.target.closest('[data-favorite]');if(fav)return toggleFavorite(fav.dataset.favorite);
   const detail=e.target.closest('[data-details]');if(detail)return openEvent(detail.dataset.details);
+  const organizerPreview=e.target.closest('[data-organizer-preview]');if(organizerPreview)return openOrganizerPreview(organizerPreview.dataset.organizerPreview);
+  if(e.target.closest('[data-preview-create-event]'))return previewNewEvent($('#createEventForm'));
   const reg=e.target.closest('[data-register]');if(reg)return register(reg.dataset.register);
   const close=e.target.closest('[data-close]');if(close){$('#'+close.dataset.close).hidden=true;return}
   const report=e.target.closest('[data-report]');if(report){$('#reportForm').innerHTML='<form id="complaintForm" class="form-grid"><input type="hidden" name="targetId" value="'+esc(report.dataset.report)+'"><label>Причина<input name="reason" required></label><label class="wide">Подробности<textarea name="details" required></textarea></label><button class="button button-dark">Отправить жалобу</button></form>';return}
@@ -497,6 +515,18 @@ document.addEventListener('click',async(e)=>{
 });
 document.addEventListener('change',async(e)=>{
   if(e.target.id==='avatarInput')return uploadProfileAvatar(e.target);
+  if(e.target.matches('[data-venue-select]')){
+    const address=e.target.selectedOptions[0]?.dataset.address||'', field=e.target.form?.querySelector('[data-event-address]');
+    if(field&&address)field.value=address;
+  }
+  if(e.target.id==='eventCoverInput'||e.target.matches('[data-event-cover-file]')){
+    const file=e.target.files?.[0];if(!file)return;
+    if(!/^image\/(?:jpeg|png|webp)$/.test(file.type)){toast('Выберите изображение JPG, PNG или WebP');e.target.value='';return}
+    if(e.target.id==='eventCoverInput'){
+      const preview=$('#createCoverPreview');preview.hidden=false;
+      preview.innerHTML='<img src="'+URL.createObjectURL(file)+'" alt="Предпросмотр обложки"><span>'+esc(file.name)+'</span>';
+    }else toast('Обложка выбрана. Она загрузится при сохранении мероприятия.');
+  }
   if(e.target.matches('[data-category]')){activeCategory=e.target.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===e.target));renderEvents()}
   if(e.target.matches('[data-complaint]')){try{await api('/api/moderation/complaints/'+e.target.dataset.complaint,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус жалобы обновлён')}catch(x){toast(x.message)}}
 });
@@ -508,8 +538,8 @@ document.addEventListener('submit',async(e)=>{
   }
   if(e.target.id==='profileSettingsForm'){e.preventDefault();const button=e.target.querySelector('[type="submit"]');setBusy(button,true,'Сохраняем профиль…');try{const data=Object.fromEntries(new FormData(e.target));const result=await api('/api/me/profile',{method:'PATCH',body:JSON.stringify(data)});user={...user,...result.user};renderAccountMenu();toast('Профиль сохранён')}catch(error){toast(error.message)}finally{setBusy(button,false)}}
   if(e.target.id==='reviewForm'){e.preventDefault();try{await api('/api/reviews',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Спасибо за отзыв');visitorView()}catch(x){toast(x.message)}}
-  if(e.target.matches('[data-event-edit]')){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.base_price=Number(data.base_price||0);try{await api('/api/events/'+e.target.dataset.eventEdit,{method:'PATCH',body:JSON.stringify(data)});toast('Мероприятие обновлено');organizerView()}catch(x){toast(x.message)}}
-  if(e.target.id==='createEventForm'){e.preventDefault();const body=Object.fromEntries(new FormData(e.target));body.total_seats=Number(body.total_seats);body.base_price=Number(body.base_price||0);try{await api('/api/events',{method:'POST',body:JSON.stringify(body)});toast('Мероприятие отправлено модератору');organizerView()}catch(x){toast(x.message)}}
+  if(e.target.matches('[data-event-edit]')){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.base_price=Number(data.base_price||0);try{const file=e.target.querySelector('[data-event-cover-file]')?.files?.[0];if(file)data.cover_image=await uploadEventCover(file);await api('/api/events/'+e.target.dataset.eventEdit,{method:'PATCH',body:JSON.stringify(data)});toast('Мероприятие обновлено');organizerView()}catch(x){toast(x.message)}}
+  if(e.target.id==='createEventForm'){e.preventDefault();const body=Object.fromEntries(new FormData(e.target));body.total_seats=Number(body.total_seats);body.base_price=Number(body.base_price||0);try{const file=e.target.querySelector('#eventCoverInput')?.files?.[0];if(file)body.cover_image=await uploadEventCover(file);await api('/api/events',{method:'POST',body:JSON.stringify(body)});toast('Мероприятие отправлено на модерацию');organizerView()}catch(x){toast(x.message)}}
   if(e.target.id==='createVenueForm'){e.preventDefault();try{await api('/api/venues',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Площадка добавлена');organizerView()}catch(x){toast(x.message)}}
   if(e.target.matches('.program-form')){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/events/'+e.target.dataset.event+'/program',{method:'POST',body:JSON.stringify(d)});toast('Расписание обновлено');}catch(x){toast(x.message)}}
   if(e.target.matches('.assign-form')){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/organizer/events/'+e.target.dataset.event+'/staff',{method:'POST',body:JSON.stringify(d)});toast('Сотрудник назначен');}catch(x){toast(x.message)}}
