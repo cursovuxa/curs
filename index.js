@@ -189,7 +189,7 @@ document.addEventListener('submit',async(e)=>{
 });
 $('#authOpen').addEventListener('click',async()=>{if(signedIn()){sessionStorage.removeItem(tokenKey);if(supabaseAuth)await supabaseAuth.auth.signOut();user=null;$('#accountName').textContent='Гость';$('#authOpen').textContent='Войти';$('#workspaceNav').hidden=true;$('#workspace').hidden=true;renderEvents();toast('Вы вышли из аккаунта')}else authOpen()});
 
-$('[data-auth]').forEach(x=>x.addEventListener('click',()=>setAuthMode(x.dataset.auth)));
+$$('[data-auth]').forEach(x=>x.addEventListener('click',()=>setAuthMode(x.dataset.auth)));
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
 $('#workspaceRefresh').addEventListener('click',showWorkspace);
