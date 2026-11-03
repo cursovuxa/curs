@@ -167,6 +167,7 @@ function renderMap(source,preferredId=null) {
   root.innerHTML='<div class="map-frame"><iframe title="Карта: '+esc(selected.title)+'" src="https://maps.google.com/maps?q='+encoded+'&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe><a class="map-open-link" href="https://www.google.com/maps/search/?api=1&query='+encoded+'" target="_blank" rel="noopener noreferrer">Открыть в Картах ↗</a></div><div class="map-event-list">'+cards+'</div>';
 }
 function renderEvents() {
+  if(ACCOUNT_ROUTE)return;
   const query=$('#searchInput').value.trim().toLocaleLowerCase('ru');
   const city=$('#cityInput').value.trim().toLocaleLowerCase('ru');
   const today=localDateKey(new Date());
@@ -793,7 +794,7 @@ async function init(){
     $('#authError').textContent='Не удалось загрузить Google-вход: '+(error.message||'попробуй снова');
   }
   const [hasSession]=await Promise.all([loadSession(),loadCategories()]);
-  await loadEvents();
+  if(!ACCOUNT_ROUTE)await loadEvents();
   if(ACCOUNT_ROUTE){if(hasSession)renderAccountRoute();else authOpen('login')}
 }
 init();
