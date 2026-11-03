@@ -487,11 +487,14 @@ async function adminRoute(){
 async function adminView() {
   const root=$('#workspaceContent');
   try{
+    const loadAdminSection=async(path)=>{try{return await api(path)}catch(error){return {error:error.message}}};
     const [stats,users,logs,events,venues,tickets,payments,complaints,reviews,settings]=await Promise.all([
-      api('/api/admin/statistics'),api('/api/admin/users'),api('/api/admin/audit-logs'),api('/api/admin/events'),
-      api('/api/admin/venues'),api('/api/admin/tickets'),api('/api/admin/payments'),api('/api/admin/complaints'),
-      api('/api/admin/reviews'),api('/api/admin/settings')
+      loadAdminSection('/api/admin/statistics'),loadAdminSection('/api/admin/users'),loadAdminSection('/api/admin/audit-logs'),loadAdminSection('/api/admin/events'),
+      loadAdminSection('/api/admin/venues'),loadAdminSection('/api/admin/tickets'),loadAdminSection('/api/admin/payments'),loadAdminSection('/api/admin/complaints'),
+      loadAdminSection('/api/admin/reviews'),loadAdminSection('/api/admin/settings')
     ]);
+    const loadErrors=[stats,users,logs,events,venues,tickets,payments,complaints,reviews,settings].filter(x=>x.error).map(x=>esc(x.error));
+    const loadWarning=loadErrors.length?'<div class="connection-state">Часть разделов не загрузилась: '+loadErrors.join(' · ')+'</div>':'';
     const roles={visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник',moderator:'Модератор'};
     const roleIcons={
       visitor:'<svg class="role-picker-icon" data-role="visitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>',
@@ -518,7 +521,7 @@ async function adminView() {
       users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody>'+userRows+'</tbody></table></div></div>',
       events:'<div class="workspace-card"><h3>Мероприятия</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Мероприятие / организатор</th><th>Дата</th><th>Статус</th><th>Места</th></tr></thead><tbody>'+eventRows+'</tbody></table></div></div>',
       venues:'<div class="workspace-card"><h3>Площадки</h3>'+(venueRows||empty('Площадок пока нет.'))+'</div>',
-      tickets:'<div class="workspace-card"><h3>Билеты</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Номер</th><th>Событие / владелец</th><th>Статус</th><th>Цена</th><th></th></tr></thead><tbody>'+ticketRows+'</tbody></table></div></div>',
+      tickets:'<div class="workspace-card"><h3>Билеты</h3>'+(tickets.error?'<p class="connection-state">'+esc(tickets.error)+'</p>':'<div class="scroll-table"><table class="data-table"><thead><tr><th>Номер</th><th>Событие / владелец</th><th>Статус</th><th>Цена</th><th></th></tr></thead><tbody>'+ticketRows+'</tbody></table></div>')+'</div>',
       payments:'<div class="workspace-card"><h3>Платежи</h3><p>Платёжные записи для сверки. Статус не меняется вручную без платёжного провайдера.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Дата</th><th>Аккаунт</th><th>Билет</th><th>Сумма</th><th>Статус</th></tr></thead><tbody>'+paymentRows+'</tbody></table></div></div>',
       complaints:'<div class="workspace-card"><h3>Жалобы</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Обращение</th><th>Автор</th><th>Статус</th></tr></thead><tbody>'+complaintRows+'</tbody></table></div></div>',
       reviews:'<div class="workspace-card"><h3>Отзывы</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Событие</th><th>Автор</th><th>Оценка</th><th>Текст</th><th></th></tr></thead><tbody>'+reviewRows+'</tbody></table></div></div>',
@@ -526,7 +529,7 @@ async function adminView() {
       logs:'<div class="workspace-card"><h3>Журнал действий</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th></tr></thead><tbody>'+logsHtml+'</tbody></table></div></div>'
     };
     const tabs=Object.entries({users:'Аккаунты',events:'Мероприятия',venues:'Площадки',tickets:'Билеты',payments:'Платежи',complaints:'Жалобы',reviews:'Отзывы',settings:'Настройки',logs:'Журнал'});
-    root.innerHTML='<div class="stats-grid">'+[['Пользователи',stats.users],['Мероприятия',stats.events],['Билеты',stats.tickets],['Выручка',money(stats.revenue)],['Открытые жалобы',stats.openComplaints]].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div id="adminTabs" class="category-bar">'+tabs.map(([key,label],i)=>'<button type="button" class="category '+(!i?'active':'')+'" data-admin-tab="'+key+'">'+label+'</button>').join('')+'</div><div id="adminPanel">'+panels.users+'</div>';
+    root.innerHTML=loadWarning+='<div class="stats-grid">'+[['Пользователи',stats.users??'—'],['Мероприятия',stats.events??'—'],['Билеты',stats.tickets??'—'],['Выручка',stats.error?'—':money(stats.revenue)],['Открытые жалобы',stats.openComplaints??'—']].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div id="adminTabs" class="category-bar">'+tabs.map(([key,label],i)=>'<button type="button" class="category '+(!i?'active':'')+'" data-admin-tab="'+key+'">'+label+'</button>').join('')+'</div><div id="adminPanel">'+panels.users+'</div>';
     const panel=$('#adminPanel',root);
     $('#adminTabs',root).onclick=(e)=>{const b=e.target.closest('[data-admin-tab]');if(!b)return;$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===b));panel.innerHTML=panels[b.dataset.adminTab]||''};
     root.onchange=async(e)=>{
