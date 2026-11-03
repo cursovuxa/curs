@@ -27,10 +27,10 @@ app.get('/api/events', async (req, res) => {
   const term = String(req.query.q || '').trim().slice(0, 100);
   const city = String(req.query.city || '').trim().slice(0, 100);
   let query = supabase.from('events')
-    .select('id,title,description,cover_image,start_date,start_time,end_time,base_price,current_price,total_seats,available_seats,status,city,venue_id,category_id,event_categories(name),venues(name,address,city)')
+    .select('id,title,description,cover_image,start_date,start_time,end_time,base_price,current_price,total_seats,available_seats,status,venue_id,category_id,event_categories(name),venues(name,address,city)')
     .eq('status', 'published').order('start_date', { ascending: true });
   if (term) query = query.ilike('title', '%' + term.replace(/[,%()]/g, '') + '%');
-  if (city) query = query.ilike('city', city);
+  if (city) query = query.ilike('venues.city', city);
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
   res.json({ events: data });
@@ -46,5 +46,8 @@ app.get('/api/events/:id', async (req, res) => {
   res.json({ event: data });
 });
 
-app.get('*', (_req, res) => res.sendFile(path.join(root, 'index.html')));
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api/')) return next();
+  res.sendFile(path.join(root, 'index.html'));
+});
 app.listen(port, '0.0.0.0', () => console.log('EventHub server listening on ' + port));
