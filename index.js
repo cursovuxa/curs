@@ -42,7 +42,6 @@ function renderAccountMenu(){
   $('#authOpen').hidden=active;
   $('#profileMenuWrap').hidden=!active;
   $('#workspaceNav').hidden=!active;
-  $('#settingsOpen').hidden=true;
   if(!active)return;
   const displayName=user.full_name||user.email||'Участник FlowTix';
   const handle=user.username||String(user.email||'user').split('@')[0];
@@ -322,7 +321,6 @@ $('#authOpen').addEventListener('click',()=>authOpen());
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
 $('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
 $('#workspaceRefresh').addEventListener('click',showWorkspace);
-$('#settingsOpen').addEventListener('click',showSettings);
 const themeKey='flowtix_theme';
 const themeNames={rose:'Розовая',sky:'Голубая',dark:'Тёмная',halloween:'Хэллоуин'};
 const allowedThemes=Object.keys(themeNames);
