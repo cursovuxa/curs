@@ -1011,3 +1011,79 @@ body {
     margin: 0 auto;
   }
 }
+
+/* FlowTix visual refresh */
+:root {
+  --primary: #6554e8;
+  --primary-hover: #5142ce;
+  --primary-light: #efedff;
+  --primary-text: #352883;
+  --accent: #18a6a1;
+}
+body {
+  background: #f5f6fb;
+  color: #202338;
+}
+.header-top {
+  background: rgba(255,255,255,.94);
+  border-bottom: 1px solid #e7e8f1;
+  box-shadow: 0 8px 30px rgba(32,35,56,.06);
+}
+.header-container, .nav-tabs-container, .main-content {
+  max-width: 1320px;
+}
+.logo-badge {
+  border-radius: 15px;
+  background: linear-gradient(140deg,#7667f2,#4e43c6);
+  box-shadow: 0 8px 18px rgba(101,84,232,.25);
+}
+.logo-title h1 { letter-spacing: -.045em; }
+.logo-subtitle { color: #777b92; }
+.nav-tabs-bar {
+  background: #fff;
+  border-bottom: 1px solid #e7e8f1;
+}
+.tab-btn {
+  border-radius: 12px 12px 0 0;
+  font-weight: 650;
+}
+.hero-box {
+  border-radius: 26px;
+  padding: clamp(2rem,5vw,4rem);
+  background:
+    radial-gradient(ellipse at 86% 2%,rgba(28,198,183,.25),transparent 34%),
+    linear-gradient(125deg,#242044 0%,#5141bf 57%,#7065ea 100%);
+  box-shadow: 0 24px 60px rgba(54,44,128,.2);
+  overflow: hidden;
+}
+.hero-title { max-width: 780px; font-size: clamp(2rem,4vw,3.5rem); line-height: 1.08; letter-spacing:-.045em; }
+.hero-desc { max-width: 680px; color: rgba(255,255,255,.78); line-height: 1.65; }
+.search-widget {
+  margin-top: 2rem;
+  padding: .75rem;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 18px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 16px 40px rgba(16,15,42,.18);
+}
+.search-input, .search-select {
+  border-color: #e5e6ef;
+  border-radius: 12px;
+}
+.search-widget .btn { border-radius: 12px; }
+.card, .event-card {
+  border: 1px solid #e8e9f1;
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(32,35,56,.055);
+}
+.event-card { overflow:hidden; transition: transform .2s ease, box-shadow .2s ease; }
+.event-card:hover { transform: translateY(-4px); box-shadow: 0 18px 38px rgba(32,35,56,.12); }
+.event-card-img { min-height: 210px; object-fit: cover; }
+.btn { border-radius: 11px; font-weight: 650; transition: transform .15s ease, box-shadow .15s ease; }
+.btn-primary { box-shadow: 0 5px 14px rgba(101,84,232,.2); }
+.btn:hover { transform: translateY(-1px); }
+.category-pill { border-radius: 999px; }
+@media (max-width: 768px) {
+  .hero-box { border-radius: 20px; }
+  .search-widget { border-radius: 16px; }
+}
