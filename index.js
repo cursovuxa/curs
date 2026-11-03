@@ -2071,7 +2071,13 @@ document.addEventListener('DOMContentLoaded', () => {
       renderEvents();
       renderPersonalRecommendation();
     })
-    .catch((error) => console.error('Не удалось загрузить каталог из базы:', error));
+    .catch((error) => {
+      console.error('Не удалось загрузить каталог из базы:', error);
+      APP_STATE.events = [];
+      renderEvents();
+      const count = document.getElementById('eventsFoundCount');
+      if (count) count.textContent = 'Нет соединения с сервером';
+    });
 });
 
 // Simple Calendar Renderer
@@ -2116,3 +2122,79 @@ function renderCalendar() {
 
   grid.innerHTML = html;
 }
+
+
+// FlowTix account actions use Supabase Auth through the Render API.
+document.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('authModal');
+  const form = document.getElementById('authForm');
+  const open = document.getElementById('btnAuthToggle');
+  const close = document.getElementById('btnAuthClose');
+  const nameLabel = document.getElementById('authNameLabel');
+  const nameInput = document.getElementById('authName');
+  const message = document.getElementById('authMessage');
+  const submit = document.getElementById('authSubmit');
+  let mode = 'login';
+  const tokenKey = 'flowtix_access_token';
+
+  const setMode = (value) => {
+    mode = value;
+    document.querySelectorAll('[data-auth-mode]').forEach((tab) => tab.classList.toggle('active', tab.dataset.authMode === mode));
+    nameLabel.hidden = mode !== 'register';
+    nameInput.required = mode === 'register';
+    submit.textContent = mode === 'register' ? 'Создать аккаунт' : 'Войти';
+    document.getElementById('authTitle').textContent = mode === 'register' ? 'Создать аккаунт' : 'Войти в FlowTix';
+    message.textContent = '';
+  };
+  open?.addEventListener('click', () => {
+    if (sessionStorage.getItem(tokenKey)) {
+      sessionStorage.removeItem(tokenKey);
+      APP_STATE.currentUser = { id: null, name: 'Гость', email: '', role: 'visitor', favorites: [] };
+      document.getElementById('signedInName').textContent = 'Гость';
+      open.textContent = 'Войти';
+      renderEvents();
+      return;
+    }
+    modal.style.display = 'flex';
+  });
+  close?.addEventListener('click', () => modal.style.display = 'none');
+  modal?.addEventListener('click', (event) => { if (event.target === modal) modal.style.display = 'none'; });
+  document.querySelectorAll('[data-auth-mode]').forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.authMode)));
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    message.textContent = 'Подключаемся к серверу…';
+    try {
+      const response = await fetch(API_BASE + '/api/auth/' + mode, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: nameInput.value.trim(),
+          email: document.getElementById('authEmail').value.trim(),
+          password: document.getElementById('authPassword').value
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Не удалось войти');
+      if (!result.accessToken) {
+        message.textContent = result.message || 'Проверьте почту и подтвердите адрес.';
+        return;
+      }
+      sessionStorage.setItem(tokenKey, result.accessToken);
+      const current = await fetch(API_BASE + '/api/me', { headers: { Authorization: 'Bearer ' + result.accessToken } });
+      const account = await current.json();
+      if (!current.ok) throw new Error(account.error || 'Не удалось загрузить профиль');
+      APP_STATE.currentUser = { id: account.user.id, name: account.user.full_name, email: account.user.email, role: account.user.role, favorites: [] };
+      APP_STATE.currentRole = account.user.role;
+      document.getElementById('signedInName').textContent = account.user.full_name || account.user.email;
+      open.textContent = 'Выйти';
+      modal.style.display = 'none';
+      renderEvents();
+      showToast('Вы вошли в FlowTix', 'success');
+    } catch (error) {
+      message.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+});
+
