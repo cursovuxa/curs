@@ -71,7 +71,7 @@ app.get('/api/events', async (req, res) => {
   const term = String(req.query.q || '').trim().slice(0, 100);
   const city = String(req.query.city || '').trim().slice(0, 100);
   let query = supabase.from('events')
-    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,base_price,current_price,total_seats,available_seats,status,age_limit,dynamic_pricing_enabled,popularity_score,venue_id,category_id,event_categories(name),venues(name,address,city),event_program(*)')
+    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,dynamic_pricing_enabled,popularity_score,venue_id,category_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*)')
     .eq('status', 'published').order('start_date', { ascending: true });
   if (term) query = query.ilike('title', '%' + term.replace(/[,%()]/g, '') + '%');
   if (city) query = query.ilike('venues.city', city);
