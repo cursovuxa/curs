@@ -471,7 +471,8 @@ async function adminView() {
   }catch(error){root.innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(error.message)+'</p></div>'}
 }
 document.addEventListener('click',async(e)=>{
-  if(e.target.id==='eventModal'){setEventModalOpen(false);return}\n  const profileToggle=e.target.closest('#profileMenuToggle');
+  if(e.target.id==='eventModal'){setEventModalOpen(false);return}
+  const profileToggle=e.target.closest('#profileMenuToggle');
   if(profileToggle){
     const menu=$('#profileDropdown');
     menu.hidden=!menu.hidden;
