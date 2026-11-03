@@ -151,18 +151,18 @@ async function loadEvents() {
     $('#connectionState').textContent='Не удалось загрузить каталог: '+error.message;
   }
 }
-function openEvent(id) {
+function setEventModalOpen(open) {\n  const modal=$('#eventModal');\n  if(!modal)return;\n  modal.hidden=!open;\n  document.body.classList.toggle('event-modal-open',open);\n  if(open)modal.scrollTop=0;\n}\nfunction openEvent(id) {
   api('/api/events/'+encodeURIComponent(id)).then(({event:e})=>{
     const image=e.cover_image||'';
     $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">'+esc(e.event_categories?.name||'Мероприятие')+'</p><h2>'+esc(e.title)+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · '))+'</b> · '+esc([e.venues?.city,e.venues?.name,e.location_address||e.venues?.address].filter(Boolean).join(', '))+'</p><p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.current_price??e.base_price))+' · Осталось мест: '+esc(e.available_seats??'—')+'</p><div class="workspace-card"><h3>Расписание</h3>'+((e.event_program||[]).length?e.event_program.map(x=>'<p><b>'+esc([x.start_time,x.end_time].filter(Boolean).join('–'))+'</b> '+esc(x.title)+' '+esc(x.speaker_name||'')+'</p>').join(''): '<p>Расписание ещё не опубликовано.</p>')+'</div><div class="inline-actions"><button class="button button-dark" data-register="'+esc(e.id)+'">Участвовать</button><button class="button button-light" data-report="'+esc(e.id)+'">Пожаловаться</button></div><div id="reportForm"></div></div>';
-    $('#eventModal').hidden=false;
+    setEventModalOpen(true);
   }).catch(e=>toast(e.message));
 }
 function renderEventPreview(e) {
  const location=[e.venues?.city,e.venues?.name,e.location_address||e.venues?.address].filter(Boolean).join(', ');
  const image=e.cover_image||'';
  $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">ПРЕДПРОСМОТР · '+esc(eventStatusLabel(e.status||'draft'))+'</p><h2>'+esc(e.title||'Название мероприятия')+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · ')||'Дата и время не указаны')+'</b>'+(location?' · '+esc(location):'')+'</p><p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.base_price))+' · Вместимость: '+esc(e.total_seats||'—')+'</p><p class="preview-note">Предпросмотр виден только организатору. Событие появится в каталоге после модерации.</p></div>';
- $('#eventModal').hidden=false;
+ setEventModalOpen(true);
 }
 function openOrganizerPreview(id) {
  const event=organizerEvents.find(item=>String(item.id)===String(id));
@@ -464,7 +464,7 @@ async function adminView() {
   }catch(error){root.innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(error.message)+'</p></div>'}
 }
 document.addEventListener('click',async(e)=>{
-  const profileToggle=e.target.closest('#profileMenuToggle');
+  if(e.target.id==='eventModal'){setEventModalOpen(false);return}\n  const profileToggle=e.target.closest('#profileMenuToggle');
   if(profileToggle){
     const menu=$('#profileDropdown');
     menu.hidden=!menu.hidden;
@@ -507,7 +507,7 @@ document.addEventListener('click',async(e)=>{
   const organizerPreview=e.target.closest('[data-organizer-preview]');if(organizerPreview)return openOrganizerPreview(organizerPreview.dataset.organizerPreview);
   if(e.target.closest('[data-preview-create-event]'))return previewNewEvent($('#createEventForm'));
   const reg=e.target.closest('[data-register]');if(reg)return register(reg.dataset.register);
-  const close=e.target.closest('[data-close]');if(close){$('#'+close.dataset.close).hidden=true;return}
+  const close=e.target.closest('[data-close]');if(close){if(close.dataset.close==='eventModal')setEventModalOpen(false);else $('#'+close.dataset.close).hidden=true;return}
   const report=e.target.closest('[data-report]');if(report){$('#reportForm').innerHTML='<form id="complaintForm" class="form-grid"><input type="hidden" name="targetId" value="'+esc(report.dataset.report)+'"><label>Причина<input name="reason" required></label><label class="wide">Подробности<textarea name="details" required></textarea></label><button class="button button-dark">Отправить жалобу</button></form>';return}
   const moderate=e.target.closest('[data-moderate]');if(moderate){try{await api('/api/moderation/events/'+moderate.dataset.moderate,{method:'PATCH',body:JSON.stringify({status:moderate.dataset.status})});toast('Решение сохранено');moderatorView()}catch(x){toast(x.message)}return}
   const modBlock=e.target.closest('[data-mod-user-block]');if(modBlock){try{await api('/api/moderation/users/'+modBlock.dataset.modUserBlock+'/block',{method:'PATCH',body:JSON.stringify({blocked:modBlock.dataset.value==='true'})});toast('Статус аккаунта обновлён');moderatorView()}catch(x){toast(x.message)}return}
@@ -545,7 +545,7 @@ document.addEventListener('submit',async(e)=>{
   if(e.target.matches('.assign-form')){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/organizer/events/'+e.target.dataset.event+'/staff',{method:'POST',body:JSON.stringify(d)});toast('Сотрудник назначен');}catch(x){toast(x.message)}}
   if(e.target.matches('.notify-form')){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{const r=await api('/api/organizer/events/'+e.target.dataset.event+'/notify',{method:'POST',body:JSON.stringify(d)});toast('Уведомление отправлено: '+r.sent)}catch(x){toast(x.message)}}
   if(e.target.id==='scanForm'){e.preventDefault();try{const x=await api('/api/staff/tickets/'+encodeURIComponent(new FormData(e.target).get('ticket'))+'/check-in',{method:'POST'});$('#scanResult').textContent='Вход отмечен · '+x.ticket.ticket_number;toast('Билет проверен')}catch(x){$('#scanResult').textContent=x.message}}
-  if(e.target.id==='complaintForm'){e.preventDefault();if(!signedIn())return authOpen();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/complaints',{method:'POST',body:JSON.stringify({targetType:'event',targetId:d.targetId,reason:d.reason,details:d.details})});$('#eventModal').hidden=true;toast('Жалоба отправлена модератору')}catch(x){toast(x.message)}}
+  if(e.target.id==='complaintForm'){e.preventDefault();if(!signedIn())return authOpen();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/complaints',{method:'POST',body:JSON.stringify({targetType:'event',targetId:d.targetId,reason:d.reason,details:d.details})});setEventModalOpen(false);toast('Жалоба отправлена модератору')}catch(x){toast(x.message)}}
 });
 $('#authOpen').addEventListener('click',()=>authOpen());
 
