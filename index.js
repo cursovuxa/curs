@@ -27,7 +27,11 @@ function toast(message) { const el = $('#toast'); el.textContent = message; el.c
 function empty(message = 'Когда появятся данные, они отобразятся в этом разделе.') { return '<div class="empty-state"><span class="empty-star">✳</span><h3>Пока здесь тихо</h3><p>'+esc(message)+'</p></div>'; }
 function setBusy(button, busy, text) { if (!button) return; button.disabled = busy; if (busy) { button.dataset.label = button.textContent; button.textContent = text || 'Сохраняем…'; } else if (button.dataset.label) button.textContent = button.dataset.label; }
 function signedIn() { return Boolean(user && sessionStorage.getItem(tokenKey)); }
-function authOpen(mode='login') { $('#authModal').hidden=false; setAuthMode(mode); }
+function authOpen(mode='login') {
+  $('#authModal').hidden=false;
+  setAuthMode(mode);
+  if(supabaseAuth)setupGoogleButton().catch((error)=>{$('#authError').textContent='Google-вход не загрузился: '+error.message});
+}
 function authClose() { $('#authModal').hidden=true; }
 function setAuthMode(mode) {
   const register=mode==='register';
@@ -261,6 +265,7 @@ document.addEventListener('keydown',(event)=>{
 const GOOGLE_OAUTH_CLIENT_ID='69394596232-2jjcm977md330t3e49urjvuotep57f68.apps.googleusercontent.com';
 let googleNonce='';
 let googleIdentityPromise=null;
+let googleButtonSetupPromise=null;
 function loadGoogleIdentity(){
   if(window.google?.accounts?.id)return Promise.resolve();
   if(googleIdentityPromise)return googleIdentityPromise;
@@ -275,6 +280,8 @@ function loadGoogleIdentity(){
   return googleIdentityPromise;
 }
 async function setupGoogleButton(){
+  if(googleButtonSetupPromise)return googleButtonSetupPromise;
+  googleButtonSetupPromise=(async()=>{
   await loadGoogleIdentity();
   if(!supabaseAuth)throw new Error('Supabase Auth ещё загружается');
   const nonce=crypto.randomUUID()+crypto.randomUUID();
@@ -308,6 +315,9 @@ async function setupGoogleButton(){
     shape:'pill',logo_alignment:'left',locale:'ru',
     width:Math.min(container.clientWidth||360,400)
   });
+  })();
+  try{await googleButtonSetupPromise}
+  finally{googleButtonSetupPromise=null}
 }
 $('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){activeCategory=b.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()}});
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
@@ -325,7 +335,10 @@ async function init(){
       window.close();
       return;
     }
-  } catch(error) { console.error('Supabase Auth init failed:',error); }
+  } catch(error) {
+    console.error('Supabase Auth init failed:',error);
+    $('#authError').textContent='Не удалось загрузить Google-вход: '+(error.message||'попробуй снова');
+  }
   await Promise.all([loadSession(),loadCategories()]);
   await loadEvents();
 }
