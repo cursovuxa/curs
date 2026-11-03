@@ -151,7 +151,14 @@ async function loadEvents() {
     $('#connectionState').textContent='Не удалось загрузить каталог: '+error.message;
   }
 }
-function setEventModalOpen(open) {\n  const modal=$('#eventModal');\n  if(!modal)return;\n  modal.hidden=!open;\n  document.body.classList.toggle('event-modal-open',open);\n  if(open)modal.scrollTop=0;\n}\nfunction openEvent(id) {
+function setEventModalOpen(open) {
+  const modal=$('#eventModal');
+  if(!modal)return;
+  modal.hidden=!open;
+  document.body.classList.toggle('event-modal-open',open);
+  if(open)modal.scrollTop=0;
+}
+function openEvent(id) {
   api('/api/events/'+encodeURIComponent(id)).then(({event:e})=>{
     const image=e.cover_image||'';
     $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">'+esc(e.event_categories?.name||'Мероприятие')+'</p><h2>'+esc(e.title)+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · '))+'</b> · '+esc([e.venues?.city,e.venues?.name,e.location_address||e.venues?.address].filter(Boolean).join(', '))+'</p><p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.current_price??e.base_price))+' · Осталось мест: '+esc(e.available_seats??'—')+'</p><div class="workspace-card"><h3>Расписание</h3>'+((e.event_program||[]).length?e.event_program.map(x=>'<p><b>'+esc([x.start_time,x.end_time].filter(Boolean).join('–'))+'</b> '+esc(x.title)+' '+esc(x.speaker_name||'')+'</p>').join(''): '<p>Расписание ещё не опубликовано.</p>')+'</div><div class="inline-actions"><button class="button button-dark" data-register="'+esc(e.id)+'">Участвовать</button><button class="button button-light" data-report="'+esc(e.id)+'">Пожаловаться</button></div><div id="reportForm"></div></div>';
