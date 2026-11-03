@@ -44,6 +44,21 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '4mb' }));
+app.use('/api', async (req, res, next) => {
+  if (['/health','/auth/login','/auth/register'].includes(req.path) || req.path.startsWith('/admin')) return next();
+  try {
+    const { data } = await supabase.from('platform_settings').select('value').eq('key', 'maintenance_mode').maybeSingle();
+    if (data?.value !== true) return next();
+    const token = req.get('authorization')?.replace(/^Bearer\\s+/i, '');
+    if (token && supabase) {
+      const { data: authData } = await supabase.auth.getUser(token);
+      if (isRootEmail(authData.user?.email)) return next();
+    }
+    return res.status(503).json({ error: 'FlowTix временно на обслуживании. Попробуйте позже.' });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 app.get('/api/health', async (_req, res) => {
   if (!supabase) return res.status(503).json({ status: 'misconfigured', database: false });
