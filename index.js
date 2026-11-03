@@ -595,7 +595,7 @@ document.addEventListener('click',async(e)=>{
   const mapEvent=e.target.closest('[data-map-event]');
   if(mapEvent){renderMap(currentFilteredEvents,mapEvent.dataset.mapEvent);return}
   const addProgram=e.target.closest('[data-add-program-item]');if(addProgram){const list=$('#eventProgramList');list.append(createProgramDraftItem(addProgram.dataset.addProgramItem||'activity'));list.lastElementChild.scrollIntoView({behavior:'smooth',block:'nearest'});return}
-  const addChild=e.target.closest('[data-add-program-child]');if(addChild){const list=addChild.closest('[data-program-children]');list.append(createProgramDraftItem('activity',true));list.lastElementChild.scrollIntoView({behavior:'smooth',block:'nearest'});return}
+  const addChild=e.target.closest('[data-add-program-child]');if(addChild){const section=addChild.closest('[data-program-item]'),list=section?.querySelector('[data-program-children]');if(!list)return;list.append(createProgramDraftItem('activity',true));list.lastElementChild.scrollIntoView({behavior:'smooth',block:'nearest'});return}
   const removeProgram=e.target.closest('[data-remove-program-item]');if(removeProgram){removeProgram.closest('[data-program-item]')?.remove();return}
   const profileToggle=e.target.closest('#profileMenuToggle');
   if(profileToggle){
