@@ -25,6 +25,10 @@ let events = [];
 let organizerEvents = [];
 let categories = [];
 let activeCategory = '';
+let selectedCalendarDate = localDateKey(new Date());
+let calendarMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let currentFilteredEvents = [];
+let selectedMapEventId = null;
 let searchTimer;
 const api = async (path, options = {}) => {
   const token = sessionStorage.getItem(tokenKey);
@@ -121,15 +125,88 @@ function eventCard(event) {
     '<div class="event-info"><div class="event-date">'+esc(date || 'Дата уточняется')+'</div><h3>'+title+'</h3><div class="event-place">⌖ '+esc(place || address || 'Место уточняется')+'</div>'+(place&&address?'<div class="event-address">'+esc(address)+'</div>':'')+
     '<div class="event-foot"><span class="event-price">'+esc(money(price))+'</span><div class="event-actions"><button class="button button-light" data-details="'+id+'">Подробнее</button><button class="button button-dark" data-register="'+id+'">Участвовать</button></div></div></div></article>';
 }
+function localDateKey(date) {
+  return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
+}
+function dateFromKey(key) {
+  const [year,month,day]=String(key||'').slice(0,10).split('-').map(Number);
+  return year&&month&&day?new Date(year,month-1,day):new Date(NaN);
+}
+function shiftDate(date,days) { const next=new Date(date);next.setDate(next.getDate()+days);return next; }
+function eventDateKey(event) { return String(event.start_date||'').slice(0,10); }
+function eventLocationQuery(event) {
+  return [event.location_address,event.venues?.address,event.venues?.name,event.venues?.city].filter(Boolean).join(', ');
+}
+function renderCalendar(source) {
+  const grid=$('#calendarGrid');if(!grid)return;
+  const year=calendarMonthDate.getFullYear(),month=calendarMonthDate.getMonth();
+  $('#calendarMonth').textContent=new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric'}).format(calendarMonthDate);
+  const firstOffset=(new Date(year,month,1).getDay()+6)%7,daysInMonth=new Date(year,month+1,0).getDate();
+  const countByDate=new Map();
+  source.forEach(event=>{const key=eventDateKey(event);if(key)countByDate.set(key,(countByDate.get(key)||0)+1)});
+  const cells=[];
+  for(let index=0;index<42;index++){
+    const day=index-firstOffset+1;
+    if(day<1||day>daysInMonth){cells.push('<span class="calendar-day calendar-day-empty" aria-hidden="true"></span>');continue}
+    const key=localDateKey(new Date(year,month,day)),count=countByDate.get(key)||0;
+    cells.push('<button type="button" class="calendar-day '+(selectedCalendarDate===key?'selected ':'')+(count?'has-events':'')+'" data-calendar-date="'+key+'" aria-label="'+esc(new Intl.DateTimeFormat('ru-RU',{dateStyle:'full'}).format(dateFromKey(key))+(count?', событий: '+count:''))+'"><span>'+day+'</span>'+(count?'<small>'+count+'</small>':'')+'</button>');
+  }
+  grid.innerHTML=cells.join('');
+  const selected=dateFromKey(selectedCalendarDate);
+  $('#calendarEvents').innerHTML='<div class="calendar-events-heading"><b>'+esc(new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'}).format(selected))+'</b><span class="event-count">'+(source.filter(e=>eventDateKey(e)===selectedCalendarDate).length||0)+' событий</span></div>'+
+    (source.some(e=>eventDateKey(e)===selectedCalendarDate)?'<div class="events-grid">'+source.filter(e=>eventDateKey(e)===selectedCalendarDate).map(eventCard).join('')+'</div>':empty('На эту дату опубликованных мероприятий нет.'));
+}
+function renderMap(source,preferredId=null) {
+  const root=$('#mapContent');if(!root)return;
+  const locations=source.filter(event=>eventLocationQuery(event));
+  const selected=locations.find(event=>String(event.id)===String(preferredId||selectedMapEventId))||locations[0];
+  selectedMapEventId=selected?.id||null;
+  if(!selected){root.innerHTML=empty('Для отображения карты у мероприятий должен быть указан адрес.');return}
+  const query=eventLocationQuery(selected),encoded=encodeURIComponent(query);
+  const cards=locations.map(event=>'<button type="button" class="map-event '+(String(event.id)===String(selected.id)?'active':'')+'" data-map-event="'+esc(event.id)+'"><b>'+esc(event.title)+'</b><span>'+esc([event.venues?.city,event.location_address||event.venues?.address].filter(Boolean).join(' · '))+'</span></button>').join('');
+  root.innerHTML='<div class="map-frame"><iframe title="Карта: '+esc(selected.title)+'" src="https://maps.google.com/maps?q='+encoded+'&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe><a class="map-open-link" href="https://www.google.com/maps/search/?api=1&query='+encoded+'" target="_blank" rel="noopener noreferrer">Открыть в Картах ↗</a></div><div class="map-event-list">'+cards+'</div>';
+}
 function renderEvents() {
   const query=$('#searchInput').value.trim().toLocaleLowerCase('ru');
   const city=$('#cityInput').value.trim().toLocaleLowerCase('ru');
-  const filtered=events.filter((e)=>{
+  const today=localDateKey(new Date());
+  const allUpcoming=events.filter(e=>eventDateKey(e)>=today);
+  const filtered=allUpcoming.filter((e)=>{
     const text=[e.title,e.description,e.location_address,e.venues?.address,e.event_categories?.name,e.venues?.city,e.venues?.name].join(' ').toLocaleLowerCase('ru');
     return (!query||text.includes(query))&&(!city||(e.venues?.city||'').toLocaleLowerCase('ru').includes(city))&&(!activeCategory||e.category_id===activeCategory);
-  });
+  }).sort((a,b)=>(eventDateKey(a)+String(a.start_time||'')).localeCompare(eventDateKey(b)+String(b.start_time||'')));
+  currentFilteredEvents=filtered;
+  const tomorrow=localDateKey(shiftDate(new Date(),1));
+  const endOfWeek=shiftDate(new Date(),(7-new Date().getDay())%7);
+  const weekEnd=localDateKey(endOfWeek);
+  $('#todayCount').textContent=filtered.filter(e=>eventDateKey(e)===today).length;
+  $('#tomorrowCount').textContent=filtered.filter(e=>eventDateKey(e)===tomorrow).length;
+  $('#weekCount').textContent=filtered.filter(e=>eventDateKey(e)>=today&&eventDateKey(e)<=weekEnd).length;
   $('#eventCount').textContent=filtered.length+' '+plural(filtered.length,['событие','события','событий']);
-  $('#eventsGrid').innerHTML=filtered.length?filtered.map(eventCard).join(''):empty(events.length?'По этим фильтрам событий нет.':'Опубликованных мероприятий пока нет.');
+  $('#eventsGrid').innerHTML=filtered.length?filtered.map(eventCard).join(''):empty(events.length?'По этим фильтрам предстоящих событий нет.':'Опубликованных мероприятий пока нет.');
+
+  const location=(city||user?.city||'').trim();
+  const nearby=location?filtered.filter(e=>(e.venues?.city||'').toLocaleLowerCase('ru').includes(location.toLocaleLowerCase('ru'))):[];
+  $('#nearbyCaption').textContent=location?'Город: '+location:'Выбери город в поиске';
+  $('#nearbyEventsGrid').innerHTML=nearby.length?nearby.slice(0,3).map(eventCard).join(''):empty(location?'В этом городе ближайших мероприятий пока нет.':'Укажи город в поле поиска, чтобы увидеть события рядом.');
+  $('#popularSection').hidden=!filtered.length;
+  const popular=[...filtered].sort((a,b)=>Number(b.popularity_score||0)-Number(a.popularity_score||0)||(eventDateKey(a)).localeCompare(eventDateKey(b))).slice(0,3);
+  $('#popularEventsGrid').innerHTML=popular.map(eventCard).join();
+  $('#newSection').hidden=!filtered.length;
+  const newest=[...filtered].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).slice(0,3);
+  $('#newEventsGrid').innerHTML=newest.map(eventCard).join();
+  const preferences=(user?.preferences?.categories||[]).map(value=>String(value).toLocaleLowerCase('ru'));
+  const favoriteIds=new Set((user?.favorites||[]).map(String));
+  const favoriteCategories=new Set(filtered.filter(e=>favoriteIds.has(String(e.id))).map(e=>String(e.category_id)));
+  const personalized=filtered.filter(e=>preferences.includes(String(e.category_id).toLocaleLowerCase('ru'))||preferences.includes(String(e.event_categories?.name||'').toLocaleLowerCase('ru'))||favoriteCategories.has(String(e.category_id)));
+  const recommendations=(personalized.length?personalized:popular).slice(0,3);
+  $('#recommendedSection').hidden=!recommendations.length;
+  $('#recommendationCaption').textContent=personalized.length?'По интересам и избранному':'Популярное сейчас';
+  $('#recommendedEventsGrid').innerHTML=recommendations.map(eventCard).join();
+
+  if(!selectedCalendarDate)selectedCalendarDate=today;
+  renderCalendar(filtered);
+  renderMap(filtered);
 }
 function plural(n,forms){const x=n%100,y=x%10;return forms[(x>10&&x<20)?2:y>1&&y<5?1:y===1?0:2]}
 async function loadCategories() {
