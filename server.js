@@ -587,6 +587,105 @@ app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (_re
   })) });
 }));
 
+app.get('/api/admin/events', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('events')
+    .select('id,title,status,start_date,start_time,total_seats,available_seats,base_price,organizer_id,venue_id,users!events_organizer_id_fkey(full_name,email),venues(name,city)')
+    .order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
+  res.json({ events: data });
+}));
+app.patch('/api/admin/events/:id', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const status = String(req.body.status || '');
+  if (!['pending_moderation','published','rejected','cancelled','completed'].includes(status)) return res.status(400).json({ error: 'Недопустимый статус события' });
+  const { data, error } = await supabase.from('events').update({ status, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id).select('id,title,status').maybeSingle();
+  if (error) return res.status(400).json({ error: 'Не удалось изменить мероприятие' });
+  if (!data) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_EVENT_STATUS_CHANGED', entity_type: 'event', entity_id: data.id, details: { status } });
+  res.json({ event: data });
+}));
+app.get('/api/admin/venues', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('venues')
+    .select('id,name,city,address,description,owner_id,users!venues_owner_id_fkey(full_name,email)')
+    .order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить площадки' });
+  res.json({ venues: data });
+}));
+app.patch('/api/admin/venues/:id', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const changes = {};
+  for (const key of ['name','city','address','description']) {
+    if (req.body[key] !== undefined) changes[key] = String(req.body[key]).trim().slice(0, key === 'description' ? 3000 : 240);
+  }
+  if (!Object.keys(changes).length || (changes.name !== undefined && !changes.name) || (changes.city !== undefined && !changes.city) || (changes.address !== undefined && !changes.address)) {
+    return res.status(400).json({ error: 'Проверьте название, город и адрес площадки' });
+  }
+  const { data, error } = await supabase.from('venues').update(changes).eq('id', req.params.id).select('id,name,city,address,description').maybeSingle();
+  if (error) return res.status(400).json({ error: 'Не удалось изменить площадку' });
+  if (!data) return res.status(404).json({ error: 'Площадка не найдена' });
+  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_VENUE_UPDATED', entity_type: 'venue', entity_id: data.id, details: changes });
+  res.json({ venue: data });
+}));
+app.get('/api/admin/tickets', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('tickets')
+    .select('id,ticket_number,status,price_paid,seat_label,created_at,event_id,user_id,events(title,start_date),users(full_name,email)')
+    .order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить билеты' });
+  res.json({ tickets: data });
+}));
+app.patch('/api/admin/tickets/:id/cancel', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('tickets').update({ status: 'cancelled' })
+    .eq('id', req.params.id).eq('status', 'valid').select('id,ticket_number,status').maybeSingle();
+  if (error) return res.status(400).json({ error: 'Не удалось отменить билет' });
+  if (!data) return res.status(409).json({ error: 'Билет не найден или его статус уже нельзя изменить' });
+  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_TICKET_CANCELLED', entity_type: 'ticket', entity_id: data.id, details: { ticket_number: data.ticket_number } });
+  res.json({ ticket: data });
+}));
+app.get('/api/admin/payments', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('payments')
+    .select('id,user_id,ticket_id,amount,currency,payment_method,status,transaction_ref,created_at,users(full_name,email),tickets(ticket_number,events(title))')
+    .order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить платежи' });
+  res.json({ payments: data });
+}));
+app.get('/api/admin/complaints', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('complaints')
+    .select('*,users!complaints_author_id_fkey(full_name,email)')
+    .order('created_at', { ascending: true }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
+  res.json({ complaints: data });
+}));
+app.get('/api/admin/reviews', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('reviews')
+    .select('*,users(full_name,email),events(title)')
+    .order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить отзывы' });
+  res.json({ reviews: data });
+}));
+app.delete('/api/admin/reviews/:id', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('reviews').delete().eq('id', req.params.id).select('id,event_id').maybeSingle();
+  if (error) return res.status(400).json({ error: 'Не удалось удалить отзыв' });
+  if (!data) return res.status(404).json({ error: 'Отзыв не найден' });
+  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_REVIEW_REMOVED', entity_type: 'review', entity_id: data.id, details: { event_id: data.event_id } });
+  res.json({ success: true });
+}));
+app.get('/api/admin/settings', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('platform_settings').select('key,value,updated_at').order('key');
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить настройки платформы' });
+  res.json({ settings: Object.fromEntries((data || []).map((item) => [item.key, item.value])) });
+}));
+app.patch('/api/admin/settings', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const allowed = new Set(['site_name','support_email','maintenance_mode']);
+  const entries = Object.entries(req.body || {}).filter(([key]) => allowed.has(key));
+  if (!entries.length) return res.status(400).json({ error: 'Нет допустимых настроек для сохранения' });
+  if (entries.some(([key,value]) => key === 'maintenance_mode' ? typeof value !== 'boolean' : typeof value !== 'string')) {
+    return res.status(400).json({ error: 'Проверьте значения настроек' });
+  }
+  const writes = entries.map(([key,value]) => ({ key, value: JSON.stringify(value), updated_by: req.user.id, updated_at: new Date().toISOString() }));
+  const { error } = await supabase.from('platform_settings').upsert(writes, { onConflict: 'key' });
+  if (error) return res.status(400).json({ error: 'Не удалось сохранить настройки платформы' });
+  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_SETTINGS_UPDATED', entity_type: 'platform_settings', details: Object.fromEntries(entries) });
+  res.json({ success: true });
+}));
 app.get('/api/organizer/employees', requireUser, allowRoles('organizer','admin'), asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('employees')
     .select('id,position,qualification,users!employees_user_id_fkey(id,full_name,email)')
