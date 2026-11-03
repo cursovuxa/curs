@@ -407,6 +407,29 @@ app.get('/api/admin/users', requireUser, allowRoles('admin'), asyncRoute(async (
   res.json({ users: data });
 }));
 
+app.get('/api/organizer/employees', requireUser, allowRoles('organizer','admin'), asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('employees')
+    .select('id,position,qualification,users!employees_user_id_fkey(id,full_name,email)')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить сотрудников' });
+  res.json({ employees: data });
+}));
+app.post('/api/events/:eventId/program', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const { data: event } = await supabase.from('events').select('id')
+    .eq('id', req.params.eventId).eq('organizer_id', req.user.id).maybeSingle();
+  if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  const { title, start_time, end_time, speaker_name, room_name, description } = req.body;
+  if (!title || !start_time || !end_time) return res.status(400).json({ error: 'Заполните название и время пункта расписания' });
+  const { data, error } = await supabase.from('event_program').insert({
+    event_id: event.id, title: String(title).slice(0,180), start_time, end_time,
+    speaker_name: String(speaker_name || '').slice(0,160),
+    room_name: String(room_name || '').slice(0,120),
+    description: String(description || '').slice(0,2000)
+  }).select('*').single();
+  if (error) return res.status(400).json({ error: 'Не удалось добавить пункт расписания' });
+  res.status(201).json({ item: data });
+}));
+
 app.use((err, _req, res, _next) => {
   console.error('[api]', err.message);
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
