@@ -231,22 +231,26 @@ if(themeButton&&themeMenu){
   });
 }
 applyTheme(localStorage.getItem(themeKey)||'rose',{save:false});
-let googleAuthCompleting=false;
+let googleAuthCompleting=false,googleAuthCompleted=false,activeGooglePoll=null;
 async function finishGoogleLogin(session){
-  if(!session?.access_token||googleAuthCompleting)return;
+  if(!session?.access_token||googleAuthCompleting||googleAuthCompleted)return;
   googleAuthCompleting=true;
+  if(activeGooglePoll){clearInterval(activeGooglePoll);activeGooglePoll=null;}
   sessionStorage.setItem(tokenKey,session.access_token);
   try{
     await loadSession();
     authClose();
     toast('Вход выполнен через Google');
-  }catch(error){$('#authError').textContent=error.message||'Не удалось завершить вход'}
+    googleAuthCompleted=true;
+  }catch(error){googleAuthCompleted=false;$('#authError').textContent=error.message||'Не удалось завершить вход'}
   finally{googleAuthCompleting=false}
 }
 $('#googleFallback').addEventListener('click',()=>{
   if(!supabaseAuth){$('#authError').textContent='Авторизация ещё загружается. Попробуй ещё раз через секунду.';return}
   const popup=window.open('about:blank','flowtix-google-auth','popup,width=520,height=680,left=100,top=80');
   if(!popup){$('#authError').textContent='Браузер заблокировал окно входа. Разреши всплывающие окна для FlowTix.';return}
+  googleAuthCompleted=false;
+  if(activeGooglePoll){clearInterval(activeGooglePoll);activeGooglePoll=null}
   const button=$('#googleFallback');
   button.disabled=true;
   button.setAttribute('aria-busy','true');
@@ -271,7 +275,8 @@ $('#googleFallback').addEventListener('click',()=>{
         $('#authError').textContent=error.message||'Не удалось проверить вход';
       }
     },700);
-    setTimeout(()=>{if(poll)clearInterval(poll)},120000);
+    activeGooglePoll=poll;
+    setTimeout(()=>{if(poll){clearInterval(poll);if(activeGooglePoll===poll)activeGooglePoll=null}},120000);
     return supabaseAuth.auth.signInWithOAuth({
       provider:'google',
       options:{skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}
