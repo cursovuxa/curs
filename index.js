@@ -2027,10 +2027,49 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initial UI Render
+  // Initial UI Render. The published catalog is loaded from the same-origin API.
   renderEvents();
   renderPersonalRecommendation();
   renderNotifications();
+  fetch('/api/events')
+    .then((response) => {
+      if (!response.ok) throw new Error('API unavailable');
+      return response.json();
+    })
+    .then(({ events }) => {
+      if (!Array.isArray(events)) return;
+      APP_STATE.events = events.map((row) => ({
+        id: row.id,
+        title: row.title,
+        description: row.description || '',
+        category: row.event_categories?.name || 'Другое',
+        city: row.venues?.city || '',
+        address: row.venues?.address || '',
+        venueName: row.venues?.name || 'Площадка уточняется',
+        date: row.start_date,
+        timeStart: row.start_time,
+        timeEnd: row.end_time,
+        ageLimit: row.age_limit || 'Для всех',
+        cover: row.cover_image || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format&fit=crop&q=80',
+        totalSeats: row.total_seats || 0,
+        remainingSeats: row.available_seats || 0,
+        basePrice: Number(row.base_price || 0),
+        currentPrice: Number(row.current_price || row.base_price || 0),
+        dynamicPricing: Boolean(row.dynamic_pricing_enabled),
+        popularity: row.popularity_score || 0,
+        program: (row.event_program || []).map((item) => ({
+          time: [item.start_time, item.end_time].filter(Boolean).join(' - '),
+          title: item.title,
+          speaker: item.speaker_name || '',
+          room: item.room_name || '',
+        })),
+        reviewsCount: 0,
+        rating: 0,
+      }));
+      renderEvents();
+      renderPersonalRecommendation();
+    })
+    .catch((error) => console.error('Не удалось загрузить каталог из базы:', error));
 });
 
 // Simple Calendar Renderer
