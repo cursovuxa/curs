@@ -338,6 +338,63 @@ app.get('/api/admin/statistics', requireUser, allowRoles('admin'), asyncRoute(as
   res.json({ users: users.count, events: events.count, tickets: tickets.count, revenue, openComplaints: complaints.count });
 }));
 
+app.get('/api/categories', asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('event_categories').select('id,name,slug,icon').order('name');
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить категории' });
+  res.json({ categories: data });
+}));
+app.get('/api/venues', asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('venues').select('id,name,city,address').order('city');
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить площадки' });
+  res.json({ venues: data });
+}));
+app.post('/api/venues', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const { name, city, address, description } = req.body;
+  if (!name || !city || !address) return res.status(400).json({ error: 'Заполните название, город и адрес' });
+  const { data, error } = await supabase.from('venues').insert({
+    owner_id: req.user.id, name: String(name).slice(0,160), city: String(city).slice(0,100),
+    address: String(address).slice(0,240), description: String(description || '').slice(0,3000)
+  }).select('*').single();
+  if (error) return res.status(400).json({ error: 'Не удалось создать площадку' });
+  res.status(201).json({ venue: data });
+}));
+app.get('/api/organizer/venues', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('venues').select('*').eq('owner_id', req.user.id).order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить ваши площадки' });
+  res.json({ venues: data });
+}));
+app.post('/api/organizer/events/:eventId/staff', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const { data: event } = await supabase.from('events').select('id').eq('id', req.params.eventId).eq('organizer_id', req.user.id).maybeSingle();
+  if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  const employeeId = String(req.body.employeeId || '');
+  const { data, error } = await supabase.from('event_staff_assignments').upsert({
+    event_id: event.id, employee_id: employeeId, role_at_event: String(req.body.role || 'staff'), status: 'assigned'
+  }, { onConflict: 'event_id,employee_id' }).select('*').single();
+  if (error) return res.status(400).json({ error: 'Не удалось назначить сотрудника' });
+  res.status(201).json({ assignment: data });
+}));
+app.post('/api/organizer/events/:eventId/notify', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const { data: event } = await supabase.from('events').select('id,title').eq('id', req.params.eventId).eq('organizer_id', req.user.id).maybeSingle();
+  if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  const title = String(req.body.title || event.title).slice(0,160);
+  const message = String(req.body.message || '').slice(0,2000);
+  if (!message) return res.status(400).json({ error: 'Введите текст уведомления' });
+  const { data: attendees, error: attendeeError } = await supabase.from('tickets').select('user_id').eq('event_id', event.id);
+  if (attendeeError) return res.status(500).json({ error: 'Не удалось получить список участников' });
+  const ids = [...new Set((attendees || []).map((row) => row.user_id))];
+  if (!ids.length) return res.json({ sent: 0 });
+  const { error } = await supabase.from('notifications').insert(ids.map((user_id) => ({
+    user_id, title, message, type: 'event_update', channel: 'in_app'
+  })));
+  if (error) return res.status(500).json({ error: 'Не удалось отправить уведомления' });
+  res.json({ sent: ids.length });
+}));
+app.get('/api/admin/users', requireUser, allowRoles('admin'), asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('users').select('id,email,full_name,role,is_blocked,created_at').order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить пользователей' });
+  res.json({ users: data });
+}));
+
 app.use((err, _req, res, _next) => {
   console.error('[api]', err.message);
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
