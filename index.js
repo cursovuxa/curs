@@ -6,14 +6,20 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const tokenKey = 'flowtix_access_token';
 const PROFILE_ROUTE = /^\/profile\/?$/.test(window.location.pathname);
-if (PROFILE_ROUTE) {
-  document.body.classList.add('profile-page');
+const DASHBOARD_ROUTE = /^\/dashboard\/?$/.test(window.location.pathname);
+const NOTIFICATIONS_ROUTE = /^\/notifications\/?$/.test(window.location.pathname);
+const ACCOUNT_ROUTE = PROFILE_ROUTE || DASHBOARD_ROUTE || NOTIFICATIONS_ROUTE;
+if (ACCOUNT_ROUTE) {
+  document.body.classList.add('account-page');
   $('.hero').hidden = true;
   $('#events').hidden = true;
   $('.footer').hidden = true;
   $('#workspace').hidden = false;
 }
 let user = null;
+let notificationsChannel = null;
+let notificationsChannelUserId = null;
+let notificationsConnection = 'CONNECTING';
 let events = [];
 let categories = [];
 let activeCategory = '';
@@ -162,6 +168,7 @@ async function loadSession(authUser=null) {
   user={...account,favorites:[]};
   applyTheme(user.preferences?.theme||localStorage.getItem(themeKey)||'rose',{save:!user.preferences?.theme&&!profileError});
   renderAccountMenu();
+  void subscribeToNotifications();
   try{
     const fav=await api('/api/favorites');
     user.favorites=(fav.favorites||[]).map((item)=>item.event_id);
@@ -171,7 +178,11 @@ async function loadSession(authUser=null) {
 }
 async function logoutAccount(){
   sessionStorage.removeItem(tokenKey);
-  try{if(supabaseAuth)await supabaseAuth.auth.signOut()}catch(error){console.warn('Sign-out cleanup failed:',error)}
+  try{
+    if(notificationsChannel&&supabaseAuth)await supabaseAuth.removeChannel(notificationsChannel);
+    notificationsChannel=null;notificationsChannelUserId=null;
+    if(supabaseAuth)await supabaseAuth.auth.signOut();
+  }catch(error){console.warn('Sign-out cleanup failed:',error)}
   user=null;
   renderAccountMenu();
   $('#workspace').hidden=true;
@@ -223,11 +234,64 @@ async function uploadProfileAvatar(input){
 }
 async function visitorView() {
   try {
-    const [tickets,fav,notifications]=await Promise.all([api('/api/tickets/mine'),api('/api/favorites'),api('/api/notifications')]);
-    const ts=tickets.tickets||[], fs=fav.favorites||[], ns=notifications.notifications||[];
-    $('#workspaceContent').innerHTML='<div class="workspace-card"><h3>Мои билеты</h3>'+ (ts.length?'<div class="ticket-list">'+ts.map(t=>'<p><b>'+esc(t.events?.title||'Мероприятие')+'</b> · '+esc(t.ticket_number)+' <span class="status-pill">'+esc(t.status)+'</span></p>').join('')+'</div>':empty('Зарегистрируйтесь на событие — билет появится здесь.'))+'</div><div class="workspace-card"><h3>Избранное ('+fs.length+')</h3>'+ (fs.length?fs.map(x=>'<p>'+esc(x.events?.title||'Мероприятие')+'</p>').join(''):empty('Отмечайте сердцем мероприятия, чтобы не потерять.'))+'</div><div class="workspace-card"><h3>Оставить отзыв</h3>'+ (ts.length?'<form id="reviewForm" class="form-grid"><label>Событие<select name="eventId">'+ts.map(t=>'<option value="'+esc(t.event_id)+'">'+esc(t.events?.title||'Мероприятие')+'</option>').join('')+'</select></label>'+['orgRating','venueRating','programRating','staffRating'].map((key,i)=>'<label>'+['Организатор','Площадка','Программа','Команда'][i]+'<select name="'+key+'"><option value="5">5 — отлично</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1 — плохо</option></select></label>').join('')+'<label class="wide">Комментарий<textarea name="comment" rows="3" maxlength="3000"></textarea></label><button class="button button-dark">Опубликовать отзыв</button></form>':empty('Для отзыва сначала нужен билет на событие.'))+'</div><div class="workspace-card"><h3>Уведомления ('+ns.length+')</h3>'+ (ns.length?ns.map(n=>'<p><b>'+esc(n.title)+'</b> · '+esc(n.message)+'</p>').join(''):empty('Новых уведомлений нет.'))+'</div>';
+    const [tickets,fav]=await Promise.all([api('/api/tickets/mine'),api('/api/favorites')]);
+    const ts=tickets.tickets||[], fs=fav.favorites||[];
+    $('#workspaceContent').innerHTML='<div class="workspace-card"><h3>Мои билеты</h3>'+ (ts.length?'<div class="ticket-list">'+ts.map(t=>'<p><b>'+esc(t.events?.title||'Мероприятие')+'</b> · '+esc(t.ticket_number)+' <span class="status-pill">'+esc(t.status)+'</span></p>').join('')+'</div>':empty('Зарегистрируйтесь на событие — билет появится здесь.'))+'</div><div class="workspace-card"><h3>Избранное ('+fs.length+')</h3>'+ (fs.length?fs.map(x=>'<p>'+esc(x.events?.title||'Мероприятие')+'</p>').join(''):empty('Отмечайте сердцем мероприятия, чтобы не потерять.'))+'</div><div class="workspace-card"><h3>Оставить отзыв</h3>'+ (ts.length?'<form id="reviewForm" class="form-grid"><label>Событие<select name="eventId">'+ts.map(t=>'<option value="'+esc(t.event_id)+'">'+esc(t.events?.title||'Мероприятие')+'</option>').join('')+'</select></label>'+['orgRating','venueRating','programRating','staffRating'].map((key,i)=>'<label>'+['Организатор','Площадка','Программа','Команда'][i]+'<select name="'+key+'"><option value="5">5 — отлично</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1 — плохо</option></select></label>').join('')+'<label class="wide">Комментарий<textarea name="comment" rows="3" maxlength="3000"></textarea></label><button class="button button-dark">Опубликовать отзыв</button></form>':empty('Для отзыва сначала нужен билет на событие.'))+'</div>';
   }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
 }
+async function notificationsView() {
+  if(!signedIn())return authOpen();
+  $('#workspace').hidden=false;
+  $('#workspaceTitle').textContent='Уведомления';
+  $('#workspaceRefresh').textContent='Обновить уведомления ↻';
+  $('#workspaceContent').innerHTML='<div class="workspace-card"><div class="notification-live"><span class="notification-live-dot '+(notificationsConnection==='SUBSCRIBED'?'is-live':'')+'"></span><span id="notificationsLiveStatus">'+(notificationsConnection==='SUBSCRIBED'?'Подключено · новые уведомления приходят сразу':'Подключаемся к уведомлениям…')+'</span></div><p>Сообщения от организаторов и FlowTix появятся здесь автоматически.</p></div><div class="notification-list" id="notificationList"><div class="workspace-card"><p>Загружаем уведомления…</p></div></div>';
+  try{
+    const {notifications=[]}=await api('/api/notifications');
+    const list=$('#notificationList');
+    if(!list)return;
+    list.innerHTML=notifications.length?notifications.map((notice)=>{
+      const date=notice.created_at?new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short'}).format(new Date(notice.created_at)):'';
+      return '<article class="workspace-card notification-card '+(notice.is_read?'':'unread')+'"><div class="notification-card-head"><h3>'+esc(notice.title||'Уведомление FlowTix')+'</h3><span class="status-pill">'+(notice.is_read?'Прочитано':'Новое')+'</span></div><p>'+esc(notice.message||'')+'</p>'+(date?'<small>'+esc(date)+'</small>':'')+'</article>';
+    }).join(''):empty('Новых уведомлений пока нет. Когда организатор сообщит об изменениях, они появятся здесь.');
+  }catch(error){const list=$('#notificationList');if(list)list.innerHTML='<p class="connection-state">'+esc(error.message)+'</p>'}
+}
+function renderAccountRoute(){
+  if(PROFILE_ROUTE)return showSettings();
+  if(DASHBOARD_ROUTE)return showWorkspace();
+  if(NOTIFICATIONS_ROUTE)return notificationsView();
+}
+async function subscribeToNotifications(){
+  if(!supabaseAuth||!signedIn()||!user?.id)return;
+  if(notificationsChannel&&notificationsChannelUserId===user.id)return;
+  const token=sessionStorage.getItem(tokenKey);
+  if(!token)return;
+  try{
+    if(notificationsChannel)await supabaseAuth.removeChannel(notificationsChannel);
+    notificationsChannel=null;notificationsChannelUserId=null;
+    await supabaseAuth.realtime.setAuth(token);
+    notificationsConnection='CONNECTING';
+    notificationsChannel=supabaseAuth.channel('flowtix-notifications-'+user.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},(payload)=>{
+        const notice=payload.new;
+        if(!notice||notice.user_id!==user.id)return;
+        toast((notice.title||'Новое уведомление')+(notice.message?' · '+notice.message:''));
+        if(NOTIFICATIONS_ROUTE)void notificationsView();
+      })
+      .subscribe((status)=>{
+        notificationsConnection=status;
+        const label=$('#notificationsLiveStatus');
+        const dot=$('.notification-live-dot');
+        if(label)label.textContent=status==='SUBSCRIBED'?'Подключено · новые уведомления приходят сразу':status==='CHANNEL_ERROR'||status==='TIMED_OUT'?'Нет соединения · переподключаемся…':'Подключаемся к уведомлениям…';
+        if(dot)dot.classList.toggle('is-live',status==='SUBSCRIBED');
+        if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')console.warn('Realtime notifications channel status:',status);
+      });
+    notificationsChannelUserId=user.id;
+  }catch(error){
+    notificationsConnection='CHANNEL_ERROR';
+    console.warn('Could not subscribe to real-time notifications:',error);
+  }
+}
+
 async function organizerView() {
   try {
     const [ev,venues,cats,registrations,employees]=await Promise.all([
@@ -269,7 +333,8 @@ document.addEventListener('click',async(e)=>{
   if(accountAction){
     $('#profileDropdown').hidden=true;$('#profileMenuToggle').setAttribute('aria-expanded','false');
     if(accountAction.dataset.accountAction==='profile')return window.location.assign('/profile/');
-    if(accountAction.dataset.accountAction==='workspace')return showWorkspace();
+    if(accountAction.dataset.accountAction==='workspace')return window.location.assign('/dashboard/');
+    if(accountAction.dataset.accountAction==='notifications')return window.location.assign('/notifications/');
     if(accountAction.dataset.accountAction==='logout')return logoutAccount();
   }
   if(!e.target.closest('#profileMenuWrap')){$('#profileDropdown').hidden=true;$('#profileMenuToggle').setAttribute('aria-expanded','false')}
@@ -311,7 +376,7 @@ document.addEventListener('change',async(e)=>{
 document.addEventListener('submit',async(e)=>{
   if(e.target.id==='searchForm'){e.preventDefault();loadEvents();$('#events').scrollIntoView({behavior:'smooth'});}
   if(e.target.id==='authForm'){e.preventDefault();const mode=$('[data-auth].active').dataset.auth;const button=$('#authSubmit');setBusy(button,true);$('#authError').textContent='';
-    try{const result=await api('/api/auth/'+mode,{method:'POST',body:JSON.stringify({fullName:$('#name').value.trim(),email:$('#email').value.trim(),password:$('#password').value})});if(!result.accessToken){$('#authError').textContent=result.message;return}sessionStorage.setItem(tokenKey,result.accessToken);const loaded=await loadSession(result.user);if(!loaded)throw new Error('Не удалось загрузить профиль аккаунта');authClose();if(PROFILE_ROUTE)showSettings();toast(mode==='login'?'Вход выполнен':'Аккаунт создан');}
+    try{const result=await api('/api/auth/'+mode,{method:'POST',body:JSON.stringify({fullName:$('#name').value.trim(),email:$('#email').value.trim(),password:$('#password').value})});if(!result.accessToken){$('#authError').textContent=result.message;return}if(result.refreshToken&&supabaseAuth){const {data,error}=await supabaseAuth.auth.setSession({access_token:result.accessToken,refresh_token:result.refreshToken});if(error)throw error;sessionStorage.setItem(tokenKey,data.session?.access_token||result.accessToken)}else sessionStorage.setItem(tokenKey,result.accessToken);const loaded=await loadSession(result.user);if(!loaded)throw new Error('Не удалось загрузить профиль аккаунта');authClose();if(ACCOUNT_ROUTE)renderAccountRoute();toast(mode==='login'?'Вход выполнен':'Аккаунт создан');}
     catch(x){$('#authError').textContent=x.message}finally{setBusy(button,false)}
   }
   if(e.target.id==='profileSettingsForm'){e.preventDefault();const button=e.target.querySelector('[type="submit"]');setBusy(button,true,'Сохраняем профиль…');try{const data=Object.fromEntries(new FormData(e.target));const result=await api('/api/me/profile',{method:'PATCH',body:JSON.stringify(data)});user={...user,...result.user};renderAccountMenu();toast('Профиль сохранён')}catch(error){toast(error.message)}finally{setBusy(button,false)}}
@@ -327,8 +392,12 @@ document.addEventListener('submit',async(e)=>{
 $('#authOpen').addEventListener('click',()=>authOpen());
 
 $$('[data-close]').forEach(x=>x.addEventListener('click',()=>$('#'+x.dataset.close).hidden=true));
-$('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();showWorkspace()});
-$('#workspaceRefresh').addEventListener('click',()=>PROFILE_ROUTE?window.location.assign('/'):showWorkspace());
+$('#workspaceNav').addEventListener('click',(e)=>{e.preventDefault();window.location.assign('/dashboard/')});
+$('#workspaceRefresh').addEventListener('click',()=>{
+  if(PROFILE_ROUTE)window.location.assign('/');
+  else if(NOTIFICATIONS_ROUTE)void notificationsView();
+  else showWorkspace();
+});
 const themeKey='flowtix_theme';
 const themeNames={rose:'Розовая',sky:'Голубая',dark:'Тёмная',halloween:'Хэллоуин'};
 const allowedThemes=Object.keys(themeNames);
@@ -398,7 +467,7 @@ async function setupGoogleButton(){
         const loaded=await loadSession(data.user);
         if(!loaded)throw new Error('Вход прошёл, но профиль не удалось загрузить. Попробуй ещё раз.');
         authClose();
-        if(PROFILE_ROUTE)showSettings();
+        if(ACCOUNT_ROUTE)renderAccountRoute();
         toast('Вход выполнен через Google');
       }catch(error){$('#authError').textContent=error.message||'Не удалось войти через Google'}
     }
@@ -420,6 +489,12 @@ async function init(){
   try {
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');
     supabaseAuth=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',detectSessionInUrl:true}});
+    supabaseAuth.auth.onAuthStateChange((event,session)=>{
+      if(session?.access_token){
+        sessionStorage.setItem(tokenKey,session.access_token);
+        supabaseAuth.realtime.setAuth(session.access_token);
+      }else if(event==='SIGNED_OUT')sessionStorage.removeItem(tokenKey);
+    });
     await setupGoogleButton();
     const {data:{session}}=await supabaseAuth.auth.getSession();
     if(session?.access_token)sessionStorage.setItem(tokenKey,session.access_token);
@@ -429,6 +504,6 @@ async function init(){
   }
   const [hasSession]=await Promise.all([loadSession(),loadCategories()]);
   await loadEvents();
-  if(PROFILE_ROUTE){if(hasSession)showSettings();else authOpen('login')}
+  if(ACCOUNT_ROUTE){if(hasSession)renderAccountRoute();else authOpen('login')}
 }
 init();
