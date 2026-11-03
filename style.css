@@ -268,3 +268,21 @@ body[data-theme="halloween"] .role-picker-option:hover,body[data-theme="hallowee
   text-shadow:none!important;
   mix-blend-mode:normal!important;
 }
+
+
+/* Organizer event creation and private previews */
+.organizer-load-warning{margin-bottom:18px}
+.organizer-venue-card{border-color:var(--line);background:var(--surface)}
+.workspace-card-heading{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.workspace-help{max-width:760px;color:var(--muted);line-height:1.65}
+.event-tools-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;color:var(--muted)}
+.event-tools-actions>span{min-width:0}
+.organizer-event-item summary{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.cover-file-label input[type=file]{display:block;width:100%;padding:12px;border:1px dashed var(--line);border-radius:14px;background:var(--surface-2);color:var(--text)}
+.cover-file-label small{display:block;margin-top:8px;color:var(--muted)}
+.cover-preview{display:flex;align-items:center;gap:14px;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2);color:var(--text)}
+.cover-preview[hidden]{display:none}
+.cover-preview img{width:min(220px,42%);height:120px;object-fit:cover;border-radius:10px}
+.preview-note{padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--muted);font-size:.92rem}
+.event-address{margin-top:5px;color:var(--text-muted,var(--muted));font-size:.9rem}
+@media(max-width:640px){.event-tools-actions{align-items:flex-start;flex-direction:column}.organizer-event-item summary{align-items:flex-start;flex-direction:column}.cover-preview img{height:92px}}
