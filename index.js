@@ -1,4 +1,4 @@
-const API_BASE = 'https://cursa.onrender.com';
+const API_BASE = 'https://cursa-guk5.onrender.com';
 const SUPABASE_URL = 'https://rpsvuygarxlnqpxtwuzq.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hIAivAUZ0fCx9KlHsj4YVg_kc2TkPzB';
 let supabaseAuth = null;
