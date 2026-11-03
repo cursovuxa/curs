@@ -295,3 +295,18 @@ body.event-modal-open{overflow:hidden}
   #eventModal.overlay{place-items:start center;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
   #eventModal .event-dialog{width:100%;max-height:none;min-height:0;overflow:visible;margin:0 auto}
 }
+
+
+/* Admin visual-payment mode switch */
+.visual-payment-option{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface,#fff)}
+.admin-switch{position:relative;display:flex!important;align-items:center;gap:14px;cursor:pointer;color:var(--ink)!important}
+.admin-switch input{position:absolute;opacity:0;width:1px;height:1px}
+.admin-switch-track{position:relative;display:block;flex:0 0 48px;height:28px;border:1px solid var(--line);border-radius:999px;background:#c9cad5;transition:background .18s,border-color .18s}
+.admin-switch-track:after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #1113;transition:transform .18s}
+.admin-switch input:checked+.admin-switch-track{background:var(--violet);border-color:var(--violet)}
+.admin-switch input:checked+.admin-switch-track:after{transform:translateX(20px)}
+.admin-switch input:focus-visible+.admin-switch-track{outline:3px solid color-mix(in srgb,var(--violet) 30%,transparent);outline-offset:2px}
+.admin-switch-copy{display:grid;gap:5px}
+.admin-switch-copy b{font-size:13px;color:var(--ink)}
+.admin-switch-copy small,.payment-provider-note{font-size:11px;line-height:1.55;color:var(--muted)}
+.payment-provider-note{margin:12px 0 0}
