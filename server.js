@@ -717,7 +717,7 @@ app.get('/api/admin/events', requireUser, requireRootAdmin, asyncRoute(async (_r
 }));
 app.patch('/api/admin/events/:id', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
   const status = String(req.body.status || '');
-  if (!['pending_moderation','published','rejected','cancelled','completed'].includes(status)) return res.status(400).json({ error: 'Недопустимый статус события' });
+  if (!['draft','pending_moderation','published','rejected','cancelled','completed'].includes(status)) return res.status(400).json({ error: 'Недопустимый статус события' });
   const { data, error } = await supabase.from('events').update({ status, updated_at: new Date().toISOString() })
     .eq('id', req.params.id).select('id,title,status').maybeSingle();
   if (error) return res.status(400).json({ error: 'Не удалось изменить мероприятие' });
