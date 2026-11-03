@@ -413,3 +413,15 @@ body[data-theme="sky"] .form-grid select {color-scheme:light}
   .map-frame,.map-frame iframe{min-height:260px;height:260px}
   .map-event-list{max-height:220px}
 }
+
+
+/* Organizer event program builder */
+.program-builder{background:var(--surface-raised,rgba(255,255,255,.035));border:1px solid var(--line,rgba(130,100,150,.2));border-radius:20px;padding:clamp(16px,2vw,26px)}
+.program-draft-list{display:grid;gap:14px;margin-top:16px}
+.program-draft{display:grid;gap:12px;padding:18px;border:1px solid var(--line,rgba(130,100,150,.24));border-radius:16px;background:var(--surface,rgba(0,0,0,.08))}
+.program-draft-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.program-draft .inline-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+.program-draft label{min-width:0}
+.program-draft .button-quiet{border-color:transparent;background:transparent;color:var(--muted,#777);padding:7px 10px}
+.program-draft .button-quiet:hover{color:#d94f5c;background:rgba(217,79,92,.08)}
+@media(max-width:620px){.program-draft .inline-actions{grid-template-columns:1fr}.program-draft{padding:14px}}
