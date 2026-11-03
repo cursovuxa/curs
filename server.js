@@ -443,13 +443,19 @@ app.patch('/api/admin/users/:id/role', requireUser, requireRootAdmin, asyncRoute
 
 app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
   const eventId = String(req.body.eventId || '');
-  const { data, error } = await supabase.rpc('register_for_event', { p_user_id: req.user.id, p_event_id: eventId });
+  const { data: paymentSetting, error: settingError } = await supabase.from('platform_settings')
+    .select('value').eq('key', 'visual_payments_enabled').maybeSingle();
+  if (settingError) return res.status(500).json({ error: 'Не удалось проверить режим оплаты' });
+  const visualPaymentsEnabled = paymentSetting?.value === true;
+  const { data, error } = await supabase.rpc('register_for_event', {
+    p_user_id: req.user.id, p_event_id: eventId, p_visual_payments_enabled: visualPaymentsEnabled
+  });
   if (error) {
     const reason = error.message || '';
     const status = reason.includes('payment_provider_required') ? 501
       : reason.includes('already_registered') ? 409
       : reason.includes('sold_out') ? 409 : 400;
-    const message = reason.includes('payment_provider_required') ? 'Платёжный провайдер ещё не подключён; платные регистрации закрыты'
+    const message = reason.includes('payment_provider_required') ? 'Оплата пока недоступна: платёжный провайдер не подключён. Платные регистрации закрыты.'
       : reason.includes('already_registered') ? 'Вы уже зарегистрированы'
       : reason.includes('sold_out') ? 'Свободных мест больше нет' : 'Не удалось зарегистрироваться';
     return res.status(status).json({ error: message });
@@ -457,7 +463,7 @@ app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
   await supabase.from('audit_logs').insert({
     actor_id: req.user.id, actor_name: req.user.full_name,
     action: 'REGISTER_FOR_EVENT', entity_type: 'ticket',
-    entity_id: data.ticket.id, details: { event_id: eventId }
+    entity_id: data.ticket.id, details: { event_id: eventId, visual_payment_bypass: visualPaymentsEnabled }
   });
   res.status(201).json(data);
 }));
@@ -795,10 +801,11 @@ app.get('/api/admin/settings', requireUser, requireRootAdmin, asyncRoute(async (
   res.json({ settings: Object.fromEntries((data || []).map((item) => [item.key, item.value])) });
 }));
 app.patch('/api/admin/settings', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
-  const allowed = new Set(['site_name','support_email','maintenance_mode']);
+  const allowed = new Set(['site_name','support_email','maintenance_mode','visual_payments_enabled']);
   const entries = Object.entries(req.body || {}).filter(([key]) => allowed.has(key));
   if (!entries.length) return res.status(400).json({ error: 'Нет допустимых настроек для сохранения' });
-  if (entries.some(([key,value]) => key === 'maintenance_mode' ? typeof value !== 'boolean' : typeof value !== 'string')) {
+  const booleanKeys = new Set(['maintenance_mode','visual_payments_enabled']);
+  if (entries.some(([key,value]) => booleanKeys.has(key) ? typeof value !== 'boolean' : typeof value !== 'string')) {
     return res.status(400).json({ error: 'Проверьте значения настроек' });
   }
   const writes = entries.map(([key,value]) => ({ key, value: JSON.stringify(value), updated_by: req.user.id, updated_at: new Date().toISOString() }));
