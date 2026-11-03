@@ -215,6 +215,129 @@ app.patch('/api/admin/users/:id/role', requireUser, allowRoles('admin'), asyncRo
   res.json({ user: data });
 }));
 
+app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
+  const eventId = String(req.body.eventId || '');
+  const { data, error } = await supabase.rpc('register_for_event', { p_user_id: req.user.id, p_event_id: eventId });
+  if (error) {
+    const reason = error.message || '';
+    const status = reason.includes('payment_provider_required') ? 501
+      : reason.includes('already_registered') ? 409
+      : reason.includes('sold_out') ? 409 : 400;
+    const message = reason.includes('payment_provider_required') ? 'Платёжный провайдер ещё не подключён; платные регистрации закрыты'
+      : reason.includes('already_registered') ? 'Вы уже зарегистрированы'
+      : reason.includes('sold_out') ? 'Свободных мест больше нет' : 'Не удалось зарегистрироваться';
+    return res.status(status).json({ error: message });
+  }
+  await supabase.from('audit_logs').insert({
+    actor_id: req.user.id, actor_name: req.user.full_name,
+    action: 'REGISTER_FOR_EVENT', entity_type: 'ticket',
+    entity_id: data.ticket.id, details: { event_id: eventId }
+  });
+  res.status(201).json(data);
+}));
+app.get('/api/tickets/mine', requireUser, asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('tickets')
+    .select('*,events(id,title,start_date,start_time,venues(name,city))')
+    .eq('user_id', req.user.id).order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить билеты' });
+  res.json({ tickets: data });
+}));
+app.post('/api/reviews', requireUser, asyncRoute(async (req, res) => {
+  const { eventId, orgRating, venueRating, programRating, staffRating, comment } = req.body;
+  const ratings = [orgRating, venueRating, programRating, staffRating].map(Number);
+  if (!eventId || ratings.some((value) => !Number.isInteger(value) || value < 1 || value > 5)) {
+    return res.status(400).json({ error: 'Оцените организатора, площадку, программу и команду (1–5)' });
+  }
+  const { count } = await supabase.from('tickets').select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId).eq('user_id', req.user.id).in('status', ['valid', 'used']);
+  if (!count) return res.status(403).json({ error: 'Оставлять отзыв могут участники с билетом' });
+  const { data, error } = await supabase.from('reviews').insert({
+    event_id: eventId, user_id: req.user.id,
+    org_rating: ratings[0], venue_rating: ratings[1], program_rating: ratings[2],
+    staff_rating: ratings[3], overall_rating: ratings.reduce((a,b) => a+b, 0) / 4,
+    comment: String(comment || '').slice(0, 3000)
+  }).select('*').single();
+  if (error) return res.status(400).json({ error: 'Отзыв уже оставлен или данные некорректны' });
+  res.status(201).json({ review: data });
+}));
+app.get('/api/organizer/registrations', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
+  const { data: events, error: eventsError } = await supabase.from('events').select('id').eq('organizer_id', req.user.id);
+  if (eventsError) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
+  const ids = (events || []).map((event) => event.id);
+  if (!ids.length) return res.json({ registrations: [] });
+  const { data, error } = await supabase.from('tickets')
+    .select('ticket_number,status,seat_label,price_paid,created_at,events(id,title),users(full_name,email)')
+    .in('event_id', ids).order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить участников' });
+  res.json({ registrations: data });
+}));
+app.get('/api/staff/assignments', requireUser, allowRoles('staff', 'admin'), asyncRoute(async (req, res) => {
+  if (req.user.role === 'admin') {
+    const { data, error } = await supabase.from('event_staff_assignments')
+      .select('*,events(id,title,start_date,start_time,venues(name,city)),employees(user_id,position,users(full_name,email))');
+    if (error) return res.status(500).json({ error: 'Не удалось загрузить назначения' });
+    return res.json({ assignments: data });
+  }
+  const { data: employee, error: employeeError } = await supabase.from('employees').select('id').eq('user_id', req.user.id).maybeSingle();
+  if (employeeError || !employee) return res.json({ assignments: [] });
+  const { data, error } = await supabase.from('event_staff_assignments')
+    .select('*,events(id,title,start_date,start_time,venues(name,city))')
+    .eq('employee_id', employee.id).eq('status', 'assigned');
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить назначения' });
+  res.json({ assignments: data });
+}));
+app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('staff', 'admin'), asyncRoute(async (req, res) => {
+  let q = supabase.from('tickets').select('id,event_id,status,user_id').eq('ticket_number', req.params.ticketNumber).maybeSingle();
+  const { data: ticket, error } = await q;
+  if (error || !ticket) return res.status(404).json({ error: 'Билет не найден' });
+  if (ticket.status !== 'valid') return res.status(409).json({ error: ticket.status === 'used' ? 'Билет уже использован' : 'Билет недействителен' });
+  if (req.user.role === 'staff') {
+    const { data: emp } = await supabase.from('employees').select('id').eq('user_id', req.user.id).maybeSingle();
+    if (!emp) return res.status(403).json({ error: 'Сотрудник не назначен на это мероприятие' });
+    const { data: assignment } = await supabase.from('event_staff_assignments').select('id')
+      .eq('event_id', ticket.event_id).eq('employee_id', emp.id).eq('status', 'assigned').maybeSingle();
+    if (!assignment) return res.status(403).json({ error: 'У вас нет доступа к мероприятию' });
+  }
+  const { data: checked, error: checkError } = await supabase.from('tickets')
+    .update({ status: 'used', used_at: new Date().toISOString(), used_by_staff_id: req.user.id })
+    .eq('id', ticket.id).eq('status', 'valid').select('id,ticket_number,status,used_at').maybeSingle();
+  if (checkError) return res.status(500).json({ error: 'Не удалось отметить вход' });
+  if (!checked) return res.status(409).json({ error: 'Билет уже проверен' });
+  res.json({ ticket: checked });
+}));
+app.get('/api/moderation/complaints', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('complaints').select('*,users!complaints_author_id_fkey(full_name,email)')
+    .order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
+  res.json({ complaints: data });
+}));
+app.patch('/api/moderation/complaints/:id', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (req, res) => {
+  if (!['in_review','resolved','rejected'].includes(req.body.status)) return res.status(400).json({ error: 'Недопустимый статус' });
+  const { data, error } = await supabase.from('complaints').update({
+    status: req.body.status, moderator_notes: String(req.body.moderatorNotes || '').slice(0, 3000),
+    reviewed_by: req.user.id, updated_at: new Date().toISOString()
+  }).eq('id', req.params.id).select('*').single();
+  if (error) return res.status(400).json({ error: 'Не удалось обновить жалобу' });
+  res.json({ complaint: data });
+}));
+app.get('/api/admin/audit-logs', requireUser, allowRoles('admin'), asyncRoute(async (_req, res) => {
+  const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(500);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить журнал' });
+  res.json({ logs: data });
+}));
+app.get('/api/admin/statistics', requireUser, allowRoles('admin'), asyncRoute(async (_req, res) => {
+  const [users, events, tickets, payments, complaints] = await Promise.all([
+    supabase.from('users').select('id', { count: 'exact', head: true }),
+    supabase.from('events').select('id', { count: 'exact', head: true }),
+    supabase.from('tickets').select('id', { count: 'exact', head: true }),
+    supabase.from('payments').select('amount', { count: 'exact' }).eq('status', 'completed'),
+    supabase.from('complaints').select('id', { count: 'exact', head: true }).in('status', ['new','in_review'])
+  ]);
+  if ([users,events,tickets,payments,complaints].some((x) => x.error)) return res.status(500).json({ error: 'Не удалось рассчитать статистику' });
+  const revenue = (payments.data || []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  res.json({ users: users.count, events: events.count, tickets: tickets.count, revenue, openComplaints: complaints.count });
+}));
+
 app.use((err, _req, res, _next) => {
   console.error('[api]', err.message);
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
