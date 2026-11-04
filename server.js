@@ -621,6 +621,22 @@ app.get('/api/events/:id/seats', requireUser, asyncRoute(async (req, res) => {
   res.json({ seatSelectionRequired: true, event, seats });
 }));
 
+app.get('/api/events/:id/queue',requireUser,asyncRoute(async(req,res)=>{
+ const {data,error}=await supabase.rpc('get_event_queue_status',{p_user_id:req.user.id,p_event_id:req.params.id});
+ if(error)return res.status(400).json({error:error.message.includes('event_unavailable')?'Мероприятие недоступно':'Не удалось загрузить очередь'});
+ res.json(data);
+}));
+app.post('/api/events/:id/queue',requireUser,asyncRoute(async(req,res)=>{
+ const {data,error}=await supabase.rpc('join_event_queue',{p_user_id:req.user.id,p_event_id:req.params.id});
+ if(error)return res.status(error.message.includes('event_unavailable')?404:400).json({error:error.message.includes('event_unavailable')?'Мероприятие недоступно':'Не удалось встать в очередь'});
+ res.status(data.joined?201:200).json(data);
+}));
+app.delete('/api/events/:id/queue',requireUser,asyncRoute(async(req,res)=>{
+ const {data,error}=await supabase.rpc('leave_event_queue',{p_user_id:req.user.id,p_event_id:req.params.id});
+ if(error)return res.status(400).json({error:'Не удалось выйти из очереди'});
+ res.json({cancelled:Boolean(data)});
+}));
+
 app.post('/api/seat-reservations', requireUser, asyncRoute(async (req, res) => {
   const eventId = String(req.body.eventId || '');
   const seatId = String(req.body.seatId || '');
