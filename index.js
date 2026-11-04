@@ -1,3 +1,17 @@
+function syncBrandWordmarks(){
+  const halloween=document.body.dataset.theme==="halloween";
+  document.querySelectorAll(".brand-wordmarks").forEach((wrap)=>{
+    const active=wrap.querySelector(halloween?".brand-wordmark-halloween":".brand-wordmark");
+    const fallback=wrap.querySelector(".brand-text-fallback");
+    const loaded=!!(active&&active.complete&&active.naturalWidth>0);
+    wrap.querySelectorAll("img.brand-wordmark,img.brand-wordmark-halloween").forEach((img)=>{img.hidden=img!==active||!loaded});
+    if(fallback)fallback.hidden=loaded;
+  });
+}
+document.addEventListener("load",(event)=>{if(event.target.matches?.("img.brand-wordmark,img.brand-wordmark-halloween"))syncBrandWordmarks()},true);
+document.addEventListener("error",(event)=>{if(event.target.matches?.("img.brand-wordmark,img.brand-wordmark-halloween"))syncBrandWordmarks()},true);
+new MutationObserver(syncBrandWordmarks).observe(document.body,{attributes:true,attributeFilter:["data-theme"]});
+syncBrandWordmarks();
 const API_BASE = 'https://cursa-guk5.onrender.com';
 const SUPABASE_URL = 'https://rpsvuygarxlnqpxtwuzq.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hIAivAUZ0fCx9KlHsj4YVg_kc2TkPzB';

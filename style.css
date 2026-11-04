@@ -547,17 +547,23 @@ textarea{resize:none!important;overflow-x:hidden;min-height:48px;max-height:360p
 }
 
 
-/* Uploaded FlowTix brand assets: shared icon and theme-aware wordmark */
-.brand-logo{display:block;width:38px;height:38px;flex:0 0 38px;object-fit:contain;border-radius:11px}
-.brand-wordmarks{display:inline-flex;align-items:center;min-width:0}
-.brand-wordmark,.brand-wordmark-halloween{display:block;width:auto;max-width:min(180px,35vw);height:auto;max-height:34px;object-fit:contain;object-position:left center}
+/* FlowTix brand assets: readable fallback while uploaded wordmarks are missing */
+.brand-logo{display:block;width:50px;height:50px;flex:0 0 50px;object-fit:cover;border-radius:14px}
+.brand-wordmarks{display:inline-flex;align-items:center;min-width:0;min-height:40px}
+.brand-wordmark,.brand-wordmark-halloween{display:block;width:auto;max-width:min(190px,38vw);height:auto;max-height:38px;object-fit:contain;object-position:left center}
 .brand-wordmark-halloween{display:none}
 body[data-theme="halloween"] .brand-wordmark{display:none}
 body[data-theme="halloween"] .brand-wordmark-halloween{display:block}
-.auth-brand .brand-logo{width:34px;height:34px;flex-basis:34px}
-.auth-brand .brand-wordmark,.auth-brand .brand-wordmark-halloween{max-width:164px;max-height:30px}
+.brand-text-fallback{color:var(--ink,#191a2b);font:800 22px/1 "DM Sans","Segoe UI",Arial,sans-serif;letter-spacing:-.045em;white-space:nowrap}
+body[data-theme="halloween"] .brand-text-fallback{color:var(--ink,#fff)}
+.brand-text-fallback[hidden],.brand-wordmark[hidden],.brand-wordmark-halloween[hidden]{display:none!important}
+.auth-brand .brand-logo{width:42px;height:42px;flex-basis:42px}
+.auth-brand .brand-wordmarks{min-height:34px}
+.auth-brand .brand-wordmark,.auth-brand .brand-wordmark-halloween{max-width:164px;max-height:32px}
+.auth-brand .brand-text-fallback{font-size:20px}
 @media(max-width:700px){
-  .brand-logo{width:36px;height:36px;flex-basis:36px}
-  .brand-wordmark,.brand-wordmark-halloween{max-width:min(150px,38vw);max-height:30px}
-  .auth-brand .brand-wordmark,.auth-brand .brand-wordmark-halloween{max-width:145px}
+ .brand-logo{width:48px;height:48px;flex-basis:48px}
+ .brand-wordmark,.brand-wordmark-halloween{max-width:min(160px,40vw);max-height:34px}
+ .brand-text-fallback{font-size:21px}
+ .auth-brand .brand-wordmark,.auth-brand .brand-wordmark-halloween{max-width:145px}
 }
