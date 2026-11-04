@@ -788,19 +788,70 @@ function setStaffEventPicker(form,eventId){
   const menu=picker.querySelector('[data-staff-event-menu]');
   if(menu)menu.hidden=true;
 }
+const staffParticipantFeeds=new Map();
+const staffParticipantObservers=new Map();
+async function loadStaffParticipants(eventId,panel,retry=false){
+  const key=String(eventId),feed=staffParticipantFeeds.get(key);
+  if(!feed||feed.loading)return;
+  if(feed.loaded&&!feed.hasMore&&!retry)return;
+  if(retry){feed.error=null;feed.loaded=false}
+  feed.loading=true;
+  const more=panel.querySelector('[data-participants-more]');
+  if(more){more.disabled=true;more.textContent='Загружаем…'}
+  try{
+    const result=await api('/api/staff/events/'+encodeURIComponent(key)+'/participants?offset='+feed.offset);
+    feed.rows.push(...(result.participants||[]));
+    feed.offset+=result.participants?.length||0;
+    feed.total=Number(result.total??feed.rows.length);
+    feed.hasMore=Boolean(result.hasMore);
+    feed.loaded=true;feed.error=null;
+  }catch(error){feed.error=error.message}
+  finally{
+    feed.loading=false;
+    const rows=feed.rows.map(participant=>'<tr><td>'+esc(participant.ticket_number)+'</td><td>'+esc(participant.users?.full_name||participant.users?.email||'Участник')+'</td><td>'+esc(participant.seat_label||'Без места')+'</td><td>'+esc(participant.status==='used'?'Вход отмечен':'Билет действителен')+'</td></tr>').join('');
+    const content=panel.querySelector('[data-participant-content]');
+    if(content){
+      if(feed.error){
+        content.innerHTML=(rows?'<div class="scroll-table"><table class="data-table"><thead><tr><th>Билет</th><th>Посетитель</th><th>Место</th><th>Статус</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'')+'<p class="connection-state">Не удалось загрузить список участников. '+esc(feed.error)+'</p><button type="button" class="button button-light button-small" data-retry-participants="'+esc(key)+'">Повторить</button>';
+      }else if(!feed.rows.length){
+        content.innerHTML=empty('В этом мероприятии пока нет участников.');
+      }else{
+        content.innerHTML='<div class="scroll-table"><table class="data-table"><thead><tr><th>Билет</th><th>Посетитель</th><th>Место</th><th>Статус</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+(feed.hasMore?'<button type="button" class="button button-light button-small staff-participants-more" data-participants-more="'+esc(key)+'">Загрузить ещё 5</button>':'<p class="admin-event-end">Показаны все участники.</p>');
+      }
+    }
+    const count=panel.querySelector('[data-participant-count]');
+    if(count)count.textContent='Участники ('+feed.total+')';
+    observeStaffParticipantFeed(key,panel);
+  }
+}
+function observeStaffParticipantFeed(eventId,panel){
+  staffParticipantObservers.get(String(eventId))?.disconnect();
+  const feed=staffParticipantFeeds.get(String(eventId)),button=panel.querySelector('[data-participants-more]');
+  if(!feed?.hasMore||!button||!panel.closest('details')?.open)return;
+  if('IntersectionObserver'in window){
+    const observer=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))void loadStaffParticipants(eventId,panel)},{rootMargin:'180px'});
+    staffParticipantObservers.set(String(eventId),observer);observer.observe(button);
+  }
+}
+document.addEventListener('toggle',(event)=>{
+  const card=event.target;
+  if(!(card instanceof HTMLDetailsElement)||!card.matches('[data-staff-event-card]'))return;
+  const eventId=card.dataset.staffEventCard,panel=card.querySelector('[data-participant-panel]');
+  if(card.open){
+    const feed=staffParticipantFeeds.get(String(eventId));
+    if(feed?.loaded)observeStaffParticipantFeed(eventId,panel);
+    else void loadStaffParticipants(eventId,panel);
+  }else staffParticipantObservers.get(String(eventId))?.disconnect();
+},true);
 async function staffView() {
+  staffParticipantObservers.forEach(observer=>observer.disconnect());staffParticipantObservers.clear();staffParticipantFeeds.clear();
   try {
     const {assignments=[]}=await api('/api/staff/assignments');
-    const details=await Promise.all(assignments.map(async(a)=>{
-      const event=a.events||{};
-      try{return {assignment:a,participants:(await api('/api/staff/events/'+encodeURIComponent(event.id)+'/participants')).participants||[]}}
-      catch(error){return {assignment:a,participants:[],error:error.message}}
-    }));
-    const cards=details.map(({assignment:a,participants,error})=>{
-      const event=a.events||{};
-      return '<details class="workspace-card" open><summary><b>'+esc(event.title||'Мероприятие')+'</b> · '+esc(event.start_date||'')+' · '+esc(event.venues?.name||'')+'</summary><h4>Участники ('+participants.length+')</h4>'+(error?'<p class="connection-state">'+esc(error)+'</p>':participants.length?'<div class="scroll-table"><table class="data-table"><thead><tr><th>Билет</th><th>Посетитель</th><th>Место</th><th>Статус</th></tr></thead><tbody>'+participants.map(p=>'<tr><td>'+esc(p.ticket_number)+'</td><td>'+esc(p.users?.full_name||p.users?.email||'')+'</td><td>'+esc(p.seat_label||'—')+'</td><td>'+esc(p.status)+'</td></tr>').join('')+'</tbody></table></div>':empty('Список участников пока пуст.'))+'</details>';
-    }).join('');
     const assignedEvents=[...new Map(assignments.map(a=>a.events).filter(e=>e?.id).map(e=>[String(e.id),e])).values()];
+    const cards=assignedEvents.map(event=>{
+      staffParticipantFeeds.set(String(event.id),{offset:0,total:0,rows:[],hasMore:true,loading:false,loaded:false,error:null});
+      return '<details class="workspace-card staff-event-card" data-staff-event-card="'+esc(event.id)+'"><summary><span class="staff-event-summary-title">'+esc(event.title||'Мероприятие')+' · '+esc(event.start_date||'')+(event.venues?.name?' · '+esc(event.venues.name):'')+'</span><span class="staff-event-summary-meta" data-participant-count>Участники</span><svg class="staff-event-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="staff-participant-panel" data-participant-panel><div data-participant-content><p class="staff-participant-placeholder">Откройте вкладку, чтобы загрузить список участников.</p></div></div></details>';
+    }).join('');
     const eventPicker=assignedEvents.length
       ?'<div class="staff-event-picker" data-staff-event-picker><input type="hidden" name="eventId" value=""><button type="button" class="staff-event-toggle" data-staff-event-toggle aria-expanded="false"><span data-staff-event-current>Выберите мероприятие</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="staff-event-menu" data-staff-event-menu hidden>'+assignedEvents.map(e=>'<button type="button" class="staff-event-option" data-staff-event-option="'+esc(e.id)+'"><span>'+esc(e.title||'Мероприятие')+'</span><small>'+esc([e.start_date,e.start_time,e.venues?.name].filter(Boolean).join(' · '))+'</small></button>').join('')+'</div></div>'
       :'<div class="staff-assignment-empty"><b>Нет назначенных мероприятий</b><span>Попросите организатора или администратора назначить вас сотрудником мероприятия.</span></div>';
@@ -917,7 +968,7 @@ async function adminView() {
     const eventRows=(events.events||[]).map(renderAdminEvent).join('');
     const venueRows=(venues.venues||[]).map(v=>'<details class="workspace-row"><summary><b>'+esc(v.name)+'</b> · '+esc(v.city)+'</summary><form data-admin-venue="'+esc(v.id)+'" class="form-grid"><label>Название<input name="name" value="'+esc(v.name)+'" required></label><label>Город<input name="city" value="'+esc(v.city)+'" required></label><label class="wide">Адрес<input name="address" value="'+esc(v.address)+'" required></label><label class="wide">Описание<textarea name="description">'+esc(v.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить</button></form></details>').join('');
     (tickets.tickets||[]).forEach(t=>adminTicketCache.set(t.id,t));
-    const renderAdminTicket=t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.full_name||t.users?.email||'')+'</small></td><td>'+esc(ticketStatusLabel(t.status))+'</td><td>'+esc(money(t.price_paid))+'</td><td><button class="button button-danger button-small" '+(['valid','used'].includes(t.status)?'data-cancel-ticket':'data-delete-ticket')+'="'+esc(t.id)+'">'+(['valid','used'].includes(t.status)?'Аннулировать':'Удалить')+'</button></td></tr>';
+    const renderAdminTicket=t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.full_name||t.users?.email||'')+'</small></td><td>'+esc(ticketStatusLabel(t.status))+'</td><td>'+esc(money(t.price_paid))+'</td><td><div class="inline-actions"><button class="button button-danger button-small" '+(['valid','used'].includes(t.status)?'data-cancel-ticket':'data-delete-ticket')+'="'+esc(t.id)+'">'+(['valid','used'].includes(t.status)?'Аннулировать':'Удалить')+'</button>'+(t.status==='used'?'<button class="button button-light button-small" data-delete-ticket="'+esc(t.id)+'">Удалить</button>':'')+'</div></td></tr>';
     let loadedAdminTickets=[...(tickets.tickets||[])];
     const ticketRows=loadedAdminTickets.map(renderAdminTicket).join('');
     const paymentRows=(payments.payments||[]).map(p=>'<tr><td>'+esc(new Date(p.created_at).toLocaleString('ru'))+'</td><td>'+esc(p.users?.email||'—')+'</td><td>'+esc(p.tickets?.events?.title||p.tickets?.ticket_number||'—')+'</td><td>'+esc(money(p.amount))+'</td><td>'+esc(p.status)+' · '+esc(p.payment_method||'—')+'</td></tr>').join('');
@@ -926,7 +977,7 @@ async function adminView() {
     const s=settings.settings||{};
     const visualPaymentsEnabled=s.visual_payments_enabled===true;
     const settingsForm='<form id="adminSettingsForm" class="form-grid"><label>Название сервиса<input name="site_name" value="'+esc(s.site_name||'FlowTix')+'" required></label><label>Почта поддержки<input name="support_email" type="email" value="'+esc(s.support_email||'')+'"></label><label>Режим обслуживания<select name="maintenance_mode"><option value="false" '+(s.maintenance_mode?'':'selected')+'>Выключен</option><option value="true" '+(s.maintenance_mode?'selected':'')+'>Включён</option></select></label><div class="wide visual-payment-option"><label class="admin-switch"><input type="checkbox" name="visual_payments_enabled" '+(visualPaymentsEnabled?'checked':'')+'><span class="admin-switch-track" aria-hidden="true"></span><span class="admin-switch-copy"><b>Активировать визуальные пополнения баланса</b><small>Пополнение общего баланса без списания денег. Покупка билета списывает его стоимость с баланса.</small></span></label><p class="payment-provider-note">Если выключить режим, пополнение недоступно до подключения провайдера. Уже имеющийся баланс можно тратить на билеты.</p></div><div class="wide"><button class="button button-accent" type="submit">Сохранить настройки</button></div></form>';
-    const auditActionLabels={REGISTER_FOR_EVENT:'Регистрация на мероприятие',ADMIN_TICKET_CANCELLED:'Билет аннулирован',ADMIN_TICKET_DELETED:'Билет удалён',USER_ROLE_CHANGED:'Изменена роль пользователя',USER_BLOCKED:'Аккаунт заблокирован',USER_UNBLOCKED:'Аккаунт разблокирован',ADMIN_SETTINGS_UPDATED:'Изменены настройки системы',ADMIN_EVENT_STATUS_CHANGED:'Изменён статус мероприятия',STAFF_TICKET_CHECKED_IN:'Билет проверен на входе'};
+    const auditActionLabels={REGISTER_FOR_EVENT:'Регистрация на мероприятие',ADMIN_TICKET_CANCELLED:'Билет аннулирован',ADMIN_TICKET_DELETED:'Билет удалён',USER_ROLE_CHANGED:'Изменена роль пользователя',USER_BLOCKED:'Аккаунт заблокирован',USER_UNBLOCKED:'Аккаунт разблокирован',ADMIN_SETTINGS_UPDATED:'Изменены настройки системы',ADMIN_EVENT_STATUS_CHANGED:'Изменён статус мероприятия',STAFF_TICKET_CHECKED_IN:'Билет проверен на входе',TICKET_AUTO_DELETED:'Использованный билет удалён автоматически'};
     const auditRoleLabels={visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник',moderator:'Модератор',admin:'Администратор'};
     const auditDetail=(x)=>{
       if(x.detail_label)return x.detail_label;
@@ -1188,6 +1239,10 @@ document.addEventListener('change',async(e)=>{
 });
 document.addEventListener('click',(event)=>{
  const target=event.target instanceof Element?event.target:null;
+ const retry=target?.closest('[data-retry-participants]');
+ if(retry){const eventId=retry.dataset.retryParticipants,card=retry.closest('[data-staff-event-card]'),panel=card?.querySelector('[data-participant-panel]');if(panel)void loadStaffParticipants(eventId,panel,true);return}
+ const moreParticipants=target?.closest('[data-participants-more]');
+ if(moreParticipants){const eventId=moreParticipants.dataset.participantsMore,card=moreParticipants.closest('[data-staff-event-card]'),panel=card?.querySelector('[data-participant-panel]');if(panel)void loadStaffParticipants(eventId,panel);return}
  const toggle=target?.closest('[data-staff-event-toggle]');
  if(toggle){const picker=toggle.closest('[data-staff-event-picker]'),menu=picker?.querySelector('[data-staff-event-menu]'),open=toggle.getAttribute('aria-expanded')!=='true';if(menu)menu.hidden=!open;toggle.setAttribute('aria-expanded',String(open));return}
  const option=target?.closest('[data-staff-event-option]');
