@@ -1,7 +1,11 @@
 alter table public.promo_codes
   add column if not exists category_id uuid references public.event_categories(id) on delete set null,
   add column if not exists seat_type public.seat_type_enum,
-  add column if not exists event_id uuid references public.events(id) on delete cascade;
+  add column if not exists event_id uuid references public.events(id) on delete cascade,
+  add column if not exists deleted_at timestamptz;
+alter table public.promo_codes drop constraint if exists promo_codes_code_key;
+create unique index if not exists promo_codes_live_code_unique on public.promo_codes(code) where deleted_at is null;
+create index if not exists promo_codes_visible_created_idx on public.promo_codes(created_at desc) where deleted_at is null;
 create table if not exists public.promo_code_redemptions (
   id uuid primary key default gen_random_uuid(),
   promo_code_id uuid not null references public.promo_codes(id) on delete restrict,
@@ -51,9 +55,13 @@ create or replace function public.wallet_register_for_event_with_promo(
 ) returns jsonb language plpgsql set search_path to public,pg_temp as $$
 declare
   e public.events%rowtype; w public.wallet_accounts%rowtype; pr public.promo_codes%rowtype;
-  result jsonb; subtotal numeric(14,2); discount numeric(14,2):=0; cost numeric(14,2);
-  mult numeric:=1; tid uuid; rid uuid; normalized_code text:=upper(trim(coalesce(p_promo_code,'')));
+  result jsonb; subtotal numeric(14,2); discount numeric(14,2):=0;
+  cost numeric(14,2); charge_amount numeric(14,2); mult numeric:=1;
+  tid uuid; rid uuid; bypass_payment boolean:=false;
+  normalized_code text:=upper(trim(coalesce(p_promo_code,'')));
 begin
+  select coalesce((select value='true'::jsonb from public.platform_settings where key='visual_payments_enabled'),false)
+    into bypass_payment;
   select * into e from public.events where id=p_event_id for update;
   if not found then raise exception 'event_unavailable'; end if;
   if not exists(select 1 from public.users where id=p_user_id and not coalesce(is_blocked,false)) then raise exception 'account_blocked'; end if;
@@ -68,7 +76,8 @@ begin
       and user_id=p_user_id and status='reserved' and reserved_until>now() for update
   ) then raise exception 'reservation_expired'; end if;
   if normalized_code<>'' then
-    select * into pr from public.promo_codes where upper(code)=normalized_code and coalesce(is_active,true) for update;
+    select * into pr from public.promo_codes
+      where upper(code)=normalized_code and coalesce(is_active,true) and deleted_at is null for update;
     if not found then raise exception 'promo_invalid'; end if;
     if pr.expires_at is not null and pr.expires_at<=now() then raise exception 'promo_expired'; end if;
     if pr.max_uses is not null and coalesce(pr.current_uses,0)>=pr.max_uses then raise exception 'promo_limit_reached'; end if;
@@ -83,28 +92,30 @@ begin
     discount:=round(subtotal*least(greatest(pr.discount_percent,0),100)/100.0,2);
   end if;
   cost:=greatest(subtotal-discount,0);
+  charge_amount:=case when bypass_payment then 0 else cost end;
   insert into public.wallet_accounts(user_id) values(p_user_id) on conflict do nothing;
   select * into w from public.wallet_accounts where user_id=p_user_id for update;
-  if cost>w.balance then raise exception 'insufficient_balance'; end if;
+  if not bypass_payment and cost>w.balance then raise exception 'insufficient_balance'; end if;
   result:=public.register_for_event(p_user_id,p_event_id,true,p_seat_id);
   tid:=(result->'ticket'->>'id')::uuid; rid:=(result->'registration'->>'id')::uuid;
-  if cost>0 then
-    update public.wallet_accounts set balance=balance-cost,updated_at=now() where user_id=p_user_id returning * into w;
+  if charge_amount>0 then
+    update public.wallet_accounts set balance=balance-charge_amount,updated_at=now() where user_id=p_user_id returning * into w;
     insert into public.wallet_transactions(user_id,amount,balance_after,kind,reference_id,idempotency_key,description)
-      values(p_user_id,-cost,w.balance,'ticket_purchase',tid,'purchase:'||tid,'Билет: '||e.title);
+      values(p_user_id,-charge_amount,w.balance,'ticket_purchase',tid,'purchase:'||tid,'Билет: '||e.title);
     insert into public.payments(user_id,ticket_id,amount,currency,payment_method,status,transaction_ref,promo_code_id)
-      values(p_user_id,tid,cost,'KZT','wallet','completed','wallet:'||tid,case when normalized_code<>'' then pr.id else null end);
+      values(p_user_id,tid,charge_amount,'KZT','wallet','completed','wallet:'||tid,case when normalized_code<>'' then pr.id else null end);
   end if;
   if normalized_code<>'' then
     update public.promo_codes set current_uses=coalesce(current_uses,0)+1 where id=pr.id;
     insert into public.promo_code_redemptions(promo_code_id,user_id,event_id,ticket_id,discount_amount)
       values(pr.id,p_user_id,p_event_id,tid,discount);
   end if;
-  update public.tickets set price_paid=cost where id=tid;
-  update public.registrations set total_paid=cost where id=rid;
-  result:=jsonb_set(result,'{ticket,price_paid}',to_jsonb(cost));
-  result:=jsonb_set(result,'{registration,total_paid}',to_jsonb(cost));
+  update public.tickets set price_paid=charge_amount where id=tid;
+  update public.registrations set total_paid=charge_amount where id=rid;
+  result:=jsonb_set(result,'{ticket,price_paid}',to_jsonb(charge_amount));
+  result:=jsonb_set(result,'{registration,total_paid}',to_jsonb(charge_amount));
   return result||jsonb_build_object('balance',w.balance,'subtotal',subtotal,'discount',discount,
+      'chargedAmount',charge_amount,'visualPaymentBypass',bypass_payment,
       'promoCode',case when normalized_code<>'' then normalized_code else null end);
 end $$;
 revoke all on function public.wallet_register_for_event_with_promo(uuid,uuid,uuid,text) from public,anon,authenticated;
