@@ -940,7 +940,7 @@ body[data-theme="halloween"] .flow-scrollbar-x .flow-scrollbar-thumb{background:
 .complaint-review-head small{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
 .complaint-review-details{margin:0;color:var(--ink);line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .complaint-review-note{display:grid;gap:6px;color:var(--muted);font-size:11px;font-weight:700}
-.complaint-review-note textarea{width:100%;min-height:68px;max-height:180px;resize:vertical;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--paper);color:var(--ink);line-height:1.5}
+.complaint-review-note textarea{width:100%;min-height:68px;max-height:180px;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--paper);color:var(--ink);line-height:1.5}
 .complaint-review-note textarea:focus{outline:2px solid color-mix(in srgb,var(--violet) 36%,transparent);border-color:var(--violet)}
 .complaint-review-actions{gap:8px}
 .complaint-review-actions button:disabled{opacity:.55;cursor:wait;transform:none}
