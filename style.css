@@ -514,8 +514,8 @@ body.account-page .workspace>*{min-width:0;max-width:100%}
 .seat-place.seat-state-occupied{background:#9b9ba7;color:#fff;opacity:.62;cursor:not-allowed}
 .seat-place.is-selected{outline:3px solid color-mix(in srgb,var(--accent,#ff7a31) 62%,white);outline-offset:2px;transform:translateY(-2px)}
 .seat-picker-footer{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:16px 24px;border-top:1px solid var(--line,rgba(0,0,0,.1));background:color-mix(in srgb,var(--surface,#fff) 92%,var(--violet,#765cf5) 8%)}
-.seat-selection-copy{display:grid;gap:4px;font-size:12px}
-.seat-selection-copy span{color:var(--muted,#77798c);font-size:11px}
+.seat-selection-copy{display:grid;gap:4px;font-size:12px}.seat-price-total{font-size:15px;color:var(--ink,#191a2b);font-weight:800}
+.seat-selection-copy span{color:var(--muted,#77798c);font-size:11px}.recommendation-caption{display:block;margin-top:7px;color:var(--muted,#77798c);font-size:12px;font-weight:500}
 .seat-picker-footer .button:disabled{opacity:.48;cursor:not-allowed;transform:none}
 .seat-empty{text-align:center;color:var(--muted,#77798c);padding:28px}
 
@@ -707,7 +707,7 @@ body[data-theme="halloween"] .header-wallet-balance{background:#211724;border-co
 body[data-theme="halloween"] .header-wallet-balance svg{color:#ff8a42}
 .flow-ticket-category{margin-top:9px;color:var(--muted);font-size:11px;font-weight:650}
 .flow-ticket-qr{display:grid;place-items:center;width:112px;height:112px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#fff}
-.flow-ticket-qr canvas,.flow-ticket-qr img{display:block!important;width:96px!important;height:96px!important;max-width:96px}
+.flow-ticket-qr canvas{display:block!important;width:96px!important;height:96px!important;max-width:96px}.flow-ticket-qr img{display:none!important}
 .flow-ticket-qr-hint{max-width:130px;color:var(--muted);font-size:9px;line-height:1.35;text-align:center}
 .flow-ticket-qr-error{color:#a4384d;font-size:10px;font-weight:700}
 .flow-ticket-status.status-expired{background:#ffeaeb;color:#a4384d}

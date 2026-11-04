@@ -333,7 +333,7 @@ function renderEvents() {
   const personalized=filtered.filter(e=>preferences.includes(String(e.category_id).toLocaleLowerCase('ru'))||preferences.includes(String(e.event_categories?.name||'').toLocaleLowerCase('ru'))||favoriteCategories.has(String(e.category_id)));
   const recommendations=(personalized.length?personalized:popular).slice(0,3);
   $('#recommendedSection').hidden=!recommendations.length;
-  $('#recommendationCaption').textContent=personalized.length?'По интересам и избранному':'Популярное сейчас';
+  $('#recommendationCaption').textContent=personalized.length?'Подобрано для вас':'Популярное сейчас';
   $('#recommendedEventsGrid').innerHTML=recommendations.map(eventCard).join();
 
   if(!selectedCalendarDate)selectedCalendarDate=today;
@@ -423,9 +423,12 @@ function renderSeatPicker(){
   const rows=[...byRow.entries()].map(([label,items])=>'<div class="seat-row"><span class="seat-row-label">'+esc(label)+'</span><div class="seat-row-items">'+items.map(seatButton).join('')+'</div><span class="seat-row-label">'+esc(label)+'</span></div>').join('');
   const selected=seats.find(seat=>seat.id===selectedSeatId);
   const expiry=selected?.reserved_until||null;
+  const basePrice=Number(event.current_price??event.base_price??0);
+  const selectedMultiplier=selected?Number(selected.price_multiplier||1):null;
+  const selectedPrice=selected?Math.round((basePrice*selectedMultiplier+Number.EPSILON)*100)/100:null;
   const statusText=selected?(expiry?'Бронь держится 10 минут после выбора.':'Место выбрано.'):'Выбери свободное место на схеме зала.';
   root.className='dialog event-dialog seat-map-dialog';
-  root.innerHTML='<div class="seat-picker-head"><div><p class="eyebrow dark-eyebrow">ВЫБОР МЕСТА</p><h2>'+esc(event.title||'Мероприятие')+'</h2><p>'+esc([event.start_date,event.start_time,event.venues?.name,event.venues?.city].filter(Boolean).join(' · '))+'</p></div><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="seat-picker-content"><div class="seat-picker-summary"><div><span class="seat-summary-dot available"></span>Свободно</div><div><span class="seat-summary-dot reserved"></span>На удержании</div><div><span class="seat-summary-dot occupied"></span>Занято</div></div><div class="seat-map-scroll"><div class="seat-stage">СЦЕНА</div><div class="seat-type-legend">'+['standard','vip','business','free','accessible'].filter(type=>seats.some(seat=>seat.seat_type===type)).map(type=>'<span><i class="seat-type-swatch seat-type-'+type+'"></i>'+seatTypeLabels[type]+'</span>').join('')+'</div><div class="seat-rows">'+(rows||'<p class="seat-empty">Схема этого зала пока не настроена.</p>')+'</div></div><div class="seat-picker-footer"><div class="seat-selection-copy"><b>'+(selected?esc(selected.row_label+selected.seat_number)+' · '+esc(seatTypeLabels[selected.seat_type]||'Место'):'Место не выбрано')+'</b><span id="seatHoldStatus">'+esc(statusText)+'</span><span id="seatHoldCountdown" aria-live="polite"></span></div><button class="button button-accent" data-confirm-seat '+(selected?'':'disabled')+'>Зарегистрироваться</button></div></div>';
+  root.innerHTML='<div class="seat-picker-head"><div><p class="eyebrow dark-eyebrow">ВЫБОР МЕСТА</p><h2>'+esc(event.title||'Мероприятие')+'</h2><p>'+esc([event.start_date,event.start_time,event.venues?.name,event.venues?.city].filter(Boolean).join(' · '))+'</p></div><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="seat-picker-content"><div class="seat-picker-summary"><div><span class="seat-summary-dot available"></span>Свободно</div><div><span class="seat-summary-dot reserved"></span>На удержании</div><div><span class="seat-summary-dot occupied"></span>Занято</div></div><div class="seat-map-scroll"><div class="seat-stage">СЦЕНА</div><div class="seat-type-legend">'+['standard','vip','business','free','accessible'].filter(type=>seats.some(seat=>seat.seat_type===type)).map(type=>'<span><i class="seat-type-swatch seat-type-'+type+'"></i>'+seatTypeLabels[type]+'</span>').join('')+'</div><div class="seat-rows">'+(rows||'<p class="seat-empty">Схема этого зала пока не настроена.</p>')+'</div></div><div class="seat-picker-footer"><div class="seat-selection-copy"><b>'+(selected?esc(selected.row_label+selected.seat_number)+' · '+esc(seatTypeLabels[selected.seat_type]||'Место'):'Место не выбрано')+'</b><strong class="seat-price-total">'+(selected?(selectedPrice>0?money(selectedPrice):'Бесплатно'):'Базовая цена: '+(basePrice>0?money(basePrice):'Бесплатно'))+(selected&&selectedMultiplier!==1?' · × '+esc(String(selectedMultiplier).replace('.',',')):'')+'</strong><span id="seatHoldStatus">'+esc(statusText)+'</span><span id="seatHoldCountdown" aria-live="polite"></span></div><button class="button button-accent" data-confirm-seat '+(selected?'':'disabled')+'>Зарегистрироваться</button></div></div>';
   clearInterval(seatPickerCountdownTimer);
   if(expiry)seatPickerCountdownTimer=setInterval(()=>{
     const seconds=Math.max(0,Math.ceil((new Date(expiry).getTime()-Date.now())/1000));
@@ -902,7 +905,23 @@ async function adminView() {
     const s=settings.settings||{};
     const visualPaymentsEnabled=s.visual_payments_enabled===true;
     const settingsForm='<form id="adminSettingsForm" class="form-grid"><label>Название сервиса<input name="site_name" value="'+esc(s.site_name||'FlowTix')+'" required></label><label>Почта поддержки<input name="support_email" type="email" value="'+esc(s.support_email||'')+'"></label><label>Режим обслуживания<select name="maintenance_mode"><option value="false" '+(s.maintenance_mode?'':'selected')+'>Выключен</option><option value="true" '+(s.maintenance_mode?'selected':'')+'>Включён</option></select></label><div class="wide visual-payment-option"><label class="admin-switch"><input type="checkbox" name="visual_payments_enabled" '+(visualPaymentsEnabled?'checked':'')+'><span class="admin-switch-track" aria-hidden="true"></span><span class="admin-switch-copy"><b>Активировать визуальные пополнения баланса</b><small>Пополнение общего баланса без списания денег. Покупка билета списывает его стоимость с баланса.</small></span></label><p class="payment-provider-note">Если выключить режим, пополнение недоступно до подключения провайдера. Уже имеющийся баланс можно тратить на билеты.</p></div><div class="wide"><button class="button button-accent" type="submit">Сохранить настройки</button></div></form>';
-    const logsHtml=(logs.logs||[]).map(x=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.entity_type)+' '+esc(x.entity_id||'')+'</td></tr>').join('');
+    const auditActionLabels={REGISTER_FOR_EVENT:'Регистрация на мероприятие',ADMIN_TICKET_CANCELLED:'Билет аннулирован',ADMIN_TICKET_DELETED:'Билет удалён',USER_ROLE_CHANGED:'Изменена роль пользователя',USER_BLOCKED:'Аккаунт заблокирован',USER_UNBLOCKED:'Аккаунт разблокирован',ADMIN_SETTINGS_UPDATED:'Изменены настройки системы',ADMIN_EVENT_STATUS_CHANGED:'Изменён статус мероприятия',STAFF_TICKET_CHECKED_IN:'Билет проверен на входе'};
+    const auditRoleLabels={visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник',moderator:'Модератор',admin:'Администратор'};
+    const auditDetail=(x)=>{
+      if(x.detail_label)return x.detail_label;
+      const d=x.details||{};
+      if(x.action==='REGISTER_FOR_EVENT')return [d.event_title,d.amount!=null?(Number(d.amount)>0?'Оплачено '+money(d.amount):'Бесплатно'):''].filter(Boolean).join(' · ');
+      if(x.action==='USER_ROLE_CHANGED')return d.role?'Новая роль: '+(auditRoleLabels[d.role]||d.role):'';
+      if(x.action==='USER_BLOCKED'||x.action==='USER_UNBLOCKED')return d.email||'';
+      if(x.action==='ADMIN_EVENT_STATUS_CHANGED')return d.status?'Статус: '+eventStatusLabel(d.status):'';
+      if(x.action==='ADMIN_SETTINGS_UPDATED'){
+        const names={site_name:'Название сайта',support_email:'Почта поддержки',maintenance_mode:'Режим обслуживания',visual_payments_enabled:'Визуальные платежи'};
+        return Object.keys(d).map(k=>names[k]).filter(Boolean).map(k=>k+': изменено').join(' · ');
+      }
+      return '';
+    };
+    const renderAuditRow=(x)=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(auditActionLabels[x.action]||'Действие в системе')+'</td><td>'+esc([x.entity_label,auditDetail(x)].filter(Boolean).join(' · ')||'—')+'</td></tr>';
+    const logsHtml=(logs.logs||[]).map(renderAuditRow).join('');
     const panels={
       users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody id="adminUserRows">'+userRows+'</tbody></table></div><button id="adminUserLoadMore" type="button" class="button button-light button-small '+(users.hasMore?'':'is-hidden')+'" '+(users.hasMore?'':'hidden')+'>Загрузить ещё 10</button><p id="adminUserEnd" class="admin-event-end '+(users.hasMore?'is-hidden':'')+'">'+((users.users||[]).length?'Показаны все пользователи.':'Пользователей пока нет.')+'</p></div>',
       events:'<div class="workspace-card"><h3>Мероприятия</h3><p class="workspace-help">Сначала загружаются 10 последних. Листай ниже, чтобы увидеть следующие. Удаление убирает событие из активного списка и сохраняет историю билетов и отзывов.</p><div id="adminEventList" class="admin-event-list">'+(events.error?'<p class="connection-state">'+esc(events.error)+'</p>':eventRows||empty('Активных мероприятий пока нет.'))+'</div><button id="adminEventLoadMore" type="button" class="button button-light button-small '+(events.hasMore?'':'is-hidden')+'">Загрузить ещё 10</button><p id="adminEventEnd" class="admin-event-end '+(events.hasMore?'is-hidden':'')+'">'+((events.events||[]).length?'Показаны все мероприятия.':'')+'</p></div>',
@@ -912,7 +931,7 @@ async function adminView() {
       complaints:'<div class="workspace-card"><h3>Жалобы</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Обращение</th><th>Автор</th><th>Статус</th></tr></thead><tbody>'+complaintRows+'</tbody></table></div></div>',
       reviews:'<div class="workspace-card"><h3>Отзывы</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Событие</th><th>Автор</th><th>Оценка</th><th>Текст</th><th></th></tr></thead><tbody>'+reviewRows+'</tbody></table></div></div>',
       settings:'<div class="workspace-card"><h3>Настройки системы</h3>'+settingsForm+'</div>',
-      logs:'<div class="workspace-card"><h3>Журнал действий</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th></tr></thead><tbody>'+logsHtml+'</tbody></table></div></div>'
+      logs:'<div class="workspace-card"><h3>Журнал действий</h3><p class="workspace-help">Последние действия. Прокручивай вниз — следующие записи загрузятся автоматически.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Подробности</th></tr></thead><tbody id="adminAuditRows">'+logsHtml+'</tbody></table></div><button id="adminAuditLoadMore" type="button" class="button button-light button-small '+(logs.hasMore?'':'is-hidden')+'" '+(logs.hasMore?'':'hidden')+'>Загрузить ещё 10</button><p id="adminAuditEnd" class="admin-event-end '+(logs.hasMore?'is-hidden':'')+'">'+((logs.logs||[]).length?'Показаны все записи.':'Записей пока нет.')+'</p></div>'
     };
     const tabs=Object.entries({users:'Аккаунты',events:'Мероприятия',venues:'Площадки',tickets:'Билеты',payments:'Платежи',complaints:'Жалобы',reviews:'Отзывы',settings:'Настройки',logs:'Журнал'});
     root.innerHTML=loadWarning+'<div class="stats-grid">'+[['Пользователи',stats.users??'—'],['Мероприятия',stats.events??'—'],['Билеты',stats.tickets??'—'],['Выручка',stats.error?'—':money(stats.revenue)],['Открытые жалобы',stats.openComplaints??'—']].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div id="adminTabs" class="category-bar">'+tabs.map(([key,label],i)=>'<button type="button" class="category '+(key===adminSelectedTab?'active':'')+'" data-admin-tab="'+key+'">'+label+'</button>').join('')+'</div><div id="adminPanel">'+(panels[adminSelectedTab]||panels.users)+'</div>';
@@ -953,6 +972,28 @@ async function adminView() {
       if(!button||button.hidden||!adminUsersHasMore)return;
       if('IntersectionObserver' in window){adminUsersObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))void loadMoreAdminUsers()},{rootMargin:'220px'});adminUsersObserver.observe(button)}
     };
+    let adminAuditOffset=(logs.logs||[]).length,adminAuditHasMore=Boolean(logs.hasMore),adminAuditLoading=false,adminAuditObserver=null;
+    const loadMoreAdminAudit=async()=>{
+      if(adminAuditLoading||!adminAuditHasMore||!panel.querySelector('#adminAuditRows'))return;
+      adminAuditLoading=true;const button=panel.querySelector('#adminAuditLoadMore');
+      if(button){button.disabled=true;button.textContent='Загружаем…'}
+      try{
+        const result=await api('/api/admin/audit-logs?offset='+adminAuditOffset);
+        const rows=panel.querySelector('#adminAuditRows');if(!rows)return;
+        if(result.logs?.length){rows.insertAdjacentHTML('beforeend',result.logs.map(renderAuditRow).join(''));adminAuditOffset+=result.logs.length}
+        adminAuditHasMore=Boolean(result.hasMore);
+        if(button){button.hidden=!adminAuditHasMore;button.disabled=false;button.textContent='Загрузить ещё 10'}
+        const end=panel.querySelector('#adminAuditEnd');if(end){end.hidden=adminAuditHasMore;end.textContent='Показаны все записи.'}
+        observeAdminAuditFeed();
+      }catch(error){toast(error.message);if(button){button.disabled=false;button.textContent='Повторить загрузку'}}
+      finally{adminAuditLoading=false}
+    };
+    const observeAdminAuditFeed=()=>{
+      adminAuditObserver?.disconnect();
+      const button=panel.querySelector('#adminAuditLoadMore');
+      if(!button||button.hidden||!adminAuditHasMore)return;
+      if('IntersectionObserver' in window){adminAuditObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))void loadMoreAdminAudit()},{rootMargin:'220px'});adminAuditObserver.observe(button)}
+    };
     let adminEventsOffset=(events.events||[]).length;
     let adminEventsHasMore=Boolean(events.hasMore);
     let adminEventsLoading=false;
@@ -984,15 +1025,17 @@ async function adminView() {
 
     observeAdminUserFeed();
     observeAdminTicketFeed();
+    if(adminSelectedTab==='logs')observeAdminAuditFeed();
     root.onchange=async(e)=>{
       if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён');const item=e.target.closest('[data-admin-event-item]');const pill=item?.querySelector('summary .status-pill');if(pill)pill.textContent=eventStatusLabel(e.target.value);if(e.target.value==='cancelled'){item?.remove();adminEventsOffset=Math.max(0,adminEventsOffset-1)}}catch(x){toast(x.message);await adminView()}}
         };
     root.onclick=async(e)=>{
       const tab=e.target.closest('[data-admin-tab]');
-      if(tab){adminSelectedTab=tab.dataset.adminTab;$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===tab));panel.innerHTML=panels[tab.dataset.adminTab]||'';if(tab.dataset.adminTab==='events')observeAdminEventFeed();if(tab.dataset.adminTab==='users')observeAdminUserFeed();if(tab.dataset.adminTab==='tickets'){const rows=panel.querySelector('#adminTicketRows'),more=panel.querySelector('#adminTicketLoadMore');if(rows)rows.innerHTML=loadedAdminTickets.map(renderAdminTicket).join('');if(more)more.hidden=!ticketHasMore;observeAdminTicketFeed()}return}
+      if(tab){adminSelectedTab=tab.dataset.adminTab;$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===tab));panel.innerHTML=panels[tab.dataset.adminTab]||'';if(tab.dataset.adminTab==='events')observeAdminEventFeed();if(tab.dataset.adminTab==='users')observeAdminUserFeed();if(tab.dataset.adminTab==='logs')observeAdminAuditFeed();if(tab.dataset.adminTab==='tickets'){const rows=panel.querySelector('#adminTicketRows'),more=panel.querySelector('#adminTicketLoadMore');if(rows)rows.innerHTML=loadedAdminTickets.map(renderAdminTicket).join('');if(more)more.hidden=!ticketHasMore;observeAdminTicketFeed()}return}
       if(e.target.closest('#adminTicketLoadMore')){await loadMoreTickets();return}
       if(e.target.closest('#adminUserLoadMore')){await loadMoreAdminUsers();observeAdminUserFeed();return}
       if(e.target.closest('#adminEventLoadMore')){await loadMoreAdminEvents();observeAdminEventFeed();return}
+      if(e.target.closest('#adminAuditLoadMore')){await loadMoreAdminAudit();return}
       const deleteEvent=e.target.closest('[data-delete-event]');
       if(deleteEvent){
         if(!confirm('Убрать мероприятие из активной системы? Билеты и отзывы сохранятся в истории.'))return;
