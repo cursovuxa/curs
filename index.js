@@ -59,6 +59,7 @@ const api = async (path, options = {}) => {
   if (!response.ok) {
     if (data.code === 'ACCOUNT_BLOCKED') {
       if (user) { user.is_blocked = true; renderAccountMenu(); }
+      document.querySelectorAll('.money-overlay').forEach(node=>node.remove());document.body.classList.remove('money-dialog-open');
       showBlockedAccountModal();
     }
     const error = new Error(data.error || 'Запрос не выполнен (' + response.status + ')');
@@ -1030,7 +1031,7 @@ document.addEventListener('change',async(e)=>{
   if(e.target.matches('[data-complaint]')){try{await api('/api/moderation/complaints/'+e.target.dataset.complaint,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус жалобы обновлён')}catch(x){toast(x.message)}}
 });
 document.addEventListener('submit',async(e)=>{
-  if(e.target.id==='walletTopupForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;try{await api('/api/wallet/topups',{method:'POST',body:JSON.stringify({amount:Number(form.elements.amount.value),idempotencyKey:form.dataset.key})});toast('Баланс пополнен');await openWallet()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
+  if(e.target.id==='walletTopupForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;if(form.dataset.attemptAmount&&form.dataset.attemptAmount!==form.elements.amount.value)form.dataset.key=crypto.randomUUID();form.dataset.attemptAmount=form.elements.amount.value;try{await api('/api/wallet/topups',{method:'POST',body:JSON.stringify({amount:Number(form.elements.amount.value),idempotencyKey:form.dataset.key})});toast('Баланс пополнен');await openWallet()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
   if(e.target.id==='ticketActionForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;try{const del=form.dataset.deleteOnly==='true';await api('/api/admin/tickets/'+encodeURIComponent(form.dataset.ticketId)+(del?'':'/cancel'),{method:del?'DELETE':'PATCH',...(del?{}:{body:JSON.stringify({refund:form.elements.refund.checked,block:form.elements.block.checked,notify:form.elements.notify.checked,deleteRecord:form.elements.deleteRecord.checked})})});closeMoneyDialog('ticketActionModal');adminSelectedTab='tickets';toast(del?'Запись билета удалена':'Билет аннулирован, место освобождено');await adminView()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
 
   if(e.target.id==='searchForm'){e.preventDefault();loadEvents();$('#events').scrollIntoView({behavior:'smooth'});}
