@@ -457,7 +457,7 @@ async function subscribeToEventQueue(eventId){
  await stopEventQueueRealtime();
  if(!supabaseAuth)return;
  eventQueueChannel=supabaseAuth.channel('flowtix-event-queue:'+eventId)
-  .on('postgres_changes',{event:'UPDATE',schema:'public',table:'event_queue_state',filter:'event_id=eq.'+eventId},()=>void refreshEventQueue())
+  .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queue_tokens',filter:'event_id=eq.'+eventId},()=>void refreshEventQueue())
   .subscribe();
  queueRefreshTimer=setInterval(()=>void refreshEventQueue(),20000);
 }
