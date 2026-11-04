@@ -445,6 +445,7 @@ app.patch('/api/events/:id', requireUser, allowRoles('organizer', 'admin'), asyn
     if (req.body[key] !== undefined) changes[key] = req.body[key];
   }
   if (req.body.location_address !== undefined) changes.location_address = String(req.body.location_address || '').trim().slice(0, 500);
+  if (req.body.description !== undefined) changes.description = String(req.body.description || '').slice(0, 10000);
   if (req.body.contact_email !== undefined) changes.contact_email = String(req.body.contact_email || '').trim().slice(0, 254) || null;
   if (req.body.contact_phone !== undefined) changes.contact_phone = String(req.body.contact_phone || '').trim().slice(0, 40) || null;
   if (req.body.rules !== undefined) changes.rules = String(req.body.rules || '').trim().slice(0, 5000);
