@@ -809,3 +809,21 @@ body[data-theme="halloween"] .ticket-scan-result.is-success{color:#77e1b6}
  .admin-user-modal .profile-link-add{grid-template-columns:minmax(0,1fr)}
  .admin-user-modal .profile-link-add button,.admin-user-modal #adminUserProfileForm>button,.admin-user-modal .admin-balance-form button{width:100%;justify-self:stretch}
 }
+/* Theme-aware live toast and unread notification counter */
+.toast{display:flex;align-items:center;gap:12px;z-index:1600;right:clamp(14px,2vw,24px);bottom:max(18px,env(safe-area-inset-bottom));width:min(440px,calc(100vw - 28px));max-width:440px;min-height:64px;padding:12px 14px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--violet);border-radius:17px;box-shadow:0 18px 55px #1114,0 3px 12px #1112;backdrop-filter:blur(18px);font-size:13px;line-height:1.45;pointer-events:none;visibility:hidden}
+.toast.show{pointer-events:auto;visibility:visible}
+body[data-theme] .toast{background:var(--surface);color:var(--ink);border-color:var(--line)}
+body[data-theme] .toast[data-kind="success"]{border-left:4px solid #16825d}
+body[data-theme] .toast[data-kind="error"]{border-left:4px solid #c0384f}
+body[data-theme] .toast[data-kind="info"]{border-left:4px solid var(--violet)}
+.toast-icon{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:11px;background:color-mix(in srgb,var(--violet) 13%,var(--surface));color:var(--violet)}
+.toast-icon svg{width:19px;height:19px}
+.toast[data-kind="success"] .toast-icon{background:color-mix(in srgb,#16825d 14%,var(--surface));color:#16825d}
+.toast[data-kind="error"] .toast-icon{background:color-mix(in srgb,#c0384f 14%,var(--surface));color:#c0384f}
+.toast-message{flex:1;min-width:0;font-weight:700;overflow-wrap:anywhere}
+.toast-close{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border:0;border-radius:9px;background:color-mix(in srgb,var(--ink) 7%,var(--surface));color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
+.toast-close:hover{background:color-mix(in srgb,var(--ink) 13%,var(--surface));color:var(--ink)}
+#profileDropdown [data-account-action="notifications"]{display:flex;align-items:center;gap:10px}
+.notification-count-badge{display:inline-flex;align-items:center;justify-content:center;min-width:21px;height:21px;margin-left:auto;padding:0 6px;border:1px solid color-mix(in srgb,var(--violet) 35%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--violet) 15%,var(--surface));color:var(--ink);font:800 10px/1 "DM Sans",sans-serif;font-variant-numeric:tabular-nums}
+.notification-count-badge[hidden]{display:none!important}
+@media(max-width:600px){.toast{left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));width:auto;max-width:none}}
