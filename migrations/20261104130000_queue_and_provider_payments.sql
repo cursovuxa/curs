@@ -246,3 +246,60 @@ revoke all on function public.settle_payment_intent(uuid,text,numeric,text) from
 revoke all on function public.get_payment_intent(uuid,uuid) from public,anon,authenticated;
 revoke all on function public.expire_payment_intents() from public,anon,authenticated;
 grant execute on function public.join_event_queue(uuid,uuid),public.get_event_queue_status(uuid,uuid),public.leave_event_queue(uuid,uuid),public.create_payment_intent(uuid,uuid,uuid,text,text),public.update_payment_checkout(uuid,text,text),public.cancel_payment_intent(uuid,text),public.settle_payment_intent(uuid,text,numeric,text),public.get_payment_intent(uuid,uuid),public.expire_payment_intents() to service_role;
+
+
+-- A queue promotion reserves one unit of capacity. Registration must consume that
+-- reservation instead of checking/decrementing the event's remaining capacity again.
+create or replace function public.register_for_event(p_user_id uuid,p_event_id uuid,p_visual_payments_enabled boolean default false,p_seat_id uuid default null)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare e public.events%rowtype;r public.registrations%rowtype;t public.tickets%rowtype;s public.seats%rowtype;q public.queue_tokens%rowtype;reserved_by_queue boolean:=false;place text:='Без места';kind public.seat_type_enum:='free';
+begin
+ select * into e from public.events where id=p_event_id and status='published' for update;
+ if not found then raise exception 'event_unavailable'; end if;
+ select * into q from public.queue_tokens where event_id=p_event_id and user_id=p_user_id and status='ready' and reserved_until>now() for update;
+ reserved_by_queue:=found;
+ if coalesce(e.available_seats,0)<1 and not reserved_by_queue then raise exception 'sold_out'; end if;
+ if coalesce(e.current_price,e.base_price,0)>0 and not coalesce(p_visual_payments_enabled,false) then raise exception 'payment_provider_required'; end if;
+ if exists(select 1 from public.registrations where event_id=p_event_id and user_id=p_user_id) then raise exception 'already_registered'; end if;
+ if e.hall_id is not null and p_seat_id is null then raise exception 'seat_required'; end if;
+ if p_seat_id is not null then
+  select * into s from public.seats where id=p_seat_id and hall_id=e.hall_id for update;
+  if not found then raise exception 'seat_unavailable'; end if;
+  if exists(select 1 from public.tickets where event_id=p_event_id and seat_id=p_seat_id and status in('valid','used')) then raise exception 'seat_unavailable'; end if;
+  if not exists(select 1 from public.seat_reservations where event_id=p_event_id and seat_id=p_seat_id and user_id=p_user_id and status='reserved' and reserved_until>now() for update) then raise exception 'reservation_expired'; end if;
+  place:=s.row_label||s.seat_number::text;kind:=s.seat_type;
+ end if;
+ insert into public.registrations(event_id,user_id,total_paid) values(p_event_id,p_user_id,0) returning * into r;
+ if not reserved_by_queue then update public.events set available_seats=available_seats-1,updated_at=now() where id=p_event_id; end if;
+ insert into public.tickets(ticket_number,registration_id,event_id,user_id,seat_id,seat_label,seat_type,price_paid,qr_code_hash)
+ values('FT-'||upper(substr(replace(gen_random_uuid()::text,'-',''),1,12)),r.id,p_event_id,p_user_id,p_seat_id,place,kind,0,replace(gen_random_uuid()::text||gen_random_uuid()::text,'-','')) returning * into t;
+ if p_seat_id is not null then update public.seat_reservations set status='booked',reserved_until=now() where event_id=p_event_id and seat_id=p_seat_id and user_id=p_user_id and status='reserved'; end if;
+ if reserved_by_queue then update public.queue_tokens set status='completed',reserved_until=null where id=q.id; end if;
+ insert into public.notifications(user_id,title,message,type,channel) values(p_user_id,'Билет оформлен','Место '||place||' забронировано за вами. Билет '||t.ticket_number,'ticket','in_app');
+ return jsonb_build_object('registration',to_jsonb(r),'ticket',to_jsonb(t));
+end $$;
+
+create or replace function public.reserve_event_seat(p_user_id uuid,p_event_id uuid,p_seat_id uuid)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare e public.events%rowtype;s public.seats%rowtype;r public.seat_reservations%rowtype;queued boolean:=false;
+begin
+ select * into e from public.events where id=p_event_id and status='published' for update;
+ if not found or e.hall_id is null then raise exception 'event_unavailable'; end if;
+ select exists(select 1 from public.queue_tokens where event_id=p_event_id and user_id=p_user_id and status='ready' and reserved_until>now()) into queued;
+ if coalesce(e.available_seats,0)<1 and not queued then raise exception 'sold_out'; end if;
+ select * into s from public.seats where id=p_seat_id and hall_id=e.hall_id for update;
+ if not found then raise exception 'seat_unavailable'; end if;
+ if exists(select 1 from public.tickets where event_id=p_event_id and seat_id=p_seat_id and status in('valid','used')) then raise exception 'seat_unavailable'; end if;
+ delete from public.seat_reservations where event_id=p_event_id and user_id=p_user_id and seat_id<>p_seat_id and status='reserved';
+ insert into public.seat_reservations(event_id,seat_id,user_id,reserved_until,status) values(p_event_id,p_seat_id,p_user_id,now()+interval '10 minutes','reserved')
+ on conflict(event_id,seat_id) do update set user_id=excluded.user_id,reserved_until=excluded.reserved_until,status='reserved'
+ where (seat_reservations.status='reserved' and(seat_reservations.reserved_until<=now() or seat_reservations.user_id=p_user_id))
+ or(seat_reservations.status='booked' and not exists(select 1 from public.tickets where event_id=p_event_id and seat_id=p_seat_id and status in('valid','used')))
+ returning * into r;
+ if not found then raise exception 'seat_unavailable'; end if;
+ return jsonb_build_object('reservation_id',r.id,'seat_id',r.seat_id,'reserved_until',r.reserved_until);
+end $$;
+
+revoke all on function public.register_for_event(uuid,uuid,boolean,uuid) from public,anon,authenticated;
+revoke all on function public.reserve_event_seat(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.register_for_event(uuid,uuid,boolean,uuid),public.reserve_event_seat(uuid,uuid,uuid) to service_role;
