@@ -448,6 +448,7 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
     const { error: seatError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: hall.id });
     if (seatError) return res.status(500).json({ error: 'Не удалось подготовить места в зале' });
   }
+  const dynamicPricingEnabled = req.body.dynamic_pricing_enabled !== false;
   const { data, error } = await supabase.from('events').insert({
     organizer_id: req.user.id, title: String(title).trim().slice(0, 180),
     description: String(description || '').slice(0, 10000),
@@ -455,7 +456,7 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
     location_address: eventAddress,
     start_date, start_time, end_time, age_limit: age_limit || 'Для всех',
     total_seats: Number(total_seats), available_seats: Number(total_seats),
-    base_price: Number(base_price || 0), current_price: Number(base_price || 0),
+    base_price: Number(base_price || 0), current_price: Number(base_price || 0), dynamic_pricing_enabled: dynamicPricingEnabled,
     cover_image: cover_image || null, rules: String(rules || '').trim().slice(0, 5000),
     contact_email: String(contact_email || '').trim().slice(0, 254) || null,
     contact_phone: String(contact_phone || '').trim().slice(0, 40) || null,
@@ -510,6 +511,7 @@ app.patch('/api/events/:id', requireUser, allowRoles('organizer', 'admin'), asyn
   if (req.body.contact_email !== undefined) changes.contact_email = String(req.body.contact_email || '').trim().slice(0, 254) || null;
   if (req.body.contact_phone !== undefined) changes.contact_phone = String(req.body.contact_phone || '').trim().slice(0, 40) || null;
   if (req.body.rules !== undefined) changes.rules = String(req.body.rules || '').trim().slice(0, 5000);
+  if (req.body.dynamic_pricing_enabled !== undefined) changes.dynamic_pricing_enabled = req.body.dynamic_pricing_enabled === true;
   if (req.body.hall_id !== undefined) {
     const hallId = req.body.hall_id || null;
     if (hallId) {
@@ -743,17 +745,19 @@ app.post('/api/seat-reservations/release', requireUser, asyncRoute(async (req, r
 
 app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
   const eventId = String(req.body.eventId || '');
-  const { data, error } = await supabase.rpc('wallet_register_for_event', {
-    p_user_id: req.user.id, p_event_id: eventId, p_seat_id: req.body.seatId || null
+  const promoCode = String(req.body.promoCode || '').trim().toUpperCase().slice(0, 32);
+  const { data, error } = await supabase.rpc('wallet_register_for_event_with_promo', {
+    p_user_id: req.user.id, p_event_id: eventId, p_seat_id: req.body.seatId || null, p_promo_code: promoCode || null
   });
   if (error) {
     const reason = error.message || '';
     const status = reason.includes('payment_provider_required') ? 501
       : reason.includes('already_registered') ? 409
       : reason.includes('sold_out') || reason.includes('seat_unavailable') ? 409 : 400;
-    const message = reason.includes('insufficient_balance') ? 'Недостаточно средств на балансе. Откройте «Баланс» в меню аккаунта и пополните его.' : reason.includes('payment_provider_required') ? 'Оплата пока недоступна: платёжный провайдер не подключён. Платные регистрации закрыты.'
+    const promoError = reason.includes('promo_invalid') ? 'Промокод не найден или отключён' : reason.includes('promo_expired') ? 'Срок действия промокода истёк' : reason.includes('promo_limit_reached') ? 'Лимит использований промокода исчерпан' : reason.includes('promo_wrong_event') ? 'Промокод действует на другое мероприятие' : reason.includes('promo_wrong_category') ? 'Промокод действует на другую категорию' : reason.includes('promo_minimum_not_met') ? 'Не достигнута минимальная сумма для промокода' : reason.includes('promo_new_users_only') ? 'Промокод доступен только новым пользователям' : reason.includes('promo_wrong_ticket_type') ? 'Промокод не действует на выбранный тип билета' : '';
+    const message = promoError || (reason.includes('insufficient_balance') ? 'Недостаточно средств на балансе. Откройте «Баланс» в меню аккаунта и пополните его.' : reason.includes('payment_provider_required') ? 'Оплата пока недоступна: платёжный провайдер не подключён. Платные регистрации закрыты.'
       : reason.includes('already_registered') ? 'Вы уже зарегистрированы'
-      : reason.includes('sold_out') ? 'Свободных мест больше нет' : reason.includes('seat_required') ? 'Выберите место на схеме зала' : reason.includes('seat_unavailable') ? 'Выбранное место уже заняли. Выберите другое.' : reason.includes('reservation_expired') ? 'Время брони истекло. Выберите место ещё раз.' : 'Не удалось зарегистрироваться';
+      : reason.includes('sold_out') ? 'Свободных мест больше нет' : reason.includes('seat_required') ? 'Выберите место на схеме зала' : reason.includes('seat_unavailable') ? 'Выбранное место уже заняли. Выберите другое.' : reason.includes('reservation_expired') ? 'Время брони истекло. Выберите место ещё раз.' : 'Не удалось зарегистрироваться');
     return res.status(status).json({ error: message });
   }
   await supabase.from('audit_logs').insert({
@@ -1170,6 +1174,139 @@ app.post('/api/organizer/events/:eventId/notify', requireUser, allowRoles('organ
   })));
   if (error) return res.status(500).json({ error: 'Не удалось отправить уведомления' });
   res.json({ sent: ids.length });
+}));
+app.get('/api/promos/validate', requireUser, asyncRoute(async (req,res)=>{
+  const code=String(req.query.code||'').trim().toUpperCase().slice(0,32),eventId=String(req.query.eventId||''),seatId=String(req.query.seatId||'');
+  if(!code||!eventId)return res.status(400).json({error:'Введите промокод'});
+  const [{data:promo},{data:event}] = await Promise.all([
+    supabase.from('promo_codes').select('*').eq('code',code).eq('is_active',true).maybeSingle(),
+    supabase.from('events').select('id,title,organizer_id,category_id,current_price,base_price').eq('id',eventId).eq('status','published').maybeSingle()
+  ]);
+  if(!promo)return res.status(404).json({error:'Промокод не найден или отключён'});
+  if(!event)return res.status(404).json({error:'Мероприятие не найдено'});
+  if(promo.expires_at&&new Date(promo.expires_at)<=new Date())return res.status(400).json({error:'Срок действия промокода истёк'});
+  if(promo.max_uses!=null&&Number(promo.current_uses||0)>=Number(promo.max_uses))return res.status(400).json({error:'Лимит использований промокода исчерпан'});
+  if(promo.organizer_id&&promo.organizer_id!==event.organizer_id)return res.status(400).json({error:'Промокод действует на мероприятия другого организатора'});
+  if(promo.event_id&&promo.event_id!==event.id)return res.status(400).json({error:'Промокод действует на другое мероприятие'});
+  if(promo.category_id&&promo.category_id!==event.category_id)return res.status(400).json({error:'Промокод действует на другую категорию'});
+  let multiplier=1;
+  if(promo.seat_type){
+    if(!seatId)return res.status(400).json({error:'Промокод действует только на выбранный тип места'});
+    const {data:seat}=await supabase.from('seats').select('seat_type,price_multiplier').eq('id',seatId).maybeSingle();
+    if(!seat||seat.seat_type!==promo.seat_type)return res.status(400).json({error:'Промокод не действует на выбранный тип билета'});
+    multiplier=Number(seat.price_multiplier||1);
+  }
+  if(promo.only_new_users){
+    const {count}=await supabase.from('registrations').select('id',{count:'exact',head:true}).eq('user_id',req.user.id);
+    if(count)return res.status(400).json({error:'Промокод доступен только новым пользователям'});
+  }
+  const subtotal=Math.round(Number(event.current_price??event.base_price??0)*multiplier*100)/100;
+  if(subtotal<Number(promo.min_amount||0))return res.status(400).json({error:'Минимальная сумма для промокода — '+Number(promo.min_amount||0).toLocaleString('ru-RU')+' ₸'});
+  const discount=Math.round(subtotal*Math.min(100,Math.max(0,Number(promo.discount_percent)||0))/100*100)/100;
+  res.json({code:promo.code,discount,subtotal,amount:Math.max(0,subtotal-discount),discountPercent:promo.discount_percent});
+}));
+app.get('/api/recommendations', requireUser, asyncRoute(async(req,res)=>{
+  const [profile,favorites,tickets,views,events,blocks]=await Promise.all([
+    supabase.from('users').select('city,preferences').eq('id',req.user.id).maybeSingle(),
+    supabase.from('favorites').select('event_id').eq('user_id',req.user.id),
+    supabase.from('tickets').select('event_id').eq('user_id',req.user.id),
+    supabase.from('event_views').select('event_id,view_count,last_viewed_at').eq('user_id',req.user.id).order('last_viewed_at',{ascending:false}).limit(100),
+    supabase.from('events').select('id,title,description,cover_image,location_address,start_date,start_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,popularity_score,venue_id,category_id,organizer_id,event_categories(name),venues(name,address,city),users!events_organizer_id_fkey(id,full_name,username,avatar_url)').eq('status','published').order('start_date'),
+    supabase.from('user_blocks').select('blocked_id').eq('blocker_id',req.user.id)
+  ]);
+  if(events.error)return res.status(500).json({error:'Не удалось загрузить рекомендации'});
+  const favoritesList=favorites.data||[],ticketsList=tickets.data||[],viewsList=views.data||[];
+  const interestIds=[...new Set([...favoritesList,...ticketsList,...viewsList].map(x=>String(x.event_id)).filter(Boolean))];
+  const historyResult=interestIds.length?await supabase.from('events').select('id,category_id').in('id',interestIds):{data:[],error:null};
+  const categoryWeights=new Map();
+  const addCategory=(id,weight)=>{if(id)categoryWeights.set(String(id),(categoryWeights.get(String(id))||0)+weight)};
+  const historyById=new Map((historyResult.data||[]).map(x=>[String(x.id),x]));
+  for(const x of favoritesList)addCategory(historyById.get(String(x.event_id))?.category_id,5);
+  for(const x of ticketsList)addCategory(historyById.get(String(x.event_id))?.category_id,8);
+  for(const x of viewsList)addCategory(historyById.get(String(x.event_id))?.category_id,Math.min(6,1+Number(x.view_count||1)));
+  const ticketEventIds=new Set(ticketsList.map(x=>String(x.event_id)));
+  const prefs=profile.data?.preferences?.categories||[];
+  const prefSet=new Set(prefs.map(String).map(x=>x.toLocaleLowerCase('ru')));
+  const blocked=new Set((blocks.data||[]).map(x=>String(x.blocked_id)));
+  const city=String(profile.data?.city||'').trim().toLocaleLowerCase('ru');
+  const today=new Date().toISOString().slice(0,10);
+  const ranked=(events.data||[]).filter(e=>String(e.start_date||'')>=today&&!blocked.has(String(e.organizer_id))&&!ticketEventIds.has(String(e.id))).map(e=>{
+    const categoryWeight=Number(categoryWeights.get(String(e.category_id||''))||0);
+    const score=categoryWeight+(prefSet.has(String(e.category_id||'').toLocaleLowerCase('ru'))||prefSet.has(String(e.event_categories?.name||'').toLocaleLowerCase('ru'))?5:0)
+      +(city&&String(e.venues?.city||'').toLocaleLowerCase('ru')===city?4:0)
+      +Math.min(5,Number(e.popularity_score||0)/20);
+    return {...e,recommendation_score:score};
+  }).sort((a,b)=>b.recommendation_score-a.recommendation_score||String(a.start_date).localeCompare(String(b.start_date))).slice(0,10);
+  res.json({events:ranked});
+}));
+app.post('/api/events/:id/view', requireUser, asyncRoute(async(req,res)=>{
+  const eventId=String(req.params.id||'');
+  const {data:event}=await supabase.from('events').select('id').eq('id',eventId).eq('status','published').maybeSingle();
+  if(!event)return res.status(404).json({error:'Мероприятие не найдено'});
+  const {data:existing}=await supabase.from('event_views').select('view_count').eq('user_id',req.user.id).eq('event_id',eventId).maybeSingle();
+  const {error}=await supabase.from('event_views').upsert({user_id:req.user.id,event_id:eventId,view_count:Number(existing?.view_count||0)+1,last_viewed_at:new Date().toISOString()},{onConflict:'user_id,event_id'});
+  if(error)return res.status(500).json({error:'Не удалось сохранить просмотр'});
+  res.status(204).end();
+}));
+const promoPayload=(body,organizerId=null)=>({
+  organizer_id:organizerId||body.organizer_id||null,
+  code:String(body.code||'').trim().toUpperCase(),
+  discount_percent:Number(body.discount_percent),
+  min_amount:Number(body.min_amount||0),
+  max_uses:body.max_uses===''||body.max_uses==null?null:Number(body.max_uses),
+  only_new_users:body.only_new_users===true||body.only_new_users==='on',
+  expires_at:body.expires_at?(Number.isFinite(Date.parse(body.expires_at))?new Date(body.expires_at).toISOString():'invalid'):null,
+  category_id:body.category_id||null,
+  seat_type:body.seat_type||null,
+  event_id:body.event_id||null,
+  is_active:true
+});
+const validatePromoPayload=(p)=>{
+ if(!/^[A-Z0-9_-]{3,32}$/.test(p.code)||!Number.isInteger(p.discount_percent)||p.discount_percent<1||p.discount_percent>100||!Number.isFinite(p.min_amount)||p.min_amount<0||p.max_uses!==null&&(!Number.isInteger(p.max_uses)||p.max_uses<1)||p.expires_at&&Number.isNaN(Date.parse(p.expires_at)))return 'Проверьте код, скидку, сумму, лимит и срок действия';
+ return '';
+};
+app.get('/api/organizer/promos',requireUser,allowRoles('organizer','admin'),asyncRoute(async(req,res)=>{
+ const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0);
+ const {data,count,error}=await supabase.from('promo_codes').select('id,code,discount_percent,min_amount,max_uses,current_uses,only_new_users,expires_at,is_active,category_id,seat_type,event_id,organizer_id,created_at',{count:'exact'}).eq('organizer_id',req.user.id).order('created_at',{ascending:false}).range(offset,offset+9);
+ if(error)return res.status(500).json({error:'Не удалось загрузить промокоды'});
+ res.json({promos:data||[],offset,hasMore:offset+(data||[]).length<(count||0)});
+}));
+app.post('/api/organizer/promos',requireUser,allowRoles('organizer','admin'),asyncRoute(async(req,res)=>{
+ const promo=promoPayload(req.body,req.user.id),invalid=validatePromoPayload(promo);
+ if(invalid)return res.status(400).json({error:invalid});
+ if(promo.event_id){const {data:event}=await supabase.from('events').select('id').eq('id',promo.event_id).eq('organizer_id',req.user.id).maybeSingle();if(!event)return res.status(400).json({error:'Выберите своё мероприятие'})}
+ const {data,error}=await supabase.from('promo_codes').insert(promo).select('*').single();
+ if(error)return res.status(400).json({error:error.code==='23505'?'Такой промокод уже существует':'Не удалось создать промокод'});
+ res.status(201).json({promo:data});
+}));
+app.get('/api/admin/promos',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
+ const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0);
+ const {data,count,error}=await supabase.from('promo_codes').select('id,code,discount_percent,min_amount,max_uses,current_uses,only_new_users,expires_at,is_active,category_id,seat_type,event_id,organizer_id,created_at',{count:'exact'}).order('created_at',{ascending:false}).range(offset,offset+9);
+ if(error)return res.status(500).json({error:'Не удалось загрузить промокоды'});
+ res.json({promos:data||[],offset,hasMore:offset+(data||[]).length<(count||0)});
+}));
+app.post('/api/admin/promos',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
+ const promo=promoPayload(req.body),invalid=validatePromoPayload(promo);
+ if(invalid)return res.status(400).json({error:invalid});
+ const {data,error}=await supabase.from('promo_codes').insert(promo).select('*').single();
+ if(error)return res.status(400).json({error:error.code==='23505'?'Такой промокод уже существует':'Не удалось создать промокод'});
+ await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_PROMO_CREATED',entity_type:'promo_code',entity_id:data.id,details:{code:data.code,discount_percent:data.discount_percent}});
+ res.status(201).json({promo:data});
+}));
+app.patch('/api/admin/promos/:id',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
+ const active=req.body.is_active;
+ if(typeof active!=='boolean')return res.status(400).json({error:'Укажите новое состояние промокода'});
+ const {data,error}=await supabase.from('promo_codes').update({is_active:active}).eq('id',req.params.id).select('id,code,is_active').maybeSingle();
+ if(error)return res.status(400).json({error:'Не удалось изменить промокод'});
+ if(!data)return res.status(404).json({error:'Промокод не найден'});
+ await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:active?'ADMIN_PROMO_ENABLED':'ADMIN_PROMO_DISABLED',entity_type:'promo_code',entity_id:data.id,details:{code:data.code}});
+ res.json({promo:data});
+}));
+app.delete('/api/admin/promos/:id',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
+ const {data,error}=await supabase.from('promo_codes').update({is_active:false}).eq('id',req.params.id).select('id').maybeSingle();
+ if(error)return res.status(400).json({error:'Не удалось отключить промокод'});
+ if(!data)return res.status(404).json({error:'Промокод не найден'});
+ res.json({deactivated:true});
 }));
 app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
   const offset = Math.max(0, Number.parseInt(String(req.query.offset || '0'), 10) || 0);
