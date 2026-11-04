@@ -23,6 +23,7 @@ FlowTix отправляет на `PAYMENT_PROVIDER_CREATE_URL` запрос `PO
   "amount": 777,
   "currency": "KZT",
   "description": "Билет FlowTix",
+  "expires_at": "<ISO timestamp, reservation deadline>",
   "return_url": "https://flowtix.online/?paymentIntent=<UUID>",
   "webhook_url": "https://<render-service>.onrender.com/api/webhooks/payments"
 }
@@ -37,7 +38,7 @@ FlowTix отправляет на `PAYMENT_PROVIDER_CREATE_URL` запрос `PO
 }
 ```
 
-FlowTix принимает только HTTPS-ссылку на форму оплаты. Перед переходом место резервируется на 15 минут.
+FlowTix принимает только HTTPS-ссылку на форму оплаты. Перед переходом место резервируется на 15 минут. Передайте `expires_at` кассе, чтобы она завершила checkout до истечения брони.
 
 ## Контракт webhook
 
