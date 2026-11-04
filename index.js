@@ -730,7 +730,8 @@ async function adminView() {
     const rolePicker=(id,current)=>id===user.id
       ?'<span class="role-picker-root">'+roleIcons.admin+'<span>Главный администратор</span></span>'
       :'<div class="role-picker" data-role-picker><button class="role-picker-trigger" type="button" data-role-picker-toggle aria-label="Выбрать роль" aria-haspopup="listbox" aria-expanded="false">'+(roleIcons[current]||roleIcons.visitor)+'<span>'+(roles[current]||'Посетитель')+'</span><svg class="role-picker-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="role-picker-menu" role="listbox" aria-label="Роль пользователя" hidden>'+Object.entries(roles).map(([role,label])=>'<button class="role-picker-option" type="button" role="option" aria-selected="'+(role===current)+'" data-role-picker-option data-role-user="'+esc(id)+'" data-role="'+role+'">'+roleIcons[role]+'<span>'+label+'</span>'+(role===current?'<svg class="role-picker-check" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3.5 8.3 3 3 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':'')+'</button>').join('')+'</div></div>';
-    const userRows=(users.users||[]).map(x=>'<tr><td>'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></td><td>'+rolePicker(x.id,x.role)+'</td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>').join('');
+    const renderAdminUser=x=>'<tr><td>'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></td><td>'+rolePicker(x.id,x.role)+'</td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>';
+    const userRows=(users.users||[]).map(renderAdminUser).join('');
     const renderAdminEvent=x=>'<details class="admin-event-item" data-admin-event-item="'+esc(x.id)+'"><summary><span class="admin-event-summary-title"><b>'+esc(x.title||'Мероприятие')+'</b><small>'+esc(x.users?.email||'Организатор не указан')+'</small></span><time>'+esc(x.start_date||'Дата не указана')+'</time><span class="status-pill">'+esc(eventStatusLabel(x.status))+'</span><span class="admin-event-chevron" aria-hidden="true">⌄</span></summary><div class="admin-event-details"><div><small>Организатор</small><b>'+esc(x.users?.full_name||x.users?.email||'—')+'</b></div><div><small>Площадка</small><b>'+esc([x.venues?.name,x.location_address||x.venues?.address,x.venues?.city].filter(Boolean).join(' · ')||'Не указана')+'</b></div><div><small>Свободные места</small><b>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</b></div><div><small>Стоимость</small><b>'+esc(money(x.base_price))+'</b></div><label class="admin-event-status">Статус<select data-event-status="'+esc(x.id)+'">'+['draft','pending_moderation','published','rejected','cancelled','completed'].map(status=>'<option value="'+status+'" '+(x.status===status?'selected':'')+'>'+esc(eventStatusLabel(status))+'</option>').join('')+'</select></label><button type="button" class="button button-danger button-small" data-delete-event="'+esc(x.id)+'">Удалить мероприятие</button></div></details>';
     const eventRows=(events.events||[]).map(renderAdminEvent).join('');
     const venueRows=(venues.venues||[]).map(v=>'<details class="workspace-row"><summary><b>'+esc(v.name)+'</b> · '+esc(v.city)+'</summary><form data-admin-venue="'+esc(v.id)+'" class="form-grid"><label>Название<input name="name" value="'+esc(v.name)+'" required></label><label>Город<input name="city" value="'+esc(v.city)+'" required></label><label class="wide">Адрес<input name="address" value="'+esc(v.address)+'" required></label><label class="wide">Описание<textarea name="description">'+esc(v.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить</button></form></details>').join('');
@@ -743,7 +744,7 @@ async function adminView() {
     const settingsForm='<form id="adminSettingsForm" class="form-grid"><label>Название сервиса<input name="site_name" value="'+esc(s.site_name||'FlowTix')+'" required></label><label>Почта поддержки<input name="support_email" type="email" value="'+esc(s.support_email||'')+'"></label><label>Режим обслуживания<select name="maintenance_mode"><option value="false" '+(s.maintenance_mode?'':'selected')+'>Выключен</option><option value="true" '+(s.maintenance_mode?'selected':'')+'>Включён</option></select></label><div class="wide visual-payment-option"><label class="admin-switch"><input type="checkbox" name="visual_payments_enabled" '+(visualPaymentsEnabled?'checked':'')+'><span class="admin-switch-track" aria-hidden="true"></span><span class="admin-switch-copy"><b>Активировать визуальные платежи</b><small>При включении билет на платное мероприятие выдаётся без списания денег.</small></span></label><p class="payment-provider-note">Если выключить режим, платные регистрации будут недоступны, пока к FlowTix не подключён платёжный провайдер.</p></div><div class="wide"><button class="button button-accent" type="submit">Сохранить настройки</button></div></form>';
     const logsHtml=(logs.logs||[]).map(x=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.entity_type)+' '+esc(x.entity_id||'')+'</td></tr>').join('');
     const panels={
-      users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody>'+userRows+'</tbody></table></div></div>',
+      users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody id="adminUserRows">'+userRows+'</tbody></table></div><button id="adminUserLoadMore" type="button" class="button button-light button-small '+(users.hasMore?'':'is-hidden')+'" '+(users.hasMore?'':'hidden')+'>Загрузить ещё 10</button><p id="adminUserEnd" class="admin-event-end '+(users.hasMore?'is-hidden':'')+'">'+((users.users||[]).length?'Показаны все пользователи.':'Пользователей пока нет.')+'</p></div>',
       events:'<div class="workspace-card"><h3>Мероприятия</h3><p class="workspace-help">Сначала загружаются 10 последних. Листай ниже, чтобы увидеть следующие. Удаление убирает событие из активного списка и сохраняет историю билетов и отзывов.</p><div id="adminEventList" class="admin-event-list">'+(events.error?'<p class="connection-state">'+esc(events.error)+'</p>':eventRows||empty('Активных мероприятий пока нет.'))+'</div><button id="adminEventLoadMore" type="button" class="button button-light button-small '+(events.hasMore?'':'is-hidden')+'">Загрузить ещё 10</button><p id="adminEventEnd" class="admin-event-end '+(events.hasMore?'is-hidden':'')+'">'+((events.events||[]).length?'Показаны все мероприятия.':'')+'</p></div>',
       venues:'<div class="workspace-card"><h3>Площадки</h3>'+(venueRows||empty('Площадок пока нет.'))+'</div>',
       tickets:'<div class="workspace-card"><h3>Билеты</h3>'+(tickets.error?'<p class="connection-state">'+esc(tickets.error)+'</p>':'<div class="scroll-table"><table class="data-table"><thead><tr><th>Номер</th><th>Событие / владелец</th><th>Статус</th><th>Цена</th><th></th></tr></thead><tbody>'+ticketRows+'</tbody></table></div>')+'</div>',
@@ -756,6 +757,34 @@ async function adminView() {
     const tabs=Object.entries({users:'Аккаунты',events:'Мероприятия',venues:'Площадки',tickets:'Билеты',payments:'Платежи',complaints:'Жалобы',reviews:'Отзывы',settings:'Настройки',logs:'Журнал'});
     root.innerHTML=loadWarning+'<div class="stats-grid">'+[['Пользователи',stats.users??'—'],['Мероприятия',stats.events??'—'],['Билеты',stats.tickets??'—'],['Выручка',stats.error?'—':money(stats.revenue)],['Открытые жалобы',stats.openComplaints??'—']].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div id="adminTabs" class="category-bar">'+tabs.map(([key,label],i)=>'<button type="button" class="category '+(!i?'active':'')+'" data-admin-tab="'+key+'">'+label+'</button>').join('')+'</div><div id="adminPanel">'+panels.users+'</div>';
     const panel=$('#adminPanel',root);
+    let adminUsersOffset=(users.users||[]).length;
+    let adminUsersHasMore=Boolean(users.hasMore);
+    let adminUsersLoading=false;
+    let adminUsersObserver=null;
+    const loadMoreAdminUsers=async()=>{
+      if(adminUsersLoading||!adminUsersHasMore||!panel.querySelector('#adminUserRows'))return;
+      adminUsersLoading=true;
+      const button=panel.querySelector('#adminUserLoadMore');
+      if(button){button.disabled=true;button.textContent='Загружаем…'}
+      try{
+        const result=await api('/api/admin/users?offset='+adminUsersOffset);
+        const list=panel.querySelector('#adminUserRows');
+        if(!list)return;
+        if(result.users?.length){list.insertAdjacentHTML('beforeend',result.users.map(renderAdminUser).join(''));adminUsersOffset+=result.users.length}
+        adminUsersHasMore=Boolean(result.hasMore);
+        if(button){button.hidden=!adminUsersHasMore;button.classList.toggle('is-hidden',!adminUsersHasMore);button.disabled=false;button.textContent='Загрузить ещё 10'}
+        const end=panel.querySelector('#adminUserEnd');
+        if(end){end.hidden=adminUsersHasMore;end.classList.toggle('is-hidden',adminUsersHasMore);end.textContent='Показаны все пользователи.'}
+        observeAdminUserFeed();
+      }catch(error){toast(error.message);if(button){button.disabled=false;button.textContent='Повторить загрузку'}}
+      finally{adminUsersLoading=false}
+    };
+    const observeAdminUserFeed=()=>{
+      adminUsersObserver?.disconnect();
+      const button=panel.querySelector('#adminUserLoadMore');
+      if(!button||button.hidden||!adminUsersHasMore)return;
+      if('IntersectionObserver' in window){adminUsersObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))void loadMoreAdminUsers()},{rootMargin:'220px'});adminUsersObserver.observe(button)}
+    };
     let adminEventsOffset=(events.events||[]).length;
     let adminEventsHasMore=Boolean(events.hasMore);
     let adminEventsLoading=false;
@@ -784,11 +813,15 @@ async function adminView() {
       if(!button||button.hidden||!adminEventsHasMore)return;
       if('IntersectionObserver' in window){adminEventsObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))void loadMoreAdminEvents()},{rootMargin:'220px'});adminEventsObserver.observe(button)}
     };
-    $('#adminTabs',root).onclick=(e)=>{const b=e.target.closest('[data-admin-tab]');if(!b)return;$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===b));panel.innerHTML=panels[b.dataset.adminTab]||'';if(b.dataset.adminTab==='events')observeAdminEventFeed()};
+
+    observeAdminUserFeed();
     root.onchange=async(e)=>{
       if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён');const item=e.target.closest('[data-admin-event-item]');const pill=item?.querySelector('summary .status-pill');if(pill)pill.textContent=eventStatusLabel(e.target.value);if(e.target.value==='cancelled'){item?.remove();adminEventsOffset=Math.max(0,adminEventsOffset-1)}}catch(x){toast(x.message);await adminView()}}
         };
     root.onclick=async(e)=>{
+      const tab=e.target.closest('[data-admin-tab]');
+      if(tab){$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===tab));panel.innerHTML=panels[tab.dataset.adminTab]||'';if(tab.dataset.adminTab==='events')observeAdminEventFeed();if(tab.dataset.adminTab==='users')observeAdminUserFeed();return}
+      if(e.target.closest('#adminUserLoadMore')){await loadMoreAdminUsers();observeAdminUserFeed();return}
       if(e.target.closest('#adminEventLoadMore')){await loadMoreAdminEvents();observeAdminEventFeed();return}
       const deleteEvent=e.target.closest('[data-delete-event]');
       if(deleteEvent){
