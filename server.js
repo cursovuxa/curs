@@ -790,17 +790,28 @@ app.get('/api/admin/audit-logs', requireUser, allowRoles('admin'), asyncRoute(as
   if (error) return res.status(500).json({ error: 'Не удалось загрузить журнал' });
   res.json({ logs: data });
 }));
+async function countAuthUsers(){
+  let count=0;
+  for(let page=1;;page++){
+    const {data,error}=await supabase.auth.admin.listUsers({page,perPage:1000});
+    if(error)throw error;
+    const batch=data?.users||[];
+    count+=batch.length;
+    if(batch.length<1000)return count;
+  }
+}
+
 app.get('/api/admin/statistics', requireUser, allowRoles('admin'), asyncRoute(async (_req, res) => {
-  const [users, events, tickets, payments, complaints] = await Promise.all([
-    supabase.from('users').select('id', { count: 'exact', head: true }),
+  const [userCount, events, tickets, payments, complaints] = await Promise.all([
+    countAuthUsers(),
     supabase.from('events').select('id', { count: 'exact', head: true }),
     supabase.from('tickets').select('id', { count: 'exact', head: true }),
     supabase.from('payments').select('amount', { count: 'exact' }).eq('status', 'completed'),
     supabase.from('complaints').select('id', { count: 'exact', head: true }).in('status', ['new','in_review'])
   ]);
-  if ([users,events,tickets,payments,complaints].some((x) => x.error)) return res.status(500).json({ error: 'Не удалось рассчитать статистику' });
+  if ([events,tickets,payments,complaints].some((x) => x.error)) return res.status(500).json({ error: 'Не удалось рассчитать статистику' });
   const revenue = (payments.data || []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  res.json({ users: users.count, events: events.count, tickets: tickets.count, revenue, openComplaints: complaints.count });
+  res.json({ users: userCount, events: events.count, tickets: tickets.count, revenue, openComplaints: complaints.count });
 }));
 
 app.get('/api/categories', asyncRoute(async (_req, res) => {
@@ -890,11 +901,16 @@ app.post('/api/organizer/events/:eventId/notify', requireUser, allowRoles('organ
   if (error) return res.status(500).json({ error: 'Не удалось отправить уведомления' });
   res.json({ sent: ids.length });
 }));
-app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
-  const { data: authResult, error: authError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 500 });
-  if (authError) return res.status(500).json({ error: 'Не удалось загрузить аккаунты Auth' });
+app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const offset = Math.max(0, Number.parseInt(String(req.query.offset || '0'), 10) || 0);
+  const page = Math.floor(offset / 10) + 1;
+  const [{ data: authResult, error: authError }, { data: nextPage, error: nextPageError }] = await Promise.all([
+    supabase.auth.admin.listUsers({ page, perPage: 10 }),
+    supabase.auth.admin.listUsers({ page: page + 1, perPage: 10 })
+  ]);
+  if (authError || nextPageError) return res.status(500).json({ error: 'Не удалось загрузить аккаунты Auth' });
   const authUsers = authResult.users || [];
-  if (!authUsers.length) return res.json({ users: [] });
+  if (!authUsers.length) return res.json({ users: [], hasMore: false, offset });
   const { data: profiles, error } = await supabase.from('users')
     .select('id,full_name,username,avatar_url,role,is_blocked,created_at')
     .in('id', authUsers.map((account) => account.id));
@@ -912,7 +928,7 @@ app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (_re
       created_at: account.created_at
     };
   }).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-  res.json({ users });
+  res.json({ users, hasMore: (nextPage?.users || []).length > 0, offset });
 }));
 
 app.get('/api/admin/events', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
