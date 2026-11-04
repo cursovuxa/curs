@@ -673,3 +673,11 @@ body.blocked-modal-open{overflow:hidden}
 .admin-event-status select,.admin-event-status select[data-event-status]{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:50px;min-height:42px}
 .admin-event-status:focus-within::after{transform:rotate(180deg)}
 @media(max-width:700px){.admin-event-status::before{right:8px;bottom:7px;width:30px;height:30px}.admin-event-status::after{right:17px;bottom:17px}}
+
+/* Polished disclosure control for cards in Admin → Events. */
+.admin-event-item>summary{grid-template-columns:minmax(0,1fr) 120px 130px 34px}
+.admin-event-chevron{display:grid;place-items:center;justify-self:end;width:32px;height:32px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--ink) 5%,var(--surface,#fff));color:var(--muted);transition:transform .2s ease,background .2s ease,border-color .2s ease,color .2s ease}
+.admin-event-chevron svg{display:block;width:16px;height:16px}
+.admin-event-item>summary:hover .admin-event-chevron{border-color:color-mix(in srgb,var(--violet) 35%,var(--line));background:color-mix(in srgb,var(--violet) 11%,var(--surface,#fff));color:var(--violet)}
+.admin-event-item[open] .admin-event-chevron{transform:rotate(180deg);border-color:color-mix(in srgb,var(--violet) 35%,var(--line));background:color-mix(in srgb,var(--violet) 12%,var(--surface,#fff));color:var(--violet)}
+@media(max-width:700px){.admin-event-item>summary{grid-template-columns:minmax(0,1fr) 34px}.admin-event-chevron{width:32px;height:32px}}
