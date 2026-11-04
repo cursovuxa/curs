@@ -931,3 +931,18 @@ html,body,*{scrollbar-width:none!important;-ms-overflow-style:none!important}
 body[data-theme="halloween"] .flow-scrollbar-thumb{background:linear-gradient(180deg,#ff9a3c,#ffd27c);box-shadow:0 2px 9px #ff7a2b77}
 body[data-theme="halloween"] .flow-scrollbar-x .flow-scrollbar-thumb{background:linear-gradient(90deg,#ff9a3c,#ffd27c)}
 @media(max-width:700px){.flow-scrollbar-y{width:6px!important}.flow-scrollbar-x{height:6px!important}}
+
+/* Complaint review cards */
+.complaint-review-list{display:grid;gap:14px}
+.complaint-review-card{display:grid;gap:12px;padding:18px;border:1px solid var(--line);border-radius:18px;background:var(--surface,var(--paper));color:var(--ink)}
+.complaint-review-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.complaint-review-head h4{margin:9px 0 4px;font-size:16px;color:var(--ink)}
+.complaint-review-head small{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.complaint-review-details{margin:0;color:var(--ink);line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.complaint-review-note{display:grid;gap:6px;color:var(--muted);font-size:11px;font-weight:700}
+.complaint-review-note textarea{width:100%;min-height:68px;max-height:180px;resize:vertical;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--paper);color:var(--ink);line-height:1.5}
+.complaint-review-note textarea:focus{outline:2px solid color-mix(in srgb,var(--violet) 36%,transparent);border-color:var(--violet)}
+.complaint-review-actions{gap:8px}
+.complaint-review-actions button:disabled{opacity:.55;cursor:wait;transform:none}
+body[data-theme="halloween"] .complaint-review-card{box-shadow:0 10px 28px #1c11140c}
+@media(max-width:700px){.complaint-review-card{padding:15px;border-radius:15px}.complaint-review-actions{display:grid;grid-template-columns:1fr}.complaint-review-actions .button{width:100%;min-height:42px}.complaint-review-note textarea{min-height:82px}}
