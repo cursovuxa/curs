@@ -22,8 +22,9 @@ const tokenKey = 'flowtix_access_token';
 const PROFILE_ROUTE = /^\/profile\/?$/.test(window.location.pathname);
 const DASHBOARD_ROUTE = /^\/dashboard\/?$/.test(window.location.pathname);
 const NOTIFICATIONS_ROUTE = /^\/notifications\/?$/.test(window.location.pathname);
+const MESSAGES_ROUTE = /^\/messages\/?$/.test(window.location.pathname);
 const ADMIN_ROUTE = /^\/admin\/?$/.test(window.location.pathname);
-const ACCOUNT_ROUTE = PROFILE_ROUTE || DASHBOARD_ROUTE || NOTIFICATIONS_ROUTE || ADMIN_ROUTE;
+const ACCOUNT_ROUTE = PROFILE_ROUTE || DASHBOARD_ROUTE || NOTIFICATIONS_ROUTE || MESSAGES_ROUTE || ADMIN_ROUTE;
 if (ACCOUNT_ROUTE) {
   document.body.classList.add('account-page');
   $('.hero').hidden = true;
@@ -128,11 +129,11 @@ async function refreshHeaderWalletBalance(){
   return headerWalletRequest;
 }
 function accountMenuIcon(kind){
- const paths={profile:'<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>',workspace:'<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>',notifications:'<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/>',wallet:'<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 9h18M16 14h2"/><path d="M6 6V4.5A1.5 1.5 0 0 1 7.5 3H19"/>',admin:'<path d="M12 3 20 6v5.5c0 4.6-3 7.7-8 9.5-5-1.8-8-4.9-8-9.5V6l8-3Z"/><path d="m9 12 2 2 4-4"/>',logout:'<path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/>'};
+ const paths={messages:'<path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.7 8.7 0 0 1-3.4-.7L4 20l1.5-3.7A7.2 7.2 0 0 1 4 11.5 7.5 7.5 0 0 1 12 4a7.5 7.5 0 0 1 8 7.5Z"/><path d="M8 11h8M8 14h5"/>',profile:'<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>',workspace:'<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>',notifications:'<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/>',wallet:'<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 9h18M16 14h2"/><path d="M6 6V4.5A1.5 1.5 0 0 1 7.5 3H19"/>',admin:'<path d="M12 3 20 6v5.5c0 4.6-3 7.7-8 9.5-5-1.8-8-4.9-8-9.5V6l8-3Z"/><path d="m9 12 2 2 4-4"/>',logout:'<path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/>'};
  return '<svg class="account-menu-icon icon-'+kind+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[kind]+'</svg>';
 }
 function decorateAccountMenu(){
- const icons={profile:'profile',workspace:'workspace',notifications:'notifications',admin:'admin',logout:'logout'};
+ const icons={profile:'profile',workspace:'workspace',notifications:'notifications',messages:'messages',admin:'admin',logout:'logout'};
  $$('#profileDropdown [role="menuitem"]').forEach(button=>{const action=button.dataset.accountAction;const kind=action==='wallet'?'wallet':icons[action];if(kind&&!button.querySelector('.account-menu-icon'))button.insertAdjacentHTML('afterbegin',accountMenuIcon(kind))});
 }
 async function eventCoverDataUrl(file) {
@@ -222,6 +223,7 @@ function renderAccountMenu(){
   if(trigger){trigger.title=blocked?'Аккаунт заблокирован — нажмите, чтобы узнать подробности':'';trigger.setAttribute('aria-label',blocked?'Аккаунт заблокирован':'Открыть меню аккаунта');trigger.classList.toggle('is-account-blocked',blocked)}
   if(!active)return;
   if(!$('#walletMenuButton'))$('#profileDropdown .profile-identity')?.insertAdjacentHTML('afterend','<button id="walletMenuButton" type="button" role="menuitem" data-account-action="wallet" data-open-wallet>Баланс</button>');
+  if(!$('#messagesMenuButton'))$('#walletMenuButton')?.insertAdjacentHTML('afterend','<button id="messagesMenuButton" type="button" role="menuitem" data-account-action="messages">Личные сообщения</button>');
   decorateAccountMenu();
   if(headerWalletBalance===null)void refreshHeaderWalletBalance();
   const displayName=blocked?'Доступ ограничен':(user.full_name||user.email||'Участник FlowTix');
@@ -253,7 +255,7 @@ function eventCard(event) {
   const price=event.current_price ?? event.base_price;
   return '<article class="event-card"><div class="event-image">'+(image?'<img src="'+esc(image)+'" alt="" loading="lazy">':'')+
     '<span class="event-category">'+esc(event.event_categories?.name || event.category || 'Мероприятие')+'</span><button class="fav-button '+(fav?'active':'')+'" data-favorite="'+id+'" aria-label="Избранное">'+(fav?'♥':'♡')+'</button></div>'+
-    '<div class="event-info"><div class="event-date">'+esc(date || 'Дата уточняется')+'</div><h3>'+title+'</h3><div class="event-place">⌖ '+esc(place || address || 'Место уточняется')+'</div>'+(place&&address?'<div class="event-address">'+esc(address)+'</div>':'')+
+    '<div class="event-info"><div class="event-date">'+esc(date || 'Дата уточняется')+'</div><h3>'+title+'</h3><div class="event-place">⌖ '+esc(place || address || 'Место уточняется')+'</div>'+(place&&address?'<div class="event-address">'+esc(address)+'</div>':'')+(event.users?.id?'<button type="button" class="event-organizer-chip" data-profile-open="'+esc(event.users.id)+'"><span class="profile-avatar">'+(event.users.avatar_url?'<img src="'+esc(event.users.avatar_url)+'" alt="">':esc((event.users.full_name||'О')[0]))+'</span><span><small>Организатор</small><b>'+esc(event.users.full_name||event.users.username||'Профиль')+'</b></span><span class="profile-chip-arrow">↗</span></button>':'')+
     '<div class="event-foot"><span class="event-price">'+esc(money(price))+'</span><div class="event-actions"><button class="button button-light" data-details="'+id+'">Подробнее</button><button class="button button-dark" data-register="'+id+'">Участвовать</button></div></div></div></article>';
 }
 function localDateKey(date) {
@@ -375,7 +377,9 @@ function setEventModalOpen(open) {
 function openEvent(id) {
   api('/api/events/'+encodeURIComponent(id)).then(({event:e})=>{
     const image=e.cover_image||'';
-    $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">'+esc(e.event_categories?.name||'Мероприятие')+'</p><h2>'+esc(e.title)+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · '))+'</b> · '+esc([e.venues?.city,e.venues?.name,e.location_address||e.venues?.address].filter(Boolean).join(', '))+'</p><p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.current_price??e.base_price))+' · Осталось мест: '+esc(e.available_seats??'—')+' · Возраст: '+esc(e.age_limit||'Для всех')+'</p>'+(e.contact_email||e.contact_phone?'<p>Контакты: '+esc([e.contact_email,e.contact_phone].filter(Boolean).join(' · '))+'</p>':'')+(e.rules?'<div class="workspace-card"><h3>Правила посещения</h3><p>'+esc(e.rules)+'</p></div>':'')+'<div class="workspace-card"><h3>Программа мероприятия</h3>'+renderEventProgram(e.event_program||[])+'</div><div class="inline-actions"><button class="button button-dark" data-register="'+esc(e.id)+'">Участвовать</button><button class="button button-light" data-report="'+esc(e.id)+'">Пожаловаться</button></div><div id="reportForm"></div></div>';
+    const team=(e.event_staff_assignments||[]).filter(a=>a.status==='assigned'&&a.employee?.users?.id).map(a=>a.employee.users);
+    const teamMarkup=team.length?'<div class="event-team"><h3>Команда мероприятия</h3><div class="event-team-list">'+team.map(person=>'<button type="button" class="event-organizer-chip" data-profile-open="'+esc(person.id)+'"><span class="profile-avatar">'+(person.avatar_url?'<img src="'+esc(person.avatar_url)+'" alt="">':esc((person.full_name||'С')[0]))+'</span><span><small>Сотрудник мероприятия</small><b>'+esc(person.full_name||person.username||'Профиль')+'</b></span><span class="profile-chip-arrow">↗</span></button>').join('')+'</div></div>':'';
+    $('#eventDialog').innerHTML='<div class="event-hero">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="event-dialog-content"><p class="eyebrow dark-eyebrow">'+esc(e.event_categories?.name||'Мероприятие')+'</p><h2>'+esc(e.title)+'</h2><p><b>'+esc([e.start_date,e.start_time].filter(Boolean).join(' · '))+'</b> · '+esc([e.venues?.city,e.venues?.name,e.location_address||e.venues?.address].filter(Boolean).join(', '))+'</p>'+(e.users?.id?'<button type="button" class="event-organizer-chip" data-profile-open="'+esc(e.users.id)+'"><span class="profile-avatar">'+(e.users.avatar_url?'<img src="'+esc(e.users.avatar_url)+'" alt="">':esc((e.users.full_name||'О')[0]))+'</span><span><small>Организатор</small><b>'+esc(e.users.full_name||e.users.username||'Профиль')+'</b></span><span class="profile-chip-arrow">↗</span></button>':'')+'<p>'+esc(e.description||'Описание не добавлено.')+'</p><p>'+esc(money(e.current_price??e.base_price))+' · Осталось мест: '+esc(e.available_seats??'—')+' · Возраст: '+esc(e.age_limit||'Для всех')+'</p>'+(e.contact_email||e.contact_phone?'<p>Контакты: '+esc([e.contact_email,e.contact_phone].filter(Boolean).join(' · '))+'</p>':'')+(e.rules?'<div class="workspace-card"><h3>Правила посещения</h3><p>'+esc(e.rules)+'</p></div>':'')+'<div class="workspace-card"><h3>Программа мероприятия</h3>'+renderEventProgram(e.event_program||[])+'</div>'+teamMarkup+'<div class="inline-actions"><button class="button button-dark" data-register="'+esc(e.id)+'">Участвовать</button><button class="button button-light" data-report="'+esc(e.id)+'">Пожаловаться</button></div><div id="reportForm"></div></div>';
     setEventModalOpen(true);
   }).catch(e=>toast(e.message));
 }
@@ -522,6 +526,7 @@ async function loadSession(authUser=null) {
   return true;
 }
 async function logoutAccount(){
+  clearChatRealtime();
   sessionStorage.removeItem(tokenKey);
   try{
     if(notificationsChannel&&supabaseAuth)await supabaseAuth.removeChannel(notificationsChannel);
@@ -558,10 +563,108 @@ function showSettings(){
   $('#workspace').hidden=false;
   $('#workspaceTitle').textContent='Профиль и настройки';
   $('#workspaceRefresh').textContent=PROFILE_ROUTE?'← На главную':'← В кабинет';
-  $('#workspaceContent').innerHTML='<div class="settings-layout"><div class="workspace-card settings-intro"><p class="eyebrow dark-eyebrow">ТВОЙ FLOWTIX</p><h3>Твой профиль</h3><p>Настрой, как ты будешь отображаться в FlowTix. Изменения профиля сохраняются в аккаунте.</p></div><div class="workspace-card"><form id="profileSettingsForm" class="form-grid settings-form"><div class="wide avatar-editor"><span id="profileAvatarPreview" class="profile-avatar profile-avatar-large"></span><div class="avatar-copy"><b>Фото профиля</b><p>JPG, PNG или WebP · до 2 МБ</p><label class="button button-light avatar-upload-button">Загрузить фото<input id="avatarInput" type="file" accept="image/jpeg,image/png,image/webp" hidden></label></div></div><label>Отображаемое имя<input name="full_name" value="'+esc(user.full_name||'')+'" required maxlength="120" autocomplete="name"></label><label>Юзернейм<input name="username" value="'+esc(user.username||'')+'" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username"><small>Латинские буквы, цифры и _</small></label><label>Email аккаунта<input value="'+esc(user.email||'')+'" disabled></label><label>Город<input name="city" value="'+esc(user.city||'')+'" maxlength="100" placeholder="Например, Алматы"></label><label>Телефон<input name="phone" type="tel" value="'+esc(user.phone||'')+'" maxlength="40" autocomplete="tel" placeholder="+7 ..."></label><label class="wide">О себе<textarea name="about" rows="4" maxlength="1000" placeholder="Расскажи, какие события тебе интересны">'+esc(user.preferences?.about||'')+'</textarea></label><div class="wide settings-theme"><div><b>Оформление</b><p>Выбранная тема сохраняется в аккаунте и на этом устройстве.</p></div>'+themePickerMarkup()+'</div><div class="wide form-actions"><button class="button button-accent" type="submit">Сохранить профиль</button></div></form></div></div>';
+  $('#workspaceContent').innerHTML='<div class="settings-layout"><div class="workspace-card settings-intro"><p class="eyebrow dark-eyebrow">ТВОЙ FLOWTIX</p><h3>Твой профиль</h3><p>Настрой, как ты будешь отображаться в FlowTix. Изменения профиля сохраняются в аккаунте.</p></div><div class="workspace-card"><form id="profileSettingsForm" class="form-grid settings-form"><div class="wide avatar-editor"><span id="profileAvatarPreview" class="profile-avatar profile-avatar-large"></span><div class="avatar-copy"><b>Фото профиля</b><p>JPG, PNG или WebP · до 2 МБ</p><label class="button button-light avatar-upload-button">Загрузить фото<input id="avatarInput" type="file" accept="image/jpeg,image/png,image/webp" hidden></label></div></div><label>Отображаемое имя<input name="full_name" value="'+esc(user.full_name||'')+'" required maxlength="120" autocomplete="name"></label><label>Юзернейм<input name="username" value="'+esc(user.username||'')+'" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username"><small>Латинские буквы, цифры и _</small></label><label>Email аккаунта<input value="'+esc(user.email||'')+'" disabled></label><label>Город<input name="city" value="'+esc(user.city||'')+'" maxlength="100" placeholder="Например, Алматы"></label><label>Телефон<input name="phone" type="tel" value="'+esc(user.phone||'')+'" maxlength="40" autocomplete="tel" placeholder="+7 ..."></label><label class="wide">О себе<textarea name="about" rows="4" maxlength="1000" placeholder="Расскажи, какие события тебе интересны">'+esc(user.preferences?.about||'')+'</textarea></label><div class="wide settings-theme"><div><b>Оформление</b><p>Выбранная тема сохраняется в аккаунте и на этом устройстве.</p></div>'+themePickerMarkup()+'</div><div class="wide form-actions"><button class="button button-accent" type="submit">Сохранить профиль</button></div></form></div><div class="workspace-card profile-links-card" id="profileLinksCard"><p>Загружаем ссылки…</p></div></div>';
   putAvatar($('#profileAvatarPreview'),user.avatar_url,user.full_name);
+  void loadMyProfileLinks();
   $('#workspace').scrollIntoView({behavior:'smooth'});
 }
+let chatRealtimeChannels=[],chatListChannel=null,chatThreadChannel=null;
+let activeChatId=null, activeChatOtherId=null, activeChatMessages=[], activeChatHasMore=false, activeChatLoading=false;
+function clearChatRealtime(){if(supabaseAuth)chatRealtimeChannels.forEach(channel=>supabaseAuth.removeChannel(channel));chatRealtimeChannels=[];chatListChannel=null;chatThreadChannel=null}
+function profileLinkIcon(platform){
+ const paths={telegram:'<path d="m21 3-4 18-6-6-3 3 1-6 8-7-10 5-4-1 18-6Z"/>',youtube:'<rect x="3" y="6" width="18" height="12" rx="4"/><path d="m10 9 5 3-5 3V9Z"/>',instagram:'<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="3.5"/><path d="M17.5 6.5h.01"/>',tiktok:'<path d="M14 4v10a4 4 0 1 1-4-4"/><path d="M14 4c1 3 2.5 4.5 5 5"/>',vk:'<path d="M4 7h4c.4 3 1.5 4.5 2.5 4.5V7h3.5v4.5C16 11.4 17.3 10 18 7h3c-.5 2.5-2 4.7-3.5 6 1.8 1.3 3 2.7 4 5h-4c-.9-1.6-1.9-2.6-3.5-3v3H13C8 18 5 14 4 7Z"/>',discord:'<path d="M7 6c3-1.5 7-1.5 10 0l2 10c-2 1.5-3 2-5 2l-.8-1.3M5 16 7 6M8 14h.01M16 14h.01M8 17c2 1 6 1 8 0"/>',x:'<path d="m4 4 16 16M20 4 4 20M7 4h3l7 16h-3L7 4Z"/>'};
+ return '<svg class="profile-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(paths[platform]||'<path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/>')+'</svg>';
+}
+async function loadMyProfileLinks(){
+ const box=$('#profileLinksCard');if(!box)return;
+ try{
+  const [{links=[]},{users:blockedUsers=[]}]=await Promise.all([api('/api/me/profile-links'),api('/api/me/blocks')]);
+  box.innerHTML='<div class="profile-links-head"><div><p class="eyebrow dark-eyebrow">СОЦИАЛЬНЫЕ ССЫЛКИ</p><h3>Ссылки в профиле</h3><p>Сначала ссылка проверяется главным администратором. До одобрения её видите только вы.</p></div></div><form id="profileLinkForm" class="profile-link-add"><label>Ссылка на соцсеть или сайт<input name="url" type="url" maxlength="2048" required placeholder="https://t.me/…"></label><button class="button button-accent" type="submit">Отправить на проверку</button></form><div class="profile-link-list">'+(links.length?links.map(link=>'<div class="profile-link-row"><span class="profile-link-platform">'+profileLinkIcon(link.platform)+'</span><a href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+esc(link.url)+'</a><span class="link-status status-'+esc(link.status)+'">'+({pending:'На модерации',approved:'Подтверждена',rejected:'Отклонена'}[link.status]||'На модерации')+'</span><button type="button" class="button button-light button-small" data-remove-own-link="'+esc(link.id)+'">Удалить</button></div>').join(''):empty('Ссылок пока нет. Добавь первую — она появится после проверки.'))+'</div><div class="my-blocked-users"><h4>Заблокированные пользователи</h4>'+(blockedUsers.length?blockedUsers.map(person=>'<div class="profile-link-row"><span class="profile-avatar">'+(person.avatar_url?'<img src="'+esc(person.avatar_url)+'" alt="">':esc((person.full_name||'F')[0]))+'</span><span class="blocked-person-name">'+esc(person.full_name||person.username||'Пользователь')+' · @'+esc(person.username||'—')+'</span><button type="button" class="button button-light button-small" data-own-unblock="'+esc(person.id)+'">Разблокировать</button></div>').join(''):'<p>Заблокированных пользователей нет.</p>')+'</div>';
+ }catch(error){box.innerHTML='<h3>Ссылки в профиле</h3><p class="connection-state">'+esc(error.message)+'</p>'}
+}
+async function openPublicProfile(id){
+ try{
+  const {profile:p}=await api('/api/profiles/'+encodeURIComponent(id));
+  let blocks=[];if(signedIn())try{blocks=(await api('/api/me/blocks')).blocks||[]}catch{}
+  const isBlocked=blocks.includes(id);
+  document.querySelector('#publicProfileModal')?.remove();
+  const wrap=document.createElement('div');wrap.id='publicProfileModal';wrap.className='overlay profile-modal-overlay';wrap.innerHTML='<section class="dialog profile-modal" role="dialog" aria-modal="true"><button class="dialog-close" type="button" data-profile-close>×</button><div class="profile-modal-hero"><span id="publicProfileAvatar" class="profile-avatar profile-avatar-large"></span><p class="eyebrow dark-eyebrow">'+esc(({visitor:'УЧАСТНИК',organizer:'ОРГАНИЗАТОР',staff:'СОТРУДНИК',moderator:'МОДЕРАТОР',admin:'АДМИНИСТРАТОР'})[p.role]||'ПРОФИЛЬ FLOWTIX')+'</p><h2>'+esc(p.full_name||'Участник FlowTix')+'</h2><span class="profile-modal-username">@'+esc(p.username||'user')+'</span></div>'+(p.city?'<p class="profile-modal-city">'+esc(p.city)+'</p>':'')+(p.about?'<p class="profile-modal-about">'+esc(p.about)+'</p>':'')+'<div class="profile-modal-links">'+(p.links||[]).map(link=>'<a class="profile-social-link" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+profileLinkIcon(link.platform)+'<span>'+esc(link.platform==='website'?'Сайт':link.platform)+'</span><b>↗</b></a>').join('')+'</div><div class="profile-modal-actions">'+(signedIn()&&user.id!==p.id?'<button class="button button-accent" data-request-chat="'+esc(p.id)+'">Запросить личный чат</button><button class="button button-light" data-toggle-user-block="'+esc(p.id)+'" data-blocked="'+isBlocked+'">'+(isBlocked?'Разблокировать':'Заблокировать')+'</button>':'')+'</div></section>';
+  document.body.append(wrap);putAvatar($('#publicProfileAvatar',wrap),p.avatar_url,p.full_name);
+ }catch(error){toast(error.message)}
+}
+async function openAdminUserProfile(id){
+ try{
+  const {profile:p}=await api('/api/admin/users/'+encodeURIComponent(id)+'/profile');
+  document.querySelector('#adminUserProfileModal')?.remove();
+  const linkRows=(p.links||[]).map(link=>'<div class="profile-link-row"><span>'+profileLinkIcon(link.platform)+'</span><input class="admin-link-edit-input" data-admin-link-url="'+esc(link.id)+'" value="'+esc(link.url)+'" aria-label="Ссылка профиля"><span class="link-status status-'+esc(link.status)+'">'+({pending:'На модерации',approved:'Подтверждена',rejected:'Отклонена'}[link.status]||link.status)+'</span><button class="button button-light button-small" data-admin-link-save="'+esc(link.id)+'">Сохранить</button><button class="button button-danger button-small" data-admin-link-delete="'+esc(link.id)+'">Удалить</button></div>').join('')||'<p>Ссылок нет</p>';
+  const wrap=document.createElement('div');wrap.id='adminUserProfileModal';wrap.className='overlay profile-modal-overlay admin-user-modal-overlay';
+  wrap.innerHTML='<section class="dialog admin-user-modal" role="dialog" aria-modal="true"><button class="dialog-close" type="button" data-admin-profile-close>×</button><p class="eyebrow dark-eyebrow">УПРАВЛЕНИЕ АККАУНТОМ</p><h2>Профиль пользователя</h2><div class="admin-profile-heading"><span id="adminProfileAvatar" class="profile-avatar profile-avatar-large"></span><div><b>'+esc(p.full_name||'Без имени')+'</b><small>'+esc(p.email)+'</small><span>'+esc(p.is_blocked?'Заблокирован':'Активен')+' · '+esc(p.role)+'</span></div></div><form id="adminUserProfileForm" data-user-id="'+esc(id)+'" class="form-grid"><label>Отображаемое имя<input name="full_name" maxlength="120" value="'+esc(p.full_name||'')+'"></label><label>Юзернейм<input name="username" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" value="'+esc(p.username||'')+'"></label><label>Телефон<input name="phone" maxlength="40" value="'+esc(p.phone||'')+'"></label><label>Город<input name="city" maxlength="100" value="'+esc(p.city||'')+'"></label><label class="wide">О себе<textarea name="about" maxlength="1000" rows="3">'+esc(p.about||'')+'</textarea></label><label class="wide">Аватар (PNG/JPG/WebP, до 2 МБ)<input id="adminAvatarFile" type="file" accept="image/png,image/jpeg,image/webp"></label><button class="button button-accent" type="submit">Сохранить профиль</button></form><form id="adminBalanceForm" data-user-id="'+esc(id)+'" class="admin-balance-form"><h3>Баланс · '+esc(money(p.balance))+'</h3><label>Изменение в ₸ (+ начислить / − списать)<input name="amount" type="number" step="0.01" required></label><label>Комментарий<input name="note" maxlength="240" placeholder="Причина корректировки"></label><button class="button button-light" type="submit">Изменить баланс</button></form><div class="admin-profile-links"><h3>Социальные ссылки</h3>'+linkRows+'<form id="adminProfileLinkForm" data-user-id="'+esc(id)+'" class="profile-link-add"><label>Добавить ссылку<input type="url" name="url" maxlength="2048" required placeholder="https://…"></label><button class="button button-accent button-small" type="submit">Добавить и одобрить</button></form></div><div class="profile-modal-actions"><button class="button '+(p.is_blocked?'button-light':'button-danger')+'" data-admin-profile-block="'+esc(id)+'" data-blocked="'+p.is_blocked+'" '+(p.is_root_admin?'disabled':'')+'>'+(p.is_blocked?'Разблокировать аккаунт':'Заблокировать аккаунт')+'</button></div></section>';
+  document.body.append(wrap);putAvatar($('#adminProfileAvatar',wrap),p.avatar_url,p.full_name);
+ }catch(error){toast(error.message)}
+}
+function messageBubble(message){
+ return '<article class="chat-message '+(message.sender_id===user?.id?'is-mine':'')+'" data-chat-message="'+esc(message.id)+'"><p>'+esc(message.body)+'</p><time>'+esc(new Date(message.created_at).toLocaleString('ru',{hour:'2-digit',minute:'2-digit'}))+'</time></article>';
+}
+function renderChatList(conversations){
+ const list=$('#chatConversationList');if(!list)return;
+ const entries=conversations.filter(x=>x.status==='active'||x.status==='pending');
+ list.innerHTML=entries.length?entries.map(c=>{
+   const incoming=c.status==='pending'&&c.request_by!==user.id,avatar=c.other?.avatar_url?'<img src="'+esc(c.other.avatar_url)+'" alt="">':esc((c.other?.full_name||'F')[0]);
+   return '<article class="chat-list-item '+(c.id===activeChatId?'active':'')+'"><button type="button" data-chat-open="'+esc(c.id)+'" data-chat-other="'+esc(c.other?.id||'')+'" class="chat-list-main"><span class="profile-avatar">'+avatar+'</span><span><b>'+esc(c.other?.full_name||c.other?.username||'Пользователь')+'</b><small>'+(incoming?'Запрос на переписку':c.status==='pending'?'Ожидает подтверждения':esc(c.lastMessage?.body||'Откройте переписку'))+'</small></span></button>'+(incoming?'<div class="chat-request-actions"><button class="button button-accent button-small" data-chat-request-action="accept" data-chat-id="'+esc(c.id)+'">Принять</button><button class="button button-light button-small" data-chat-request-action="decline" data-chat-id="'+esc(c.id)+'">Отклонить</button></div>':'')+'</article>';
+ }).join(''):empty('Здесь появятся личные переписки и запросы на чат.');
+}
+async function refreshConversations(){
+ try{const {conversations=[]}=await api('/api/messages/conversations');renderChatList(conversations);return conversations}
+ catch(error){const list=$('#chatConversationList');if(list)list.innerHTML='<p class="connection-state">'+esc(error.message)+'</p>';return []}
+}
+async function openChatConversation(id){
+ activeChatId=id;activeChatMessages=[];activeChatHasMore=false;if(chatThreadChannel&&supabaseAuth)supabaseAuth.removeChannel(chatThreadChannel);chatThreadChannel=null;
+ const messages=$('#chatMessages'),composer=$('#chatComposer');
+ if(messages)messages.innerHTML='<div class="chat-loading">Загружаем сообщения…</div>';
+ const data=await api('/api/messages/conversations/'+encodeURIComponent(id)+'/messages');
+ activeChatMessages=data.messages||[];activeChatHasMore=Boolean(data.hasMore);
+ if(messages){messages.innerHTML=activeChatMessages.map(messageBubble).join('')||'<div class="chat-empty">Пока нет сообщений. Начните переписку.</div>';messages.scrollTop=messages.scrollHeight;
+   messages.onscroll=()=>{if(messages.scrollTop<40&&activeChatHasMore&&!activeChatLoading)void loadOlderChatMessages(messages)};
+ }
+ if(composer)composer.hidden=false;
+ const clear=$('[data-clear-chat]');if(clear)clear.dataset.clearCount=String(data.clearCount||0);
+ const badge=$('#chatClearCount');if(badge)badge.textContent=(data.clearCount||0)+'/2 очистили';
+ activeChatOtherId=document.querySelector('[data-chat-open="'+CSS.escape(id)+'"]')?.dataset.chatOther||null;
+ const header=$('#chatActiveHeader');if(header){header.hidden=false;header.querySelector('h3').textContent=document.querySelector('[data-chat-open="'+CSS.escape(id)+'"] b')?.textContent||'Переписка'}
+ const channel=supabaseAuth?.channel('flowtix-conversation-'+id)
+   .on('postgres_changes',{event:'INSERT',schema:'public',table:'direct_messages',filter:'conversation_id=eq.'+id},payload=>{
+     const msg=payload.new;if(!msg||activeChatMessages.some(x=>x.id===msg.id))return;
+     activeChatMessages.push(msg);$('#chatMessages')?.insertAdjacentHTML('beforeend',messageBubble(msg));const box=$('#chatMessages');if(box)box.scrollTop=box.scrollHeight;
+   })
+   .subscribe();
+ if(channel)chatRealtimeChannels.push(channel);
+ if(supabaseAuth){
+   const token=sessionStorage.getItem(tokenKey);if(token)await supabaseAuth.realtime.setAuth(token);
+ }
+ await refreshConversations();
+}
+async function loadOlderChatMessages(box){
+ if(!activeChatMessages.length||activeChatLoading)return;
+ activeChatLoading=true;const oldHeight=box.scrollHeight,oldTop=box.scrollTop;
+ try{
+  const before=activeChatMessages[0].created_at;
+  const {messages=[],hasMore}=await api('/api/messages/conversations/'+encodeURIComponent(activeChatId)+'/messages?before='+encodeURIComponent(before));
+  if(messages.length){activeChatMessages=[...messages,...activeChatMessages];box.insertAdjacentHTML('afterbegin',messages.map(messageBubble).join(''));box.scrollTop=box.scrollHeight-oldHeight+oldTop}
+  activeChatHasMore=Boolean(hasMore);
+ }catch(error){toast(error.message)}finally{activeChatLoading=false}
+}
+function messagesView(){
+ if(!signedIn())return authOpen();
+ $('#workspace').hidden=false;$('#workspaceTitle').textContent='Личные сообщения';$('#workspaceRefresh').textContent='Обновить';$('#workspace').scrollIntoView({behavior:'smooth'});
+ $('#workspaceContent').innerHTML='<section class="messages-workspace"><aside class="chat-sidebar"><div class="chat-sidebar-heading"><div><p class="eyebrow dark-eyebrow">FLOWTIX DIRECT</p><h3>Сообщения</h3></div><span class="chat-live-dot">Realtime</span></div><div id="chatConversationList" class="chat-conversation-list"><div class="chat-loading">Загружаем запросы и переписки…</div></div></aside><section class="chat-panel"><header id="chatActiveHeader" class="chat-active-header" hidden><div class="chat-active-title"><button class="button button-light button-small chat-back-button" data-chat-back type="button">← Список</button><h3>Открой переписку</h3><small id="chatClearCount">0/2 очистили</small></div><div class="chat-actions"><button class="button button-light button-small" type="button" data-clear-chat>Очистить у меня</button><button class="button button-danger button-small" type="button" data-block-chat>Заблокировать</button></div></header><div id="chatMessages" class="chat-messages"><div class="chat-empty">Выбери переписку слева.</div></div><form id="chatComposer" class="chat-composer" hidden><div><textarea name="body" maxlength="512" rows="1" required placeholder="Написать сообщение…"></textarea><small><span id="chatCharCount">0</span>/512</small></div><button class="button button-accent" type="submit">Отправить</button></form></section></section>';
+ void refreshConversations();
+ if(supabaseAuth){
+  clearChatRealtime();const token=sessionStorage.getItem(tokenKey);if(token)supabaseAuth.realtime.setAuth(token);
+  chatListChannel=supabaseAuth.channel('flowtix-conversation-list-'+user.id).on('postgres_changes',{event:'*',schema:'public',table:'direct_conversations'},()=>void refreshConversations()).subscribe();
+  chatRealtimeChannels.push(chatListChannel);
+ }
+}
+
 async function uploadProfileAvatar(input){
   const file=input.files?.[0];if(!file)return;
   const allowed=['image/jpeg','image/png','image/webp'];
@@ -622,6 +725,7 @@ function renderAccountRoute(){
   if(PROFILE_ROUTE)return showSettings();
   if(DASHBOARD_ROUTE)return showWorkspace();
   if(NOTIFICATIONS_ROUTE)return notificationsView();
+  if(MESSAGES_ROUTE)return messagesView();
 }
 async function subscribeToNotifications(){
   if(!supabaseAuth||!signedIn()||!user?.id)return;
@@ -944,12 +1048,12 @@ async function adminView() {
   const root=$('#workspaceContent');
   try{
     const loadAdminSection=async(path)=>{try{return await api(path)}catch(error){return {error:error.message}}};
-    const [stats,users,logs,events,venues,tickets,payments,complaints,reviews,settings]=await Promise.all([
+    const [stats,users,logs,events,venues,tickets,payments,complaints,reviews,settings,profileLinks]=await Promise.all([
       loadAdminSection('/api/admin/statistics'),loadAdminSection('/api/admin/users'),loadAdminSection('/api/admin/audit-logs'),loadAdminSection('/api/admin/events'),
       loadAdminSection('/api/admin/venues'),loadAdminSection('/api/admin/tickets'),loadAdminSection('/api/admin/payments'),loadAdminSection('/api/admin/complaints'),
-      loadAdminSection('/api/admin/reviews'),loadAdminSection('/api/admin/settings')
+      loadAdminSection('/api/admin/reviews'),loadAdminSection('/api/admin/settings'),loadAdminSection('/api/admin/profile-links?offset=0')
     ]);
-    const loadErrors=[stats,users,logs,events,venues,tickets,payments,complaints,reviews,settings].filter(x=>x.error).map(x=>esc(x.error));
+    const loadErrors=[stats,users,logs,events,venues,tickets,payments,complaints,reviews,settings,profileLinks].filter(x=>x.error).map(x=>esc(x.error));
     const loadWarning=loadErrors.length?'<div class="connection-state">Часть разделов не загрузилась: '+loadErrors.join(' · ')+'</div>':'';
     const roles={visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник',moderator:'Модератор'};
     const roleIcons={
@@ -962,7 +1066,7 @@ async function adminView() {
     const rolePicker=(id,current)=>id===user.id
       ?'<span class="role-picker-root">'+roleIcons.admin+'<span>Главный администратор</span></span>'
       :'<div class="role-picker" data-role-picker><button class="role-picker-trigger" type="button" data-role-picker-toggle aria-label="Выбрать роль" aria-haspopup="listbox" aria-expanded="false">'+(roleIcons[current]||roleIcons.visitor)+'<span>'+(roles[current]||'Посетитель')+'</span><svg class="role-picker-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="role-picker-menu" role="listbox" aria-label="Роль пользователя" hidden>'+Object.entries(roles).map(([role,label])=>'<button class="role-picker-option" type="button" role="option" aria-selected="'+(role===current)+'" data-role-picker-option data-role-user="'+esc(id)+'" data-role="'+role+'">'+roleIcons[role]+'<span>'+label+'</span>'+(role===current?'<svg class="role-picker-check" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3.5 8.3 3 3 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':'')+'</button>').join('')+'</div></div>';
-    const renderAdminUser=x=>'<tr><td>'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></td><td>'+rolePicker(x.id,x.role)+'</td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>';
+    const renderAdminUser=x=>'<tr><td><button type="button" class="admin-user-profile-button" data-admin-profile-open="'+esc(x.id)+'">'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></button></td><td>'+rolePicker(x.id,x.role)+'</td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>';
     const userRows=(users.users||[]).map(renderAdminUser).join('');
     const renderAdminEvent=x=>'<details class="admin-event-item" data-admin-event-item="'+esc(x.id)+'"><summary><span class="admin-event-summary-title"><b>'+esc(x.title||'Мероприятие')+'</b><small>'+esc(x.users?.email||'Организатор не указан')+'</small></span><time>'+esc(x.start_date||'Дата не указана')+'</time><span class="status-pill">'+esc(eventStatusLabel(x.status))+'</span><span class="admin-event-chevron" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary><div class="admin-event-details"><div><small>Организатор</small><b>'+esc(x.users?.full_name||x.users?.email||'—')+'</b></div><div><small>Площадка</small><b>'+esc([x.venues?.name,x.location_address||x.venues?.address,x.venues?.city].filter(Boolean).join(' · ')||'Не указана')+'</b></div><div><small>Свободные места</small><b>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</b></div><div><small>Стоимость</small><b>'+esc(money(x.base_price))+'</b></div><label class="admin-event-status">Статус<select data-event-status="'+esc(x.id)+'">'+['draft','pending_moderation','published','rejected','cancelled','completed'].map(status=>'<option value="'+status+'" '+(x.status===status?'selected':'')+'>'+esc(eventStatusLabel(status))+'</option>').join('')+'</select></label><button type="button" class="button button-danger button-small" data-delete-event="'+esc(x.id)+'">Удалить мероприятие</button></div></details>';
     const eventRows=(events.events||[]).map(renderAdminEvent).join('');
@@ -977,7 +1081,7 @@ async function adminView() {
     const s=settings.settings||{};
     const visualPaymentsEnabled=s.visual_payments_enabled===true;
     const settingsForm='<form id="adminSettingsForm" class="form-grid"><label>Название сервиса<input name="site_name" value="'+esc(s.site_name||'FlowTix')+'" required></label><label>Почта поддержки<input name="support_email" type="email" value="'+esc(s.support_email||'')+'"></label><label>Режим обслуживания<select name="maintenance_mode"><option value="false" '+(s.maintenance_mode?'':'selected')+'>Выключен</option><option value="true" '+(s.maintenance_mode?'selected':'')+'>Включён</option></select></label><div class="wide visual-payment-option"><label class="admin-switch"><input type="checkbox" name="visual_payments_enabled" '+(visualPaymentsEnabled?'checked':'')+'><span class="admin-switch-track" aria-hidden="true"></span><span class="admin-switch-copy"><b>Активировать визуальные пополнения баланса</b><small>Пополнение общего баланса без списания денег. Покупка билета списывает его стоимость с баланса.</small></span></label><p class="payment-provider-note">Если выключить режим, пополнение недоступно до подключения провайдера. Уже имеющийся баланс можно тратить на билеты.</p></div><div class="wide"><button class="button button-accent" type="submit">Сохранить настройки</button></div></form>';
-    const auditActionLabels={REGISTER_FOR_EVENT:'Регистрация на мероприятие',ADMIN_TICKET_CANCELLED:'Билет аннулирован',ADMIN_TICKET_DELETED:'Билет удалён',USER_ROLE_CHANGED:'Изменена роль пользователя',USER_BLOCKED:'Аккаунт заблокирован',USER_UNBLOCKED:'Аккаунт разблокирован',ADMIN_SETTINGS_UPDATED:'Изменены настройки системы',ADMIN_EVENT_STATUS_CHANGED:'Изменён статус мероприятия',STAFF_TICKET_CHECKED_IN:'Билет проверен на входе',TICKET_AUTO_DELETED:'Использованный билет удалён автоматически'};
+    const auditActionLabels={PROFILE_LINK_SUBMITTED:'Ссылка профиля отправлена на модерацию',PROFILE_LINK_APPROVED:'Ссылка профиля подтверждена',PROFILE_LINK_REJECTED:'Ссылка профиля отклонена',PROFILE_LINK_EDITED:'Отредактирована ссылка профиля',ADMIN_PROFILE_LINK_ADDED:'Администратор добавил ссылку в профиль',ADMIN_PROFILE_LINK_DELETED:'Администратор удалил ссылку из профиля',ADMIN_PROFILE_UPDATED:'Администратор изменил профиль пользователя',ADMIN_WALLET_ADJUSTED:'Администратор изменил баланс',CHAT_REQUEST_ACCEPTED:'Запрос на личный чат принят',CHAT_REQUEST_DECLINED:'Запрос на личный чат отклонён',USER_BLOCKED_BY_USER:'Пользователь добавлен в блокировку',REGISTER_FOR_EVENT:'Регистрация на мероприятие',ADMIN_TICKET_CANCELLED:'Билет аннулирован',ADMIN_TICKET_DELETED:'Билет удалён',USER_ROLE_CHANGED:'Изменена роль пользователя',USER_BLOCKED:'Аккаунт заблокирован',USER_UNBLOCKED:'Аккаунт разблокирован',ADMIN_SETTINGS_UPDATED:'Изменены настройки системы',ADMIN_EVENT_STATUS_CHANGED:'Изменён статус мероприятия',STAFF_TICKET_CHECKED_IN:'Билет проверен на входе',TICKET_AUTO_DELETED:'Использованный билет удалён автоматически'};
     const auditRoleLabels={visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник',moderator:'Модератор',admin:'Администратор'};
     const auditDetail=(x)=>{
       if(x.detail_label)return x.detail_label;
@@ -994,7 +1098,25 @@ async function adminView() {
     };
     const renderAuditRow=(x)=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(auditActionLabels[x.action]||'Действие в системе')+'</td><td>'+esc([x.entity_label,auditDetail(x)].filter(Boolean).join(' · ')||'—')+'</td></tr>';
     const logsHtml=(logs.logs||[]).map(renderAuditRow).join('');
+    const renderProfileLink=x=>'<article class="moderation-link-card" data-profile-link-item="'+esc(x.id)+'"><span class="profile-avatar">'+(x.users?.avatar_url?'<img src="'+esc(x.users.avatar_url)+'" alt="">':esc((x.users?.full_name||'F')[0]))+'</span><div class="moderation-link-user"><b>'+esc(x.users?.full_name||x.users?.username||'Пользователь')+'</b><small>@'+esc(x.users?.username||'—')+' · '+esc(({visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник',moderator:'Модератор',admin:'Администратор'})[x.users?.role]||'Пользователь')+'</small></div><a href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer">'+profileLinkIcon(x.platform)+'<span>'+esc(x.url)+'</span></a><span class="link-status status-'+esc(x.status)+'">'+({pending:'На модерации',approved:'Подтверждена',rejected:'Отклонена'}[x.status]||x.status)+'</span>'+(x.status==='pending'?'<button class="button button-accent button-small" data-profile-link-decision="approved" data-link-id="'+esc(x.id)+'">Одобрить</button><button class="button button-danger button-small" data-profile-link-decision="rejected" data-link-id="'+esc(x.id)+'">Отклонить</button>':'')+'</article>';
+    let moderationLinksStatus='pending',moderationLinksOffset=(profileLinks.links||[]).length,moderationLinksHasMore=Boolean(profileLinks.hasMore),moderationLinksLoading=false,moderationLinksObserver=null;
+    const renderModerationLinksPanel=()=>'<div class="workspace-card"><div class="profile-links-head"><div><h3>Модерация ссылок профиля</h3><p>Проверяй адрес перед публикацией. Одобренные ссылки видны на публичной карточке пользователя.</p></div></div><div class="admin-link-status-tabs">'+[['pending','На модерации'],['approved','Подтверждены'],['rejected','Отклонены']].map(([v,l])=>'<button type="button" class="category '+(v===moderationLinksStatus?'active':'')+'" data-profile-link-filter="'+v+'">'+l+'</button>').join('')+'</div><div id="moderationLinksList">'+((profileLinks.links||[]).map(renderProfileLink).join('')||empty('В этой категории пока нет ссылок.'))+'</div><button id="moderationLinksMore" type="button" class="button button-light button-small" '+(moderationLinksHasMore?'':'hidden')+'>Загрузить ещё 10</button></div>';
+    const loadModerationLinks=async(reset=false)=>{
+      if(moderationLinksLoading)return;moderationLinksLoading=true;
+      try{
+       if(reset){moderationLinksOffset=0;moderationLinksHasMore=true;$('#moderationLinksList',panel).innerHTML='<div class="chat-loading">Загружаем ссылки…</div>'}
+       const result=await api('/api/admin/profile-links?status='+moderationLinksStatus+'&offset='+moderationLinksOffset);
+       const list=$('#moderationLinksList',panel);if(!list)return;
+       const rows=(result.links||[]).map(renderProfileLink).join('');
+       if(reset)list.innerHTML=rows||empty('В этой категории пока нет ссылок.');else list.insertAdjacentHTML('beforeend',rows);
+       moderationLinksOffset+=(result.links||[]).length;moderationLinksHasMore=Boolean(result.hasMore);
+       const more=$('#moderationLinksMore',panel);if(more)more.hidden=!moderationLinksHasMore;
+       observeModerationLinks();
+      }catch(error){toast(error.message)}finally{moderationLinksLoading=false}
+    };
+    const observeModerationLinks=()=>{moderationLinksObserver?.disconnect();const button=$('#moderationLinksMore',panel);if(!button||button.hidden||!moderationLinksHasMore)return;if('IntersectionObserver'in window){moderationLinksObserver=new IntersectionObserver(entries=>{if(entries.some(x=>x.isIntersecting))void loadModerationLinks()},{rootMargin:'180px'});moderationLinksObserver.observe(button)}};
     const panels={
+      links:renderModerationLinksPanel(),
       users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody id="adminUserRows">'+userRows+'</tbody></table></div><button id="adminUserLoadMore" type="button" class="button button-light button-small '+(users.hasMore?'':'is-hidden')+'" '+(users.hasMore?'':'hidden')+'>Загрузить ещё 10</button><p id="adminUserEnd" class="admin-event-end '+(users.hasMore?'is-hidden':'')+'">'+((users.users||[]).length?'Показаны все пользователи.':'Пользователей пока нет.')+'</p></div>',
       events:'<div class="workspace-card"><h3>Мероприятия</h3><p class="workspace-help">Сначала загружаются 10 последних. Листай ниже, чтобы увидеть следующие. Удаление убирает событие из активного списка и сохраняет историю билетов и отзывов.</p><div id="adminEventList" class="admin-event-list">'+(events.error?'<p class="connection-state">'+esc(events.error)+'</p>':eventRows||empty('Активных мероприятий пока нет.'))+'</div><button id="adminEventLoadMore" type="button" class="button button-light button-small '+(events.hasMore?'':'is-hidden')+'">Загрузить ещё 10</button><p id="adminEventEnd" class="admin-event-end '+(events.hasMore?'is-hidden':'')+'">'+((events.events||[]).length?'Показаны все мероприятия.':'')+'</p></div>',
       venues:'<div class="workspace-card"><h3>Площадки</h3>'+(venueRows||empty('Площадок пока нет.'))+'</div>',
@@ -1005,7 +1127,7 @@ async function adminView() {
       settings:'<div class="workspace-card"><h3>Настройки системы</h3>'+settingsForm+'</div>',
       logs:'<div class="workspace-card"><h3>Журнал действий</h3><p class="workspace-help">Последние действия. Прокручивай вниз — следующие записи загрузятся автоматически.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Подробности</th></tr></thead><tbody id="adminAuditRows">'+logsHtml+'</tbody></table></div><button id="adminAuditLoadMore" type="button" class="button button-light button-small '+(logs.hasMore?'':'is-hidden')+'" '+(logs.hasMore?'':'hidden')+'>Загрузить ещё 10</button><p id="adminAuditEnd" class="admin-event-end '+(logs.hasMore?'is-hidden':'')+'">'+((logs.logs||[]).length?'Показаны все записи.':'Записей пока нет.')+'</p></div>'
     };
-    const tabs=Object.entries({users:'Аккаунты',events:'Мероприятия',venues:'Площадки',tickets:'Билеты',payments:'Платежи',complaints:'Жалобы',reviews:'Отзывы',settings:'Настройки',logs:'Журнал'});
+    const tabs=Object.entries({users:'Аккаунты',events:'Мероприятия',venues:'Площадки',tickets:'Билеты',payments:'Платежи',complaints:'Жалобы',reviews:'Отзывы',links:'Ссылки профиля',settings:'Настройки',logs:'Журнал'});
     root.innerHTML=loadWarning+'<div class="stats-grid">'+[['Пользователи',stats.users??'—'],['Мероприятия',stats.events??'—'],['Билеты',stats.tickets??'—'],['Выручка',stats.error?'—':money(stats.revenue)],['Открытые жалобы',stats.openComplaints??'—']].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div id="adminTabs" class="category-bar">'+tabs.map(([key,label],i)=>'<button type="button" class="category '+(key===adminSelectedTab?'active':'')+'" data-admin-tab="'+key+'">'+label+'</button>').join('')+'</div><div id="adminPanel">'+(panels[adminSelectedTab]||panels.users)+'</div>';
     const panel=$('#adminPanel',root);
     let ticketOffset=loadedAdminTickets.length,ticketHasMore=Boolean(tickets.hasMore),ticketLoading=false,ticketObserver=null;
@@ -1098,16 +1220,21 @@ async function adminView() {
     observeAdminUserFeed();
     observeAdminTicketFeed();
     if(adminSelectedTab==='logs')observeAdminAuditFeed();
+    if(adminSelectedTab==='links')observeModerationLinks();
     root.onchange=async(e)=>{
       if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён');const item=e.target.closest('[data-admin-event-item]');const pill=item?.querySelector('summary .status-pill');if(pill)pill.textContent=eventStatusLabel(e.target.value);if(e.target.value==='cancelled'){item?.remove();adminEventsOffset=Math.max(0,adminEventsOffset-1)}}catch(x){toast(x.message);await adminView()}}
         };
     root.onclick=async(e)=>{
       const tab=e.target.closest('[data-admin-tab]');
-      if(tab){adminSelectedTab=tab.dataset.adminTab;$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===tab));panel.innerHTML=panels[tab.dataset.adminTab]||'';if(tab.dataset.adminTab==='events')observeAdminEventFeed();if(tab.dataset.adminTab==='users')observeAdminUserFeed();if(tab.dataset.adminTab==='logs')observeAdminAuditFeed();if(tab.dataset.adminTab==='tickets'){const rows=panel.querySelector('#adminTicketRows'),more=panel.querySelector('#adminTicketLoadMore');if(rows)rows.innerHTML=loadedAdminTickets.map(renderAdminTicket).join('');if(more)more.hidden=!ticketHasMore;observeAdminTicketFeed()}return}
+      if(tab){adminSelectedTab=tab.dataset.adminTab;$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===tab));panel.innerHTML=panels[tab.dataset.adminTab]||'';if(tab.dataset.adminTab==='events')observeAdminEventFeed();if(tab.dataset.adminTab==='users')observeAdminUserFeed();if(tab.dataset.adminTab==='logs')observeAdminAuditFeed();if(tab.dataset.adminTab==='links')observeModerationLinks();if(tab.dataset.adminTab==='tickets'){const rows=panel.querySelector('#adminTicketRows'),more=panel.querySelector('#adminTicketLoadMore');if(rows)rows.innerHTML=loadedAdminTickets.map(renderAdminTicket).join('');if(more)more.hidden=!ticketHasMore;observeAdminTicketFeed()}return}
       if(e.target.closest('#adminTicketLoadMore')){await loadMoreTickets();return}
       if(e.target.closest('#adminUserLoadMore')){await loadMoreAdminUsers();observeAdminUserFeed();return}
       if(e.target.closest('#adminEventLoadMore')){await loadMoreAdminEvents();observeAdminEventFeed();return}
       if(e.target.closest('#adminAuditLoadMore')){await loadMoreAdminAudit();return}
+      if(e.target.closest('#moderationLinksMore')){await loadModerationLinks();return}
+      const linkFilter=e.target.closest('[data-profile-link-filter]');if(linkFilter){moderationLinksStatus=linkFilter.dataset.profileLinkFilter;$('[data-profile-link-filter]',panel).forEach(x=>x.classList.toggle('active',x===linkFilter));await loadModerationLinks(true);return}
+      const linkDecision=e.target.closest('[data-profile-link-decision]');if(linkDecision){try{await api('/api/admin/profile-links/'+encodeURIComponent(linkDecision.dataset.linkId),{method:'PATCH',body:JSON.stringify({status:linkDecision.dataset.profileLinkDecision})});toast(linkDecision.dataset.profileLinkDecision==='approved'?'Ссылка одобрена':'Ссылка отклонена');await loadModerationLinks(true)}catch(error){toast(error.message)}return}
+      const profileOpen=e.target.closest('[data-admin-profile-open]');if(profileOpen){void openAdminUserProfile(profileOpen.dataset.adminProfileOpen);return}
       const deleteEvent=e.target.closest('[data-delete-event]');
       if(deleteEvent){
         if(!confirm('Убрать мероприятие из активной системы? Билеты и отзывы сохранятся в истории.'))return;
@@ -1132,6 +1259,9 @@ async function adminView() {
     };
     root.onsubmit=async(e)=>{
       if(e.target.matches('[data-admin-venue]')){e.preventDefault();try{await api('/api/admin/venues/'+e.target.dataset.adminVenue,{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Площадка обновлена');await adminView()}catch(x){toast(x.message)}}
+      if(e.target.id==='adminProfileLinkForm'){e.preventDefault();const form=e.target;try{await api('/api/admin/users/'+encodeURIComponent(form.dataset.userId)+'/profile-links',{method:'POST',body:JSON.stringify({url:form.elements.url.value})});toast('Ссылка добавлена и опубликована');await openAdminUserProfile(form.dataset.userId)}catch(error){toast(error.message)}return}
+  if(e.target.id==='adminUserProfileForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type=submit]');button.disabled=true;try{const payload=Object.fromEntries(new FormData(form));const file=$('#adminAvatarFile',form).files?.[0];if(file){if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>2*1024*1024)throw new Error('Аватар: PNG, JPG или WebP до 2 МБ');payload.avatarData=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Не удалось прочитать файл'));reader.readAsDataURL(file)})}await api('/api/admin/users/'+form.dataset.userId+'/profile',{method:'PATCH',body:JSON.stringify(payload)});toast('Профиль пользователя сохранён');await openAdminUserProfile(form.dataset.userId)}catch(error){toast(error.message)}finally{button.disabled=false}}
+      if(e.target.id==='adminBalanceForm'){e.preventDefault();const form=e.target;try{const result=await api('/api/admin/users/'+form.dataset.userId+'/balance-adjustments',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});toast('Баланс обновлён: '+money(result.balance));await openAdminUserProfile(form.dataset.userId)}catch(error){toast(error.message)}}
       if(e.target.id==='adminSettingsForm'){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.maintenance_mode=data.maintenance_mode==='true';data.visual_payments_enabled=e.target.elements.visual_payments_enabled.checked;try{await api('/api/admin/settings',{method:'PATCH',body:JSON.stringify(data)});toast('Настройки сохранены');await adminView()}catch(x){toast(x.message)}}
     };
   }catch(error){root.innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(error.message)+'</p></div>'}
@@ -1172,6 +1302,7 @@ document.addEventListener('click',async(e)=>{
     if(accountAction.dataset.accountAction==='profile')return window.location.assign('/profile/');
     if(accountAction.dataset.accountAction==='workspace')return window.location.assign('/dashboard/');
     if(accountAction.dataset.accountAction==='notifications')return window.location.assign('/notifications/');
+    if(accountAction.dataset.accountAction==='messages')return window.location.assign('/messages/');
     if(accountAction.dataset.accountAction==='admin')return window.location.assign('/admin/');
     if(accountAction.dataset.accountAction==='logout')return logoutAccount();
   }
@@ -1250,6 +1381,9 @@ document.addEventListener('click',(event)=>{
  if(target&&!target.closest('[data-staff-event-picker]'))document.querySelectorAll('[data-staff-event-picker]').forEach(picker=>{const menu=picker.querySelector('[data-staff-event-menu]'),button=picker.querySelector('[data-staff-event-toggle]');if(menu)menu.hidden=true;button?.setAttribute('aria-expanded','false')});
  if(target?.closest('[data-start-ticket-scan]')){event.preventDefault();void startTicketScanner()}if(target?.closest('[data-stop-ticket-scan]')){event.preventDefault();stopTicketScanner()}});
 document.addEventListener('submit',async(e)=>{
+  if(e.target.id==='adminUserProfileForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type=submit]');button.disabled=true;try{const payload=Object.fromEntries(new FormData(form));const file=$('#adminAvatarFile',form).files?.[0];if(file){if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>2*1024*1024)throw new Error('Аватар: PNG, JPG или WebP до 2 МБ');payload.avatarData=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Не удалось прочитать файл'));reader.readAsDataURL(file)})}await api('/api/admin/users/'+form.dataset.userId+'/profile',{method:'PATCH',body:JSON.stringify(payload)});toast('Профиль пользователя сохранён');await openAdminUserProfile(form.dataset.userId)}catch(error){toast(error.message)}finally{button.disabled=false}return}
+  if(e.target.id==='adminBalanceForm'){e.preventDefault();const form=e.target;try{const result=await api('/api/admin/users/'+form.dataset.userId+'/balance-adjustments',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});toast('Баланс обновлён: '+money(result.balance));await openAdminUserProfile(form.dataset.userId)}catch(error){toast(error.message)}return}
+  if(e.target.id==='profileLinkForm'){e.preventDefault();const button=e.target.querySelector('[type=submit]');button.disabled=true;try{await api('/api/me/profile-links',{method:'POST',body:JSON.stringify({url:e.target.elements.url.value})});e.target.reset();toast('Ссылка отправлена главному администратору на проверку');await loadMyProfileLinks()}catch(error){toast(error.message)}finally{button.disabled=false}return}
   if(e.target.id==='walletTopupForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;if(form.dataset.attemptAmount&&form.dataset.attemptAmount!==form.elements.amount.value)form.dataset.key=crypto.randomUUID();form.dataset.attemptAmount=form.elements.amount.value;try{const topped=await api('/api/wallet/topups',{method:'POST',body:JSON.stringify({amount:Number(form.elements.amount.value),idempotencyKey:form.dataset.key})});headerWalletBalance=Number(topped.balance||0);refreshHeaderWalletLabel();toast('Баланс пополнен');await openWallet()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
   if(e.target.id==='ticketActionForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;try{const del=form.dataset.deleteOnly==='true';await api('/api/admin/tickets/'+encodeURIComponent(form.dataset.ticketId)+(del?'':'/cancel'),{method:del?'DELETE':'PATCH',...(del?{}:{body:JSON.stringify({refund:form.elements.refund.checked,block:form.elements.block.checked,notify:form.elements.notify.checked,deleteRecord:form.elements.deleteRecord.checked})})});closeMoneyDialog('ticketActionModal');adminSelectedTab='tickets';toast(del?'Запись билета удалена':'Билет аннулирован, место освобождено');await adminView()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
 
@@ -1367,6 +1501,40 @@ $('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
 $('#cityInput').addEventListener('change',loadEvents);
 $('#footerYear').textContent=new Date().getFullYear();
+
+document.addEventListener('click',async event=>{
+ const el=event.target instanceof Element?event.target:null;if(!el)return;
+ if(el.closest('[data-profile-close]')){el.closest('#publicProfileModal')?.remove();return}
+ if(el.closest('[data-admin-profile-close]')){el.closest('#adminUserProfileModal')?.remove();return}
+ const publicProfile=el.closest('[data-profile-open]');if(publicProfile){event.preventDefault();void openPublicProfile(publicProfile.dataset.profileOpen);return}
+ if(el.id==='publicProfileModal'){el.remove();return}
+ if(el.id==='adminUserProfileModal'){el.remove();return}
+ const requestChat=el.closest('[data-request-chat]');if(requestChat){try{const result=await api('/api/messages/requests',{method:'POST',body:JSON.stringify({userId:requestChat.dataset.requestChat})});document.querySelector('#publicProfileModal')?.remove();toast(result.alreadyActive?'Переписка уже открыта':'Запрос на личный чат отправлен');if(result.conversation?.id||result.alreadyActive)window.location.assign('/messages/')}catch(error){toast(error.message)}return}
+ const userBlock=el.closest('[data-toggle-user-block]');if(userBlock){try{const blocked=userBlock.dataset.blocked==='true';await api('/api/me/blocks/'+encodeURIComponent(userBlock.dataset.toggleUserBlock),{method:blocked?'DELETE':'POST'});userBlock.dataset.blocked=String(!blocked);userBlock.textContent=blocked?'Заблокировать':'Разблокировать';toast(blocked?'Блокировка снята':'Пользователь заблокирован');if(!blocked)document.querySelector('#publicProfileModal')?.remove()}catch(error){toast(error.message)}return}
+ const ownUnblock=el.closest('[data-own-unblock]');if(ownUnblock){try{await api('/api/me/blocks/'+encodeURIComponent(ownUnblock.dataset.ownUnblock),{method:'DELETE'});toast('Блокировка снята');await loadMyProfileLinks()}catch(error){toast(error.message)}return}
+ const ownLinkDelete=el.closest('[data-remove-own-link]');if(ownLinkDelete){if(!confirm('Удалить ссылку из профиля?'))return;try{await api('/api/me/profile-links/'+encodeURIComponent(ownLinkDelete.dataset.removeOwnLink),{method:'DELETE'});toast('Ссылка удалена');await loadMyProfileLinks()}catch(error){toast(error.message)}return}
+ const adminLinkSave=el.closest('[data-admin-link-save]');if(adminLinkSave){const id=adminLinkSave.dataset.adminLinkSave,form=document.querySelector('#adminUserProfileForm'),userId=form?.dataset.userId,value=document.querySelector('[data-admin-link-url="'+CSS.escape(id)+'"]')?.value;if(!userId)return;try{await api('/api/admin/profile-links/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({url:value})});toast('Ссылка профиля обновлена');await openAdminUserProfile(userId)}catch(error){toast(error.message)}return}
+ const adminLinkDelete=el.closest('[data-admin-link-delete]');if(adminLinkDelete){if(!confirm('Удалить эту ссылку из профиля пользователя?'))return;try{await api('/api/admin/profile-links/'+encodeURIComponent(adminLinkDelete.dataset.adminLinkDelete),{method:'DELETE'});toast('Ссылка удалена');await openAdminUserProfile(document.querySelector('#adminUserProfileForm')?.dataset.userId)}catch(error){toast(error.message)}return}
+ const adminProfileBlock=el.closest('[data-admin-profile-block]');if(adminProfileBlock){try{const blocked=adminProfileBlock.dataset.blocked==='true';await api('/api/admin/users/'+encodeURIComponent(adminProfileBlock.dataset.adminProfileBlock)+'/block',{method:'PATCH',body:JSON.stringify({blocked:!blocked})});toast(!blocked?'Аккаунт заблокирован':'Аккаунт разблокирован');await openAdminUserProfile(adminProfileBlock.dataset.adminProfileBlock)}catch(error){toast(error.message)}return}
+ const chatOpen=el.closest('[data-chat-open]');if(chatOpen){try{await openChatConversation(chatOpen.dataset.chatOpen)}catch(error){toast(error.message)}return}
+ const chatAction=el.closest('[data-chat-request-action]');if(chatAction){try{await api('/api/messages/conversations/'+encodeURIComponent(chatAction.dataset.chatId),{method:'PATCH',body:JSON.stringify({action:chatAction.dataset.chatRequestAction})});await refreshConversations();if(chatAction.dataset.chatRequestAction==='accept')await openChatConversation(chatAction.dataset.chatId);toast(chatAction.dataset.chatRequestAction==='accept'?'Чат открыт':'Запрос отклонён')}catch(error){toast(error.message)}return}
+ if(el.closest('[data-chat-back]')){document.querySelector('.messages-workspace')?.classList.remove('has-active-chat');return}
+ if(el.closest('[data-clear-chat]')){if(!activeChatId)return;try{const result=await api('/api/messages/conversations/'+encodeURIComponent(activeChatId),{method:'PATCH',body:JSON.stringify({action:'clear'})});if(result.deleted){activeChatId=null;activeChatOtherId=null;clearChatRealtime();$('#chatMessages').innerHTML='<div class="chat-empty">Оба участника очистили историю. Переписка удалена.</div>';$('#chatComposer').hidden=true;$('#chatActiveHeader').hidden=true}else{$('#chatMessages').innerHTML='<div class="chat-empty">История очищена у тебя. Новые сообщения будут видны здесь.</div>';activeChatMessages=[];const badge=$('#chatClearCount');if(badge)badge.textContent='1/2 очистили'}await refreshConversations()}catch(error){toast(error.message)}return}
+ if(el.closest('[data-block-chat]')){if(!activeChatOtherId)return;if(!confirm('Заблокировать этого пользователя? Чат будет закрыт, его мероприятия скроются, а участие в твоих мероприятиях станет недоступно.'))return;try{await api('/api/me/blocks/'+encodeURIComponent(activeChatOtherId),{method:'POST'});toast('Пользователь заблокирован');activeChatId=null;activeChatOtherId=null;clearChatRealtime();await refreshConversations();$('#chatMessages').innerHTML='<div class="chat-empty">Чат закрыт блокировкой.</div>';$('#chatComposer').hidden=true;$('#chatActiveHeader').hidden=true}catch(error){toast(error.message)}return}
+ if(el.closest('[data-workspace-refresh]')||el.id==='workspaceRefresh'){
+  if(MESSAGES_ROUTE){event.preventDefault();await refreshConversations();return}
+  if(ACCOUNT_ROUTE){event.preventDefault();renderAccountRoute();return}
+ }
+});
+document.addEventListener('input',event=>{
+ const target=event.target;
+ if(target.matches('#chatComposer textarea')){target.style.height='auto';target.style.height=Math.min(target.scrollHeight,180)+'px';const count=$('#chatCharCount');if(count)count.textContent=String(target.value.length)}
+});
+document.addEventListener('submit',async event=>{
+ const form=event.target;
+ if(form?.id==='chatComposer'){event.preventDefault();if(!activeChatId)return;const textarea=form.elements.body,body=textarea.value.trim();if(!body||body.length>512)return;const button=form.querySelector('[type=submit]');button.disabled=true;try{const {message}=await api('/api/messages/conversations/'+encodeURIComponent(activeChatId)+'/messages',{method:'POST',body:JSON.stringify({body})});if(!activeChatMessages.some(x=>x.id===message.id)){activeChatMessages.push(message);$('#chatMessages').insertAdjacentHTML('beforeend',messageBubble(message))}textarea.value='';textarea.style.height='auto';$('#chatCharCount').textContent='0';const box=$('#chatMessages');box.scrollTop=box.scrollHeight;await refreshConversations()}catch(error){toast(error.message)}finally{button.disabled=false}return}
+});
+
 async function init(){
   try {
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');
