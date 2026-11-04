@@ -1742,4 +1742,5 @@ async function init(){
   if(!ACCOUNT_ROUTE&&user?.is_blocked&&sessionStorage.getItem('flowtix_blocked_route_notice')==='1'){sessionStorage.removeItem('flowtix_blocked_route_notice');showBlockedAccountModal()}
   if(ACCOUNT_ROUTE){if(hasSession||PUBLIC_PROFILE_ROUTE)renderAccountRoute();else authOpen('login')}
 }
+setupFlowScrollbars();
 init();
