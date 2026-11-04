@@ -946,3 +946,13 @@ body[data-theme="halloween"] .flow-scrollbar-x .flow-scrollbar-thumb{background:
 .complaint-review-actions button:disabled{opacity:.55;cursor:wait;transform:none}
 body[data-theme="halloween"] .complaint-review-card{box-shadow:0 10px 28px #1c11140c}
 @media(max-width:700px){.complaint-review-card{padding:15px;border-radius:15px}.complaint-review-actions{display:grid;grid-template-columns:1fr}.complaint-review-actions .button{width:100%;min-height:42px}.complaint-review-note textarea{min-height:82px}}
+
+/* Complaint context and direct navigation */
+.complaint-review-target,.complaint-review-author{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 15px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--violet) 6%,var(--surface,var(--paper)))}
+.complaint-review-target>div,.complaint-review-author>span{display:grid;gap:4px;min-width:0}
+.complaint-review-target small,.complaint-review-author small{color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.04em}
+.complaint-review-target b,.complaint-review-author b{color:var(--ink);overflow-wrap:anywhere}
+.complaint-review-target span,.complaint-review-author span{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.complaint-review-target .button,.complaint-review-author .button{flex:0 0 auto}
+.complaint-no-target{white-space:nowrap}
+@media(max-width:700px){.complaint-review-target,.complaint-review-author{align-items:stretch;flex-direction:column;gap:10px}.complaint-review-target .button,.complaint-review-author .button{width:100%;min-height:42px}.complaint-review-target .complaint-no-target{text-align:center}}
