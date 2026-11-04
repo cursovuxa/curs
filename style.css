@@ -652,3 +652,14 @@ body.blocked-modal-open{overflow:hidden}
   .blocked-account-actions{gap:8px}
   .blocked-account-actions .button{width:100%;padding:13px 12px}
 }
+
+/* Replace the platform-specific select chevron with a theme-aware control indicator. */
+.admin-event-status{position:relative}
+.admin-event-status::after{content:"";position:absolute;right:15px;bottom:16px;width:7px;height:7px;border-right:1.7px solid var(--muted);border-bottom:1.7px solid var(--muted);transform:rotate(45deg);pointer-events:none;transition:transform .18s ease,border-color .18s ease}
+.admin-event-status:hover::after,.admin-event-status:focus-within::after{border-color:var(--violet)}
+.admin-event-status select{appearance:none;-webkit-appearance:none;-moz-appearance:none;max-width:100%;min-height:40px;padding:10px 40px 10px 12px;border:1px solid var(--line);border-radius:12px;background-color:var(--surface,#fff);color:var(--ink);font:600 12px "DM Sans",sans-serif;cursor:pointer;transition:border-color .18s ease,box-shadow .18s ease}
+.admin-event-status select::-ms-expand{display:none}
+.admin-event-status select:hover{border-color:var(--violet)}
+.admin-event-status select:focus-visible{outline:0;border-color:var(--violet);box-shadow:0 0 0 3px color-mix(in srgb,var(--violet) 18%,transparent)}
+.admin-event-status:focus-within::after{transform:rotate(225deg)}
+@media(max-width:700px){.admin-event-status select{width:100%;min-height:44px;font-size:13px}.admin-event-status::after{right:16px;bottom:18px}}
