@@ -435,7 +435,7 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
 }));
 app.get('/api/organizer/events', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('events').select('*,venues(name,city,address),event_categories(name),event_program(*)')
-    .eq('organizer_id', req.user.id).order('created_at', { ascending: false });
+    .eq('organizer_id', req.user.id).neq('status', 'cancelled').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия организатора' });
   res.json({ events: data });
 }));
@@ -913,12 +913,32 @@ app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (_re
   res.json({ users });
 }));
 
-app.get('/api/admin/events', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
-  const { data, error } = await supabase.from('events')
-    .select('id,title,status,start_date,start_time,total_seats,available_seats,base_price,organizer_id,venue_id,location_address,users!events_organizer_id_fkey(full_name,email),venues(name,city,address)')
-    .order('created_at', { ascending: false }).limit(500);
+app.get('/api/admin/events', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const offset = Math.max(0, Number.parseInt(req.query.offset || '0', 10) || 0);
+  const limit = 10;
+  const { data, count, error } = await supabase.from('events')
+    .select('id,title,status,start_date,start_time,total_seats,available_seats,base_price,organizer_id,venue_id,location_address,created_at,users!events_organizer_id_fkey(full_name,email),venues(name,city,address)', { count: 'exact' })
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
-  res.json({ events: data });
+  const events = data || [];
+  res.json({ events, offset, limit, hasMore: offset + events.length < (count || 0) });
+}));
+app.delete('/api/admin/events/:id', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('events')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .neq('status', 'cancelled')
+    .eq('id', req.params.id)
+    .select('id,title')
+    .maybeSingle();
+  if (error) return res.status(400).json({ error: 'Не удалось удалить мероприятие' });
+  if (!data) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  await supabase.from('audit_logs').insert({
+    actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_EVENT_ARCHIVED',
+    entity_type: 'event', entity_id: data.id, details: { title: data.title, retainedHistory: true }
+  });
+  res.json({ deleted: true, retainedHistory: true, event: data });
 }));
 app.patch('/api/admin/events/:id', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
   const status = String(req.body.status || '');
