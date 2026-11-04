@@ -1,12 +1,18 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
 
 const app = express();
 const port = Number(process.env.PORT || 10000);
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const rootAdminEmail = String(process.env.FLOWTIX_ROOT_ADMIN_EMAIL || '').trim().toLowerCase();
+const paymentProviderName = String(process.env.PAYMENT_PROVIDER_NAME || '').trim();
+const paymentCreateUrl = String(process.env.PAYMENT_PROVIDER_CREATE_URL || '').trim();
+const paymentApiKey = String(process.env.PAYMENT_PROVIDER_API_KEY || '');
+const paymentWebhookSecret = String(process.env.PAYMENT_WEBHOOK_SECRET || '');
+const publicSiteUrl = String(process.env.PUBLIC_SITE_URL || 'https://flowtix.online').replace(/\\/$/, '');
+const paymentProviderReady = Boolean(paymentProviderName && paymentCreateUrl && paymentApiKey && paymentWebhookSecret);
 const isRootEmail = (email) => Boolean(rootAdminEmail) && String(email || '').trim().toLowerCase() === rootAdminEmail;
 const validRoles = new Set(['visitor', 'organizer', 'staff', 'moderator', 'admin']);
 const normalizeOrigin = (value) => {
@@ -38,14 +44,14 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', normalizedOrigin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,Idempotency-Key,X-FlowTix-Signature');
   }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
-app.use(express.json({ limit: '4mb' }));
+app.use(express.json({ limit: '4mb', verify: (req, _res, buffer) => { req.rawBody = Buffer.from(buffer); } }));
 app.use('/api', async (req, res, next) => {
-  if (['/health','/auth/login','/auth/register'].includes(req.path) || req.path.startsWith('/admin')) return next();
+  if (['/health','/auth/login','/auth/register','/webhooks/payments'].includes(req.path) || req.path.startsWith('/admin')) return next();
   try {
     const { data } = await supabase.from('platform_settings').select('value').eq('key', 'maintenance_mode').maybeSingle();
     if (data?.value !== true) return next();
@@ -619,6 +625,70 @@ app.get('/api/events/:id/seats', requireUser, asyncRoute(async (req, res) => {
     return { ...seat, status, reserved_until: hold?.user_id === req.user.id ? hold.reserved_until : null };
   });
   res.json({ seatSelectionRequired: true, event, seats });
+}));
+
+
+app.get('/api/payments/config', requireUser, asyncRoute(async (_req,res) => {
+  res.json({available:paymentProviderReady,provider:paymentProviderReady?paymentProviderName:null,currency:'KZT'});
+}));
+
+app.post('/api/payments/checkout', requireUser, asyncRoute(async (req,res) => {
+  if(!paymentProviderReady)return res.status(503).json({error:'Касса пока не подключена. Вы можете оплатить с баланса.'});
+  const eventId=String(req.body.eventId||'');
+  const seatId=req.body.seatId?String(req.body.seatId):null;
+  const idempotencyKey=String(req.get('Idempotency-Key')||req.body.idempotencyKey||'');
+  if(!eventId||idempotencyKey.length<12)return res.status(400).json({error:'Не удалось подготовить платёж'});
+  const {data:intent,error}=await supabase.rpc('create_payment_intent',{p_user_id:req.user.id,p_event_id:eventId,p_seat_id:seatId,p_idempotency_key:idempotencyKey,p_provider:paymentProviderName});
+  if(error)return res.status(error.message.includes('sold_out')?409:400).json({error:error.message.includes('sold_out')?'Мест больше нет':error.message.includes('insufficient')?'Недостаточно средств':error.message.includes('already_registered')?'Вы уже зарегистрированы':'Не удалось зарезервировать место для оплаты'});
+  if(intent.checkout_url&&intent.provider_reference)return res.json({intentId:intent.id,checkoutUrl:intent.checkout_url,expiresAt:intent.expires_at});
+  const merchantReference=String(intent.id);
+  try{
+    const response=await fetch(paymentCreateUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+paymentApiKey,'Idempotency-Key':idempotencyKey},body:JSON.stringify({merchant_reference:merchantReference,amount:Number(intent.amount),currency:intent.currency||'KZT',description:'Билет FlowTix',return_url:publicSiteUrl+'/?paymentIntent='+encodeURIComponent(merchantReference),webhook_url:publicSiteUrl.replace(/\\/$/,'')+'/api/webhooks/payments'}),signal:AbortSignal.timeout(15000)});
+    const providerResult=await response.json().catch(()=>({}));
+    const checkoutUrl=String(providerResult.checkout_url||providerResult.checkoutUrl||'');
+    const providerReference=String(providerResult.provider_reference||providerResult.id||'');
+    let safeUrl;try{safeUrl=new URL(checkoutUrl)}catch{}
+    if(!response.ok||!safeUrl||safeUrl.protocol!=='https:'||!providerReference)throw new Error('provider_checkout_failed');
+    const {error:updateError}=await supabase.rpc('update_payment_checkout',{p_intent_id:intent.id,p_provider_reference:providerReference,p_checkout_url:safeUrl.toString()});
+    if(updateError)throw updateError;
+    res.status(201).json({intentId:intent.id,checkoutUrl:safeUrl.toString(),expiresAt:intent.expires_at});
+  }catch(error){
+    await supabase.rpc('cancel_payment_intent',{p_intent_id:intent.id,p_status:'failed'});
+    console.error('[payments] checkout initialization failed:',error.message);
+    res.status(502).json({error:'Касса не смогла создать платёж. Бронь места снята.'});
+  }
+}));
+
+app.get('/api/payments/intents/:id', requireUser, asyncRoute(async(req,res)=>{
+  const {data,error}=await supabase.rpc('get_payment_intent',{p_intent_id:req.params.id,p_user_id:req.user.id});
+  if(error||!data)return res.status(404).json({error:'Платёж не найден'});
+  if(data.status==='pending'&&new Date(data.expiresAt).getTime()<=Date.now()){
+    await supabase.rpc('cancel_payment_intent',{p_intent_id:req.params.id,p_status:'expired'});
+    return res.json({...data,status:'expired'});
+  }
+  res.json(data);
+}));
+
+app.post('/api/webhooks/payments', asyncRoute(async(req,res)=>{
+  if(!paymentWebhookSecret)return res.status(503).json({error:'Проверка кассы не настроена'});
+  const supplied=String(req.get('X-FlowTix-Signature')||'').replace(/^sha256=/i,'').trim();
+  const expected=createHmac('sha256',paymentWebhookSecret).update(req.rawBody||Buffer.alloc(0)).digest();
+  let received;try{received=Buffer.from(supplied,'hex')}catch{return res.sendStatus(401)}
+  if(received.length!==expected.length||!timingSafeEqual(received,expected))return res.sendStatus(401);
+  const payload=req.body||{};
+  const intentId=String(payload.merchant_reference||payload.reference||'');
+  const providerReference=String(payload.provider_reference||'');
+  if(!intentId)return res.status(400).json({error:'Не указан идентификатор платежа'});
+  if(payload.status==='paid'||payload.status==='completed'){
+    const {data,error}=await supabase.rpc('settle_payment_intent',{p_intent_id:intentId,p_provider_reference:providerReference,p_amount:Number(payload.amount),p_currency:String(payload.currency||'')});
+    if(error)return res.status(409).json({error:'Платёж не прошёл проверку'});
+    return res.json({received:true,ticket:data?.ticket?.ticket_number||null});
+  }
+  if(payload.status==='failed'||payload.status==='cancelled'){
+    await supabase.rpc('cancel_payment_intent',{p_intent_id:intentId,p_status:'failed'});
+    return res.json({received:true});
+  }
+  res.status(400).json({error:'Неизвестный статус платежа'});
 }));
 
 app.get('/api/events/:id/queue',requireUser,asyncRoute(async(req,res)=>{
