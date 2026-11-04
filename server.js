@@ -603,15 +603,15 @@ app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
     .select('value').eq('key', 'visual_payments_enabled').maybeSingle();
   if (settingError) return res.status(500).json({ error: 'Не удалось проверить режим оплаты' });
   const visualPaymentsEnabled = paymentSetting?.value === true;
-  const { data, error } = await supabase.rpc('register_for_event', {
-    p_user_id: req.user.id, p_event_id: eventId, p_visual_payments_enabled: visualPaymentsEnabled, p_seat_id: req.body.seatId || null
+  const { data, error } = await supabase.rpc('wallet_register_for_event', {
+    p_user_id: req.user.id, p_event_id: eventId, p_seat_id: req.body.seatId || null
   });
   if (error) {
     const reason = error.message || '';
     const status = reason.includes('payment_provider_required') ? 501
       : reason.includes('already_registered') ? 409
       : reason.includes('sold_out') || reason.includes('seat_unavailable') ? 409 : 400;
-    const message = reason.includes('payment_provider_required') ? 'Оплата пока недоступна: платёжный провайдер не подключён. Платные регистрации закрыты.'
+    const message = reason.includes('insufficient_balance') ? 'Недостаточно средств на балансе. Откройте «Баланс» в меню аккаунта и пополните его.' : reason.includes('payment_provider_required') ? 'Оплата пока недоступна: платёжный провайдер не подключён. Платные регистрации закрыты.'
       : reason.includes('already_registered') ? 'Вы уже зарегистрированы'
       : reason.includes('sold_out') ? 'Свободных мест больше нет' : reason.includes('seat_required') ? 'Выберите место на схеме зала' : reason.includes('seat_unavailable') ? 'Выбранное место уже заняли. Выберите другое.' : reason.includes('reservation_expired') ? 'Время брони истекло. Выберите место ещё раз.' : 'Не удалось зарегистрироваться';
     return res.status(status).json({ error: message });
@@ -924,7 +924,7 @@ app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (req
     return {
       id: account.id, email: account.email, full_name: profile.full_name || account.user_metadata?.full_name || '',
       username: profile.username || null, avatar_url: profile.avatar_url || null,
-      role, is_blocked: !isRootAdmin && metadata.flowtix_blocked === true,
+      role, is_blocked: !isRootAdmin && profile.is_blocked === true,
       created_at: account.created_at
     };
   }).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -989,20 +989,40 @@ app.patch('/api/admin/venues/:id', requireUser, requireRootAdmin, asyncRoute(asy
   await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_VENUE_UPDATED', entity_type: 'venue', entity_id: data.id, details: changes });
   res.json({ venue: data });
 }));
-app.get('/api/admin/tickets', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
-  const { data, error } = await supabase.from('tickets')
-    .select('id,ticket_number,status,price_paid,seat_label,created_at,event_id,user_id,events!tickets_event_id_fkey(title,start_date),users!tickets_user_id_fkey(full_name,email)')
-    .order('created_at', { ascending: false }).limit(500);
-  if (error) return res.status(500).json({ error: 'Не удалось загрузить билеты' });
-  res.json({ tickets: data });
+app.get('/api/admin/tickets', requireUser, requireRootAdmin, asyncRoute(async (req,res)=>{
+ const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0);
+ const {data,error}=await supabase.from('tickets').select('id,ticket_number,status,price_paid,seat_label,created_at,event_id,user_id,events!tickets_event_id_fkey(title,start_date),users!tickets_user_id_fkey(full_name,email,username,avatar_url,avatar_path)').order('created_at',{ascending:false}).order('id').range(offset,offset+10);
+ if(error)return res.status(500).json({error:'Не удалось загрузить билеты'});
+ const tickets=await Promise.all((data||[]).slice(0,10).map(async t=>{if(t.users?.avatar_path){const signed=await supabase.storage.from('avatars').createSignedUrl(t.users.avatar_path,3600);if(signed.data)t.users.avatar_url=signed.data.signedUrl;delete t.users.avatar_path}return t}));
+ res.json({tickets,hasMore:(data||[]).length>10});
 }));
-app.patch('/api/admin/tickets/:id/cancel', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
-  const { data, error } = await supabase.from('tickets').update({ status: 'cancelled' })
-    .eq('id', req.params.id).eq('status', 'valid').select('id,ticket_number,status').maybeSingle();
-  if (error) return res.status(400).json({ error: 'Не удалось отменить билет' });
-  if (!data) return res.status(409).json({ error: 'Билет не найден или его статус уже нельзя изменить' });
-  await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'ADMIN_TICKET_CANCELLED', entity_type: 'ticket', entity_id: data.id, details: { ticket_number: data.ticket_number } });
-  res.json({ ticket: data });
+app.patch('/api/admin/tickets/:id/cancel',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
+ const {data:ticket}=await supabase.from('tickets').select('user_id,users!tickets_user_id_fkey(email)').eq('id',req.params.id).maybeSingle();
+ if(req.body.block===true&&ticket&&isRootEmail(ticket.users?.email))return res.status(409).json({error:'Главный администратор не может быть заблокирован'});
+ const {data,error}=await supabase.rpc('admin_cancel_ticket',{p_ticket_id:req.params.id,p_actor_id:req.user.id,p_refund:req.body.refund===true,p_block:req.body.block===true,p_notify:req.body.notify!==false,p_delete:req.body.deleteRecord===true});
+ if(error)return res.status(400).json({error:'Не удалось аннулировать билет: '+error.message});
+ res.json(data);
+}));
+app.delete('/api/admin/tickets/:id',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
+ const {data,error}=await supabase.rpc('admin_delete_ticket_record',{p_ticket_id:req.params.id,p_actor_id:req.user.id});
+ if(error)return res.status(400).json({error:'Сначала аннулируйте действующий билет'});
+ res.json(data);
+}));
+app.get('/api/wallet',requireUser,asyncRoute(async(req,res)=>{
+ const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0);
+ const [account,ledger,setting]=await Promise.all([
+ supabase.from('wallet_accounts').select('balance').eq('user_id',req.user.id).maybeSingle(),
+ supabase.from('wallet_transactions').select('id,amount,balance_after,kind,description,created_at').eq('user_id',req.user.id).order('created_at',{ascending:false}).order('id').range(offset,offset+10),
+ supabase.from('platform_settings').select('value').eq('key','visual_payments_enabled').maybeSingle()]);
+ if(account.error||ledger.error||setting.error)return res.status(500).json({error:'Не удалось загрузить баланс'});
+ res.json({balance:account.data?.balance||0,currency:'KZT',visualTopups:setting.data?.value===true,transactions:(ledger.data||[]).slice(0,10),hasMore:(ledger.data||[]).length>10});
+}));
+app.post('/api/wallet/topups',requireUser,asyncRoute(async(req,res)=>{
+ const amount=Number(req.body.amount),key=String(req.body.idempotencyKey||'');
+ if(!Number.isFinite(amount)||amount<=0||amount>1000000||!/^[-a-z0-9]{16,80}$/i.test(key))return res.status(400).json({error:'Укажите сумму от 1 до 1 000 000 ₸'});
+ const {data,error}=await supabase.rpc('wallet_topup',{p_user_id:req.user.id,p_amount:amount,p_key:key});
+ if(error)return res.status(error.message.includes('payment_provider_required')?501:400).json({error:error.message.includes('payment_provider_required')?'Платёжный провайдер пока не подключён. Пополнение недоступно.':'Не удалось пополнить баланс'});
+ res.status(201).json({transaction:data,balance:data.balance_after});
 }));
 app.get('/api/admin/payments', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('payments')
