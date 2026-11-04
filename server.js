@@ -1733,6 +1733,16 @@ async function purgeDirectMessages() {
   if (!supabase) return;
   try { const { data, error } = await supabase.rpc('purge_direct_message_data'); if (error) throw error; if (data?.messages_deleted || data?.conversations_deleted) console.log('[message-retention] cleanup', data); } catch (error) { console.error('[message-retention] cleanup failed:', error.message); }
 }
+async function purgeExpiredPaymentIntents() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase.rpc('expire_payment_intents');
+    if (error) throw error;
+    if (Number(data) > 0) console.log('[payment-retention] expired ' + Number(data) + ' unpaid intents and released reserved seats');
+  } catch (error) {
+    console.error('[payment-retention] expiration failed:', error.message);
+  }
+}
 async function purgeExpiredUsedTickets() {
   if (!supabase) return;
   try {
@@ -1745,9 +1755,11 @@ async function purgeExpiredUsedTickets() {
 }
 app.listen(port, '0.0.0.0', () => console.log('FlowTix API listening on ' + port));
 void purgeExpiredUsedTickets();
+void purgeExpiredPaymentIntents();
 void purgeDirectMessages();
 setInterval(purgeDirectMessages, 60 * 60 * 1000).unref();
 setInterval(purgeExpiredUsedTickets, 60 * 60 * 1000).unref();
+setInterval(purgeExpiredPaymentIntents, 60 * 1000).unref();
 const pingUrl = process.env.RENDER_EXTERNAL_URL;
 if (pingUrl) {
   setInterval(() => {
