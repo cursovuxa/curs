@@ -71,7 +71,10 @@ function autosizeTextarea(field){
   field.style.overflowY=field.scrollHeight>max?'auto':'hidden';
 }
 function configureTextareas(root=document){root.querySelectorAll('textarea').forEach(autosizeTextarea)}
-document.addEventListener('input',event=>{if(event.target.matches('textarea'))autosizeTextarea(event.target)});
+document.addEventListener('input',event=>{
+  if(event.target.matches('textarea'))autosizeTextarea(event.target);
+  if(event.target.id==='reviewComment'){const counter=$('#reviewCharCount');if(counter)counter.textContent=event.target.value.length+' / 1000'}
+});
 const textareaObserver=new MutationObserver(records=>{
   for(const record of records)for(const node of record.addedNodes){
     if(node.nodeType!==1)continue;
@@ -86,6 +89,9 @@ const eventStatusLabel = (status) => ({
   draft:'Черновик', pending_moderation:'На модерации', published:'Опубликовано',
   rejected:'Отклонено', cancelled:'Отменено', completed:'Завершено'
 }[status] || status || 'Статус не указан');
+const ticketStatusLabel = (status) => ({
+  valid:'Действителен', used:'Использован', refunded:'Возврат оформлен', cancelled:'Аннулирован'
+}[status] || 'Статус уточняется');
 async function eventCoverDataUrl(file) {
   if (!file || !/^image\/(?:jpeg|png|webp)$/.test(file.type)) throw new Error('Выберите изображение JPG, PNG или WebP');
   if (typeof createImageBitmap !== 'function') {
@@ -480,10 +486,24 @@ async function uploadProfileAvatar(input){
 }
 async function visitorView() {
   try {
-    const [tickets,fav]=await Promise.all([api('/api/tickets/mine'),api('/api/favorites')]);
-    const ts=tickets.tickets||[], fs=fav.favorites||[];
-    $('#workspaceContent').innerHTML='<div class="workspace-card"><h3>Мои билеты</h3>'+ (ts.length?'<div class="ticket-list">'+ts.map(t=>'<p><b>'+esc(t.events?.title||'Мероприятие')+'</b> · '+esc(t.ticket_number)+' <span class="status-pill">'+esc(t.status)+'</span></p>').join('')+'</div>':empty('Зарегистрируйтесь на событие — билет появится здесь.'))+'</div><div class="workspace-card"><h3>Избранное ('+fs.length+')</h3>'+ (fs.length?fs.map(x=>'<p>'+esc(x.events?.title||'Мероприятие')+'</p>').join(''):empty('Отмечайте сердцем мероприятия, чтобы не потерять.'))+'</div><div class="workspace-card"><h3>Оставить отзыв</h3>'+ (ts.length?'<form id="reviewForm" class="form-grid"><label>Событие<select name="eventId">'+ts.map(t=>'<option value="'+esc(t.event_id)+'">'+esc(t.events?.title||'Мероприятие')+'</option>').join('')+'</select></label>'+['orgRating','venueRating','programRating','staffRating'].map((key,i)=>'<label>'+['Организатор','Площадка','Программа','Команда'][i]+'<select name="'+key+'"><option value="5">5 — отлично</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1 — плохо</option></select></label>').join('')+'<label class="wide">Комментарий<textarea name="comment" rows="3" maxlength="3000"></textarea></label><button class="button button-dark">Опубликовать отзыв</button></form>':empty('Для отзыва сначала нужен билет на событие.'))+'</div>';
-  }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
+    const [ticketData,favoriteData,reviewData]=await Promise.all([api('/api/tickets/mine'),api('/api/favorites'),api('/api/reviews/mine')]);
+    const tickets=ticketData.tickets||[], favorites=favoriteData.favorites||[], reviews=reviewData.reviews||[];
+    const reviewedEvents=new Set(reviews.map(review=>String(review.event_id)));
+    const eligible=[...new Map(tickets.filter(ticket=>['valid','used'].includes(ticket.status)).map(ticket=>[String(ticket.event_id),ticket])).values()];
+    const pendingReviews=eligible.filter(ticket=>!reviewedEvents.has(String(ticket.event_id)));
+    const ticketCards=tickets.length?'<div class="flow-ticket-list">'+tickets.map(ticket=>{
+      const event=ticket.events||{}, place=[event.venues?.name,event.venues?.city].filter(Boolean).join(' · '), status=ticket.status||'valid';
+      return '<article class="flow-ticket"><div class="flow-ticket-main"><div class="flow-ticket-kicker">FLOWTIX · БИЛЕТ</div><span class="flow-ticket-status status-'+esc(status)+'">'+esc(ticketStatusLabel(status))+'</span><h4>'+esc(event.title||'Мероприятие')+'</h4><div class="flow-ticket-meta">'+esc([event.start_date,event.start_time].filter(Boolean).join(' · ')||'Дата уточняется')+(place?' · '+esc(place):'')+'</div><div class="flow-ticket-number"><small>НОМЕР БИЛЕТА</small><strong>'+esc(ticket.ticket_number||'—')+'</strong></div></div><div class="flow-ticket-stub"><span class="flow-ticket-seat-label">ВАШЕ МЕСТО</span><strong>'+esc(ticket.seat_label&&ticket.seat_label!=='Без места'?ticket.seat_label:'Без места')+'</strong><span class="flow-ticket-perforation" aria-hidden="true"></span></div></article>';
+    }).join('')+'</div>':empty('Зарегистрируйся на мероприятие — билет появится здесь.');
+    const reviewForm=pendingReviews.length
+      ?'<form id="reviewForm" class="review-form"><label>Мероприятие<select name="eventId" required>'+pendingReviews.map(ticket=>'<option value="'+esc(ticket.event_id)+'">'+esc(ticket.events?.title||'Мероприятие')+'</option>').join('')+'</select></label><fieldset class="review-rating-field"><legend>Твоя оценка</legend><div class="review-star-options" role="radiogroup" aria-label="Оценка от 1 до 5 звёзд">'+[1,2,3,4,5].map(value=>'<label class="review-star-option" data-review-star="'+value+'"><input type="radio" name="rating" value="'+value+'" required><span aria-hidden="true">★</span><small class="visually-hidden">'+value+' из 5</small></label>').join('')+'</div></fieldset><label>Комментарий<textarea id="reviewComment" name="comment" rows="3" maxlength="1000" minlength="1" required placeholder="Поделись впечатлениями — до 1000 символов"></textarea></label><div class="review-form-footer"><span id="reviewCharCount">0 / 1000</span><button class="button button-dark">Опубликовать отзыв</button></div></form>'
+      :empty(eligible.length?'Ты уже оставил отзыв на каждое посещённое мероприятие.':'Для отзыва сначала нужен билет на мероприятие.');
+    const reviewHistory=reviews.length?'<div class="review-history">'+reviews.map(review=>{
+      const score=Math.max(0,Math.min(5,Math.round(Number(review.overall_rating)||0)));
+      return '<article class="review-history-card"><div><strong>'+esc(review.events?.title||'Мероприятие')+'</strong><span class="review-history-stars" aria-label="'+score+' из 5">'+('★'.repeat(score))+('☆'.repeat(5-score))+'</span></div><p>'+esc(review.comment||'')+'</p><small>'+esc(review.created_at?new Date(review.created_at).toLocaleDateString('ru-RU'):'')+'</small></article>';
+    }).join('')+'</div>':empty('Опубликованные отзывы появятся здесь.');
+    $('#workspaceContent').innerHTML='<div class="workspace-card"><h3>Мои билеты</h3>'+ticketCards+'</div><div class="workspace-card"><h3>Избранное ('+favorites.length+')</h3>'+(favorites.length?favorites.map(item=>'<p>'+esc(item.events?.title||'Мероприятие')+'</p>').join(''):empty('Отмечай сердцем мероприятия, чтобы не потерять.'))+'</div><div class="workspace-card"><h3>Оставить отзыв</h3>'+reviewForm+'</div><div class="workspace-card"><h3>Мои отзывы</h3>'+reviewHistory+'</div>';
+  }catch(error){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(error.message)+'</p>'}
 }
 async function notificationsView() {
   if(!signedIn())return authOpen();
@@ -664,7 +684,7 @@ async function adminView() {
     const userRows=(users.users||[]).map(x=>'<tr><td>'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></td><td>'+rolePicker(x.id,x.role)+'</td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>').join('');
     const eventRows=(events.events||[]).map(x=>'<tr><td>'+esc(x.title)+'<br><small>'+esc(x.users?.email||'')+'</small></td><td>'+esc(x.start_date||'')+'</td><td><select data-event-status="'+esc(x.id)+'">'+['draft','pending_moderation','published','rejected','cancelled','completed'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+esc(eventStatusLabel(s))+'</option>').join('')+'</select></td><td>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</td></tr>').join('');
     const venueRows=(venues.venues||[]).map(v=>'<details class="workspace-row"><summary><b>'+esc(v.name)+'</b> · '+esc(v.city)+'</summary><form data-admin-venue="'+esc(v.id)+'" class="form-grid"><label>Название<input name="name" value="'+esc(v.name)+'" required></label><label>Город<input name="city" value="'+esc(v.city)+'" required></label><label class="wide">Адрес<input name="address" value="'+esc(v.address)+'" required></label><label class="wide">Описание<textarea name="description">'+esc(v.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить</button></form></details>').join('');
-    const ticketRows=(tickets.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.email||'')+'</small></td><td>'+esc(t.status)+'</td><td>'+esc(money(t.price_paid))+'</td><td>'+(t.status==='valid'?'<button class="button button-danger button-small" data-cancel-ticket="'+esc(t.id)+'">Аннулировать</button>':'—')+'</td></tr>').join('');
+    const ticketRows=(tickets.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.email||'')+'</small></td><td>'+esc(ticketStatusLabel(t.status))+'</td><td>'+esc(money(t.price_paid))+'</td><td>'+(t.status==='valid'?'<button class="button button-danger button-small" data-cancel-ticket="'+esc(t.id)+'">Аннулировать</button>':'—')+'</td></tr>').join('');
     const paymentRows=(payments.payments||[]).map(p=>'<tr><td>'+esc(new Date(p.created_at).toLocaleString('ru'))+'</td><td>'+esc(p.users?.email||'—')+'</td><td>'+esc(p.tickets?.events?.title||p.tickets?.ticket_number||'—')+'</td><td>'+esc(money(p.amount))+'</td><td>'+esc(p.status)+' · '+esc(p.payment_method||'—')+'</td></tr>').join('');
     const complaintRows=(complaints.complaints||[]).map(x=>'<tr><td>'+esc(x.reason)+'<br><small>'+esc(x.details||'')+'</small></td><td>'+esc(x.users?.email||'—')+'</td><td><select data-complaint="'+esc(x.id)+'">'+['new','in_review','resolved','rejected'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td></tr>').join('');
     const reviewRows=(reviews.reviews||[]).map(x=>'<tr><td>'+esc(x.events?.title||'—')+'</td><td>'+esc(x.users?.email||'—')+'</td><td>'+esc(x.overall_rating)+'/5</td><td>'+esc(x.comment||'')+'</td><td><button class="button button-danger button-small" data-delete-review="'+esc(x.id)+'">Удалить</button></td></tr>').join('');
@@ -772,6 +792,10 @@ document.addEventListener('click',async(e)=>{
   const modReview=e.target.closest('[data-mod-review]');if(modReview&&confirm('Удалить этот отзыв?')){try{await api('/api/moderation/reviews/'+modReview.dataset.modReview,{method:'DELETE'});toast('Отзыв удалён');moderatorView()}catch(x){toast(x.message)}return}
 });
 document.addEventListener('change',async(e)=>{
+  if(e.target.matches('#reviewForm input[name="rating"]')){
+    const rating=Number(e.target.value);
+    e.target.closest('.review-star-options')?.querySelectorAll('[data-review-star]').forEach(label=>label.classList.toggle('is-filled',Number(label.dataset.reviewStar)<=rating));
+  }
   if(e.target.id==='avatarInput')return uploadProfileAvatar(e.target);
   if(e.target.matches('[data-venue-select]')){
     const address=e.target.selectedOptions[0]?.dataset.address||'', field=e.target.form?.querySelector('[data-event-address]');

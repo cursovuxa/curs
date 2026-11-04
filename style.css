@@ -567,3 +567,42 @@ body[data-theme="halloween"] .brand-text-fallback{color:var(--ink,#fff)}
  .brand-text-fallback{font-size:21px}
  .auth-brand .brand-wordmark,.auth-brand .brand-wordmark-halloween{max-width:145px}
 }
+
+
+/* Participant tickets and one-score reviews */
+.flow-ticket-list{display:grid;gap:14px}
+.flow-ticket{display:grid;grid-template-columns:minmax(0,1fr) 150px;overflow:hidden;border:1px solid color-mix(in srgb,var(--violet,#765cf5) 25%,var(--line,#ececf3));border-radius:18px;background:linear-gradient(120deg,color-mix(in srgb,var(--surface,#fff) 94%,var(--violet,#765cf5) 6%),var(--surface,#fff));box-shadow:0 10px 28px #15132610}
+.flow-ticket-main{position:relative;min-width:0;padding:20px 22px}
+.flow-ticket-kicker{color:var(--violet,#765cf5);font-size:10px;font-weight:900;letter-spacing:.16em}
+.flow-ticket-status{position:absolute;right:18px;top:17px;padding:6px 9px;border-radius:999px;background:#dcf8ec;color:#16744c;font-size:10px;font-weight:800}
+.flow-ticket-status.status-used{background:#e8e8f0;color:#55566a}
+.flow-ticket-status.status-refunded,.flow-ticket-status.status-cancelled{background:#ffeaeb;color:#a4384d}
+.flow-ticket h4{max-width:calc(100% - 112px);margin:12px 0 6px;color:var(--ink);font-size:18px;line-height:1.35}
+.flow-ticket-meta{color:var(--muted);font-size:12px;line-height:1.6}
+.flow-ticket-number{display:grid;gap:3px;margin-top:18px}
+.flow-ticket-number small,.flow-ticket-seat-label{color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.12em}
+.flow-ticket-number strong{font-size:13px;letter-spacing:.05em}
+.flow-ticket-stub{position:relative;display:grid;align-content:center;justify-items:center;gap:9px;padding:18px 12px;border-left:1px dashed color-mix(in srgb,var(--violet,#765cf5) 34%,var(--line,#ececf3));background:color-mix(in srgb,var(--surface,#fff) 88%,var(--violet,#765cf5) 12%)}
+.flow-ticket-stub:before,.flow-ticket-stub:after{content:"";position:absolute;left:-10px;width:18px;height:18px;border:1px solid color-mix(in srgb,var(--violet,#765cf5) 25%,var(--line,#ececf3));border-radius:50%;background:var(--paper,#f8f8fc)}
+.flow-ticket-stub:before{top:-10px}.flow-ticket-stub:after{bottom:-10px}
+.flow-ticket-stub strong{font-size:22px;color:var(--violet,#765cf5)}
+.review-form{display:grid;gap:16px;max-width:660px}
+.review-form>label{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:700}
+.review-form select,.review-form textarea{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fff);color:var(--ink);font:inherit}
+.review-rating-field{margin:0;padding:0;border:0}
+.review-rating-field legend{margin-bottom:8px;color:var(--muted);font-size:12px;font-weight:700}
+.review-star-options{display:flex;gap:4px}
+.review-star-option{position:relative;display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fff);cursor:pointer;transition:.15s}
+.review-star-option input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.review-star-option span{color:#b3b2c0;font-size:26px;line-height:1;pointer-events:none}
+.review-star-option.is-filled span{color:#f2a33a}
+.review-star-option:focus-within{outline:3px solid color-mix(in srgb,var(--violet,#765cf5) 40%,transparent)}
+.review-form-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted);font-size:11px}
+.review-history{display:grid;gap:10px}
+.review-history-card{padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface,#fff)}
+.review-history-card>div{display:flex;justify-content:space-between;gap:12px}
+.review-history-stars{color:#f2a33a;white-space:nowrap}
+.review-history-card p{margin:8px 0;color:var(--ink);font-size:13px;line-height:1.6}
+.review-history-card small{color:var(--muted);font-size:10px}
+.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:700px){.flow-ticket{grid-template-columns:minmax(0,1fr) 96px}.flow-ticket-main{padding:16px 14px}.flow-ticket h4{font-size:15px}.flow-ticket-status{right:10px;top:10px}.flow-ticket-stub{padding:14px 8px}.review-form-footer{align-items:flex-start;flex-direction:column}}
