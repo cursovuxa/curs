@@ -1082,7 +1082,7 @@ function complaintCardMarkup(c){
  const author=c.users?.full_name||c.users?.email||'Автор не указан';
  const target=({event:'мероприятие',user:'пользователь',review:'отзыв',ticket:'билет'})[c.target_type]||'объект';
  const created=c.created_at?new Date(c.created_at).toLocaleString('ru-RU'):'';
- return '<article class="complaint-review-card" data-complaint-card="'+esc(c.id)+'"><div class="complaint-review-head"><div><span class="status-pill" data-complaint-status>'+esc(complaintStatusLabel(c.status))+'</span><h4>'+esc(c.reason||'Жалоба')+'</h4><small>'+esc(author)+' · Жалоба на: '+esc(target)+(created?' · '+esc(created):'')+'</small></div></div><p class="complaint-review-details">'+esc(c.details||'Подробности не указаны.')+'</p><label class="complaint-review-note">Комментарий к решению<textarea data-complaint-notes="'+esc(c.id)+'" maxlength="1000" rows="2" placeholder="Необязательно. Будет отправлен автору жалобы.">'+esc(c.moderator_notes||'')+'</textarea></label><div class="inline-actions complaint-review-actions"><button type="button" class="button button-light button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="in_review">Взять в работу</button><button type="button" class="button button-accent button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="resolved">Принять жалобу</button><button type="button" class="button button-danger button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="rejected">Отклонить</button></div></article>';
+ return '<article class="complaint-review-card" data-complaint-card="'+esc(c.id)+'" data-complaint-current="'+esc(c.status||'new')+'"><div class="complaint-review-head"><div><span class="status-pill" data-complaint-status>'+esc(complaintStatusLabel(c.status))+'</span><h4>'+esc(c.reason||'Жалоба')+'</h4><small>'+esc(author)+' · Жалоба на: '+esc(target)+(created?' · '+esc(created):'')+'</small></div></div><p class="complaint-review-details">'+esc(c.details||'Подробности не указаны.')+'</p><label class="complaint-review-note">Комментарий к решению<textarea data-complaint-notes="'+esc(c.id)+'" maxlength="1000" rows="2" placeholder="Необязательно. Будет отправлен автору жалобы.">'+esc(c.moderator_notes||'')+'</textarea></label><div class="inline-actions complaint-review-actions"><button type="button" class="button button-light button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="in_review">Взять в работу</button><button type="button" class="button button-accent button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="resolved">Принять жалобу</button><button type="button" class="button button-danger button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="rejected">Отклонить</button></div></article>';
 }
 async function moderatorView() {
   try {
@@ -1495,8 +1495,10 @@ document.addEventListener('click',async(event)=>{
   const buttons=card?.querySelectorAll('[data-complaint-action]')||[];buttons.forEach(button=>button.disabled=true);
   try{
    await api('/api/moderation/complaints/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({status,moderatorNotes:notes})});
-   const label=complaintStatusLabel(status),badge=card?.querySelector('[data-complaint-status]');if(badge)badge.textContent=label;
-   toast('Статус жалобы: '+label.toLowerCase()+'. Автор уведомлён.');
+   const previousStatus=card?.dataset.complaintCurrent||'new',label=complaintStatusLabel(status),badge=card?.querySelector('[data-complaint-status]');
+   if(badge)badge.textContent=label;if(card)card.dataset.complaintCurrent=status;
+   buttons.forEach(button=>button.disabled=false);
+   toast(previousStatus===status?'Комментарий к жалобе сохранён. Статус не изменился.':'Статус жалобы: '+label.toLowerCase()+'. Автор уведомлён.');
   }catch(error){buttons.forEach(button=>button.disabled=false);toast(error.message)}
   return;
  }
