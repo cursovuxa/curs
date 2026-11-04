@@ -827,3 +827,19 @@ body[data-theme] .toast[data-kind="info"]{border-left:4px solid var(--violet)}
 .notification-count-badge{display:inline-flex;align-items:center;justify-content:center;min-width:21px;height:21px;margin-left:auto;padding:0 6px;border:1px solid color-mix(in srgb,var(--violet) 35%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--violet) 15%,var(--surface));color:var(--ink);font:800 10px/1 "DM Sans",sans-serif;font-variant-numeric:tabular-nums}
 .notification-count-badge[hidden]{display:none!important}
 @media(max-width:600px){.toast{left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));width:auto;max-width:none}}
+
+
+/* FlowTix Direct: unread counters, source links, and a phone-safe composer. */
+.chat-list-main{position:relative;padding-right:42px}
+.chat-unread-badge{position:absolute;right:12px;top:50%;transform:translateY(-50%);min-width:22px;height:22px;padding:0 6px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:var(--violet);color:#fff;font-size:11px;font-weight:800;line-height:1;box-shadow:0 0 0 2px var(--surface)}
+.chat-list-item.is-notification-target{border-radius:14px;background:color-mix(in srgb,var(--violet) 12%,var(--surface))}
+.notification-source-link{display:inline-flex;align-items:center;gap:7px;width:max-content;max-width:100%;color:var(--violet);font-weight:750;text-decoration:none}
+.notification-source-link:hover{text-decoration:underline}
+@media(max-width:760px){
+ .chat-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+ .chat-composer textarea{box-sizing:border-box;display:block;width:100%;min-width:0;min-height:58px;max-height:30dvh;padding:12px 48px 24px 13px;font-size:16px;line-height:1.4;overflow-y:auto;overflow-wrap:anywhere}
+ .chat-composer>div{min-width:0}
+ .chat-composer small{right:9px;bottom:7px;font-size:11px}
+ .chat-composer button{min-height:58px;max-width:38vw;padding:10px 14px;white-space:normal;line-height:1.2}
+ .chat-list-main{padding-right:42px}
+}
