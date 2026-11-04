@@ -20,11 +20,14 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const tokenKey = 'flowtix_access_token';
 const PROFILE_ROUTE = /^\/profile\/?$/.test(window.location.pathname);
+const PUBLIC_PROFILE_MATCH = window.location.pathname.match(/^\/profile\/([^/]+)\/?$/);
+const PUBLIC_PROFILE_ROUTE = Boolean(PUBLIC_PROFILE_MATCH);
+const PUBLIC_PROFILE_HANDLE = PUBLIC_PROFILE_MATCH ? decodeURIComponent(PUBLIC_PROFILE_MATCH[1]) : '';
 const DASHBOARD_ROUTE = /^\/dashboard\/?$/.test(window.location.pathname);
 const NOTIFICATIONS_ROUTE = /^\/notifications\/?$/.test(window.location.pathname);
 const MESSAGES_ROUTE = /^\/messages\/?$/.test(window.location.pathname);
 const ADMIN_ROUTE = /^\/admin\/?$/.test(window.location.pathname);
-const ACCOUNT_ROUTE = PROFILE_ROUTE || DASHBOARD_ROUTE || NOTIFICATIONS_ROUTE || MESSAGES_ROUTE || ADMIN_ROUTE;
+const ACCOUNT_ROUTE = PROFILE_ROUTE || PUBLIC_PROFILE_ROUTE || DASHBOARD_ROUTE || NOTIFICATIONS_ROUTE || MESSAGES_ROUTE || ADMIN_ROUTE;
 if (ACCOUNT_ROUTE) {
   document.body.classList.add('account-page');
   $('.hero').hidden = true;
@@ -605,7 +608,7 @@ function showSettings(){
   $('#workspace').scrollIntoView({behavior:'smooth'});
 }
 let chatRealtimeChannels=[],chatListChannel=null,chatThreadChannel=null;
-let activeChatId=null, activeChatOtherId=null, activeChatMessages=[], activeChatHasMore=false, activeChatLoading=false;
+let activeChatId=null, activeChatOtherId=null, activeChatOtherUsername='', activeChatMessages=[], activeChatHasMore=false, activeChatLoading=false;
 function clearChatRealtime(){if(supabaseAuth)chatRealtimeChannels.forEach(channel=>supabaseAuth.removeChannel(channel));chatRealtimeChannels=[];chatListChannel=null;chatThreadChannel=null}
 function profileLinkIcon(platform){
  const paths={telegram:'<path d="m21 3-4 18-6-6-3 3 1-6 8-7-10 5-4-1 18-6Z"/>',youtube:'<rect x="3" y="6" width="18" height="12" rx="4"/><path d="m10 9 5 3-5 3V9Z"/>',instagram:'<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="3.5"/><path d="M17.5 6.5h.01"/>',tiktok:'<path d="M14 4v10a4 4 0 1 1-4-4"/><path d="M14 4c1 3 2.5 4.5 5 5"/>',vk:'<path d="M4 7h4c.4 3 1.5 4.5 2.5 4.5V7h3.5v4.5C16 11.4 17.3 10 18 7h3c-.5 2.5-2 4.7-3.5 6 1.8 1.3 3 2.7 4 5h-4c-.9-1.6-1.9-2.6-3.5-3v3H13C8 18 5 14 4 7Z"/>',discord:'<path d="M7 6c3-1.5 7-1.5 10 0l2 10c-2 1.5-3 2-5 2l-.8-1.3M5 16 7 6M8 14h.01M16 14h.01M8 17c2 1 6 1 8 0"/>',x:'<path d="m4 4 16 16M20 4 4 20M7 4h3l7 16h-3L7 4Z"/>'};
@@ -624,9 +627,22 @@ async function openPublicProfile(id){
   let blocks=[];if(signedIn())try{blocks=(await api('/api/me/blocks')).blocks||[]}catch{}
   const isBlocked=blocks.includes(id);
   document.querySelector('#publicProfileModal')?.remove();
-  const wrap=document.createElement('div');wrap.id='publicProfileModal';wrap.className='overlay profile-modal-overlay';wrap.innerHTML='<section class="dialog profile-modal" role="dialog" aria-modal="true"><button class="dialog-close" type="button" data-profile-close>×</button><div class="profile-modal-hero"><span id="publicProfileAvatar" class="profile-avatar profile-avatar-large"></span><p class="eyebrow dark-eyebrow">'+esc(({visitor:'УЧАСТНИК',organizer:'ОРГАНИЗАТОР',staff:'СОТРУДНИК',moderator:'МОДЕРАТОР',admin:'АДМИНИСТРАТОР'})[p.role]||'ПРОФИЛЬ FLOWTIX')+'</p><h2>'+esc(p.full_name||'Участник FlowTix')+'</h2><span class="profile-modal-username">@'+esc(p.username||'user')+'</span></div>'+(p.city?'<p class="profile-modal-city">'+esc(p.city)+'</p>':'')+(p.about?'<p class="profile-modal-about">'+esc(p.about)+'</p>':'')+'<div class="profile-modal-links">'+(p.links||[]).map(link=>'<a class="profile-social-link" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+profileLinkIcon(link.platform)+'<span>'+esc(link.platform==='website'?'Сайт':link.platform)+'</span><b>↗</b></a>').join('')+'</div><div class="profile-modal-actions">'+(signedIn()&&user.id!==p.id?'<button class="button button-accent" data-request-chat="'+esc(p.id)+'">Запросить личный чат</button><button class="button button-light" data-toggle-user-block="'+esc(p.id)+'" data-blocked="'+isBlocked+'">'+(isBlocked?'Разблокировать':'Заблокировать')+'</button>':'')+'</div></section>';
+  const wrap=document.createElement('div');wrap.id='publicProfileModal';wrap.className='overlay profile-modal-overlay';wrap.innerHTML='<section class="dialog profile-modal" role="dialog" aria-modal="true"><button class="dialog-close" type="button" data-profile-close>×</button><div class="profile-modal-hero"><span id="publicProfileAvatar" class="profile-avatar profile-avatar-large"></span><p class="eyebrow dark-eyebrow">'+esc(({visitor:'УЧАСТНИК',organizer:'ОРГАНИЗАТОР',staff:'СОТРУДНИК',moderator:'МОДЕРАТОР',admin:'АДМИНИСТРАТОР'})[p.role]||'ПРОФИЛЬ FLOWTIX')+'</p><h2>'+esc(p.full_name||'Участник FlowTix')+'</h2><span class="profile-modal-username">@'+esc(p.username||'user')+'</span></div>'+(p.city?'<p class="profile-modal-city">'+esc(p.city)+'</p>':'')+(p.about?'<p class="profile-modal-about">'+esc(p.about)+'</p>':'')+'<div class="profile-modal-links">'+(p.links||[]).map(link=>'<a class="profile-social-link" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+profileLinkIcon(link.platform)+'<span>'+esc(link.platform==='website'?'Сайт':link.platform)+'</span><b>↗</b></a>').join('')+'</div><div class="profile-modal-actions"><a class="button button-light" href="/profile/'+encodeURIComponent(p.username||p.id)+'">Полный профиль ↗</a>'+(signedIn()&&user.id!==p.id?'<button class="button button-accent" data-request-chat="'+esc(p.id)+'">Запросить личный чат</button><button class="button button-light" data-toggle-user-block="'+esc(p.id)+'" data-blocked="'+isBlocked+'">'+(isBlocked?'Разблокировать':'Заблокировать')+'</button>':'')+'</div></section>';
   document.body.append(wrap);putAvatar($('#publicProfileAvatar',wrap),p.avatar_url,p.full_name);
  }catch(error){toast(error.message)}
+}
+async function publicProfilePage(){
+ $('#workspace').hidden=false;$('#workspaceTitle').textContent='Профиль пользователя';$('#workspaceRefresh').textContent='← На главную';
+ $('#workspaceContent').innerHTML='<div class="workspace-card"><p>Загружаем профиль…</p></div>';
+ try{
+  const {profile:p}=await api('/api/profiles/'+encodeURIComponent(PUBLIC_PROFILE_HANDLE));
+  let blocks=[];if(signedIn())try{blocks=(await api('/api/me/blocks')).blocks||[]}catch{}
+  const isBlocked=blocks.includes(p.id),role=({visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник мероприятия',moderator:'Модератор',admin:'Администратор'})[p.role]||'Участник FlowTix';
+  const links=(p.links||[]).map(link=>'<a class="profile-social-link" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+profileLinkIcon(link.platform)+'<span>'+esc(link.platform==='website'?'Сайт':link.platform)+'</span><b>↗</b></a>').join('');
+  const hosted=(p.events||[]).map(event=>'<article class="public-profile-event"><div><small>'+esc([event.start_date,event.start_time].filter(Boolean).join(' · '))+'</small><h4>'+esc(event.title)+'</h4><p>'+esc([event.venues?.city,event.venues?.name,event.location_address||event.venues?.address].filter(Boolean).join(' · ')||'Адрес не указан')+'</p></div><button class="button button-light button-small" type="button" data-details="'+esc(event.id)+'">Подробнее</button></article>').join('');
+  $('#workspaceContent').innerHTML='<section class="workspace-card public-profile-page"><header class="public-profile-header"><span id="fullPublicProfileAvatar" class="profile-avatar profile-avatar-large"></span><div class="public-profile-identity"><p class="eyebrow dark-eyebrow">'+esc(role.toLocaleUpperCase('ru-RU'))+'</p><h2>'+esc(p.full_name||'Участник FlowTix')+'</h2><span class="profile-modal-username">@'+esc(p.username||'user')+'</span></div>'+(p.city?'<span class="public-profile-city">'+esc(p.city)+'</span>':'')+'</header>'+(p.about?'<section class="public-profile-about"><h3>О себе</h3><p>'+esc(p.about)+'</p></section>':'')+(links?'<section class="public-profile-social"><h3>Ссылки</h3><div class="profile-modal-links">'+links+'</div></section>':'')+'<section class="public-profile-events"><h3>Мероприятия организатора</h3>'+(hosted?'<div class="public-profile-event-list">'+hosted+'</div>':'<p>Опубликованных мероприятий пока нет.</p>')+'</section><div class="profile-modal-actions">'+(signedIn()&&user.id!==p.id?'<button class="button button-accent" data-request-chat="'+esc(p.id)+'">Запросить личный чат</button><button class="button button-light" data-toggle-user-block="'+esc(p.id)+'" data-blocked="'+isBlocked+'">'+(isBlocked?'Разблокировать':'Заблокировать')+'</button>':'')+'<a class="button button-light" href="/">На главную</a></div></section>';
+  putAvatar($('#fullPublicProfileAvatar'),p.avatar_url,p.full_name);
+ }catch(error){$('#workspaceContent').innerHTML='<div class="workspace-card"><h2>Профиль не найден</h2><p class="connection-state">'+esc(error.message)+'</p><a class="button button-light" href="/">На главную</a></div>'}
 }
 async function openAdminUserProfile(id){
  try{
@@ -647,7 +663,7 @@ function renderChatList(conversations){
  list.innerHTML=entries.length?entries.map(c=>{
    const incoming=c.status==='pending'&&c.request_by!==user.id,avatar=c.other?.avatar_url?'<img src="'+esc(c.other.avatar_url)+'" alt="">':esc((c.other?.full_name||'F')[0]);
    const unreadCount=Math.max(0,Number(c.unreadCount)||0);
-   return '<article class="chat-list-item '+(c.id===activeChatId?'active':'')+'"><button type="button" data-chat-open="'+esc(c.id)+'" data-chat-other="'+esc(c.other?.id||'')+'" class="chat-list-main"><span class="profile-avatar">'+avatar+'</span><span><b>'+esc(c.other?.full_name||c.other?.username||'Пользователь')+'</b><small>'+(incoming?'Запрос на переписку':c.status==='pending'?'Ожидает подтверждения':esc(c.lastMessage?.body||'Откройте переписку'))+'</small></span>'+(unreadCount?'<span class="chat-unread-badge" aria-label="'+unreadCount+' непрочитанных сообщений">'+(unreadCount>99?'99+':unreadCount)+'</span>':'')+'</button>'+(incoming?'<div class="chat-request-actions"><button class="button button-accent button-small" data-chat-request-action="accept" data-chat-id="'+esc(c.id)+'">Принять</button><button class="button button-light button-small" data-chat-request-action="decline" data-chat-id="'+esc(c.id)+'">Отклонить</button></div>':'')+'</article>';
+   return '<article class="chat-list-item '+(c.id===activeChatId?'active':'')+'"><button type="button" data-chat-open="'+esc(c.id)+'" data-chat-other="'+esc(c.other?.id||'')+'" data-chat-username="'+esc(c.other?.username||'')+'" class="chat-list-main"><span class="profile-avatar">'+avatar+'</span><span><b>'+esc(c.other?.full_name||c.other?.username||'Пользователь')+'</b><small>'+(incoming?'Запрос на переписку':c.status==='pending'?'Ожидает подтверждения':esc(c.lastMessage?.body||'Откройте переписку'))+'</small></span>'+(unreadCount?'<span class="chat-unread-badge" aria-label="'+unreadCount+' непрочитанных сообщений">'+(unreadCount>99?'99+':unreadCount)+'</span>':'')+'</button>'+(incoming?'<div class="chat-request-actions"><button class="button button-accent button-small" data-chat-request-action="accept" data-chat-id="'+esc(c.id)+'">Принять</button><button class="button button-light button-small" data-chat-request-action="decline" data-chat-id="'+esc(c.id)+'">Отклонить</button></div>':'')+'</article>';
  }).join(''):empty('Здесь появятся личные переписки и запросы на чат.');
 }
 async function refreshConversations(){
@@ -667,7 +683,10 @@ async function openChatConversation(id){
  if(composer)composer.hidden=false;
  const clear=$('[data-clear-chat]');if(clear)clear.dataset.clearCount=String(data.clearCount||0);
  const badge=$('#chatClearCount');if(badge)badge.textContent=(data.clearCount||0)+'/2 очистили';
- activeChatOtherId=document.querySelector('[data-chat-open="'+CSS.escape(id)+'"]')?.dataset.chatOther||null;
+ const chatItem=document.querySelector('[data-chat-open="'+CSS.escape(id)+'"]');
+ activeChatOtherId=chatItem?.dataset.chatOther||null;
+ activeChatOtherUsername=chatItem?.dataset.chatUsername||'';
+ const profileLink=$('#chatProfileLink');if(profileLink){profileLink.hidden=!activeChatOtherId;profileLink.href='/profile/'+encodeURIComponent(activeChatOtherUsername||activeChatOtherId||'')}
  const header=$('#chatActiveHeader');if(header){header.hidden=false;header.querySelector('h3').textContent=document.querySelector('[data-chat-open="'+CSS.escape(id)+'"] b')?.textContent||'Переписка'}
  const channel=supabaseAuth?.channel('flowtix-conversation-'+id)
    .on('postgres_changes',{event:'INSERT',schema:'public',table:'direct_messages',filter:'conversation_id=eq.'+id},payload=>{
@@ -695,7 +714,7 @@ async function loadOlderChatMessages(box){
 function messagesView(){
  if(!signedIn())return authOpen();
  $('#workspace').hidden=false;$('#workspaceTitle').textContent='Личные сообщения';$('#workspaceRefresh').textContent='Обновить';$('#workspace').scrollIntoView({behavior:'smooth'});
- $('#workspaceContent').innerHTML='<section class="messages-workspace"><aside class="chat-sidebar"><div class="chat-sidebar-heading"><div><p class="eyebrow dark-eyebrow">FLOWTIX DIRECT</p><h3>Сообщения</h3></div><span class="chat-live-dot">Realtime</span></div><div id="chatConversationList" class="chat-conversation-list"><div class="chat-loading">Загружаем запросы и переписки…</div></div></aside><section class="chat-panel"><header id="chatActiveHeader" class="chat-active-header" hidden><div class="chat-active-title"><button class="button button-light button-small chat-back-button" data-chat-back type="button">← Список</button><h3>Открой переписку</h3><small id="chatClearCount">0/2 очистили</small></div><div class="chat-actions"><button class="button button-light button-small" type="button" data-clear-chat>Очистить у меня</button><button class="button button-danger button-small" type="button" data-block-chat>Заблокировать</button></div></header><div id="chatMessages" class="chat-messages"><div class="chat-empty">Выбери переписку слева.</div></div><form id="chatComposer" class="chat-composer" hidden><div><textarea name="body" maxlength="512" rows="1" required placeholder="Написать сообщение…"></textarea><small><span id="chatCharCount">0</span>/512</small></div><button class="button button-accent" type="submit">Отправить</button></form></section></section>';
+ $('#workspaceContent').innerHTML='<section class="messages-workspace"><aside class="chat-sidebar"><div class="chat-sidebar-heading"><div><p class="eyebrow dark-eyebrow">FLOWTIX DIRECT</p><h3>Сообщения</h3></div><span class="chat-live-dot">Realtime</span></div><div id="chatConversationList" class="chat-conversation-list"><div class="chat-loading">Загружаем запросы и переписки…</div></div></aside><section class="chat-panel"><header id="chatActiveHeader" class="chat-active-header" hidden><div class="chat-active-title"><button class="button button-light button-small chat-back-button" data-chat-back type="button">← Список</button><h3>Открой переписку</h3><small id="chatClearCount">0/2 очистили</small></div><div class="chat-actions"><a id="chatProfileLink" class="button button-light button-small" href="#" hidden>Профиль ↗</a><button class="button button-light button-small" type="button" data-clear-chat>Очистить у меня</button><button class="button button-danger button-small" type="button" data-block-chat>Заблокировать</button></div></header><div id="chatMessages" class="chat-messages"><div class="chat-empty">Выбери переписку слева.</div></div><form id="chatComposer" class="chat-composer" hidden><div><textarea name="body" maxlength="512" rows="1" required placeholder="Написать сообщение…"></textarea><small><span id="chatCharCount">0</span>/512</small></div><button class="button button-accent" type="submit">Отправить</button></form></section></section>';
  void refreshConversations().then(conversations=>{
    const targetId=new URLSearchParams(window.location.search).get('conversation');
    if(!targetId)return;
@@ -796,6 +815,7 @@ window.addEventListener('scroll',()=>{
 
 function renderAccountRoute(){
   if(ADMIN_ROUTE)return adminRoute();
+  if(PUBLIC_PROFILE_ROUTE)return publicProfilePage();
   if(PROFILE_ROUTE)return showSettings();
   if(DASHBOARD_ROUTE)return showWorkspace();
   if(NOTIFICATIONS_ROUTE)return notificationsView();
