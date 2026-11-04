@@ -41,6 +41,7 @@ let ticketScannerBusy = false;
 let notificationsChannel = null;
 let notificationsChannelUserId = null;
 let notificationsConnection = 'CONNECTING';
+let notificationUnreadCount=0,notificationCountUserId=null,notificationCountLoading=false;
 let events = [];
 let organizerEvents = [];
 let categories = [];
@@ -134,7 +135,8 @@ function accountMenuIcon(kind){
 }
 function decorateAccountMenu(){
  const icons={profile:'profile',workspace:'workspace',notifications:'notifications',messages:'messages',admin:'admin',logout:'logout'};
- $$('#profileDropdown [role="menuitem"]').forEach(button=>{const action=button.dataset.accountAction;const kind=action==='wallet'?'wallet':icons[action];if(kind&&!button.querySelector('.account-menu-icon'))button.insertAdjacentHTML('afterbegin',accountMenuIcon(kind))});
+ $('#profileDropdown [role="menuitem"]').forEach(button=>{const action=button.dataset.accountAction;const kind=action==='wallet'?'wallet':icons[action];if(kind&&!button.querySelector('.account-menu-icon'))button.insertAdjacentHTML('afterbegin',accountMenuIcon(kind))});
+ updateNotificationBadge();
 }
 async function eventCoverDataUrl(file) {
   if (!file || !/^image\/(?:jpeg|png|webp)$/.test(file.type)) throw new Error('Выберите изображение JPG, PNG или WebP');
@@ -224,6 +226,21 @@ function putAvatar(node,url,name){
     node.append(image);
   }else node.textContent=(String(name||'F').trim()[0]||'F').toUpperCase();
 }
+function updateNotificationBadge(){
+ const button=$('#profileDropdown [data-account-action="notifications"]');if(!button)return;
+ let badge=button.querySelector('.notification-count-badge');
+ if(!badge){badge=document.createElement('span');badge.className='notification-count-badge';badge.setAttribute('aria-hidden','true');button.append(badge)}
+ const count=Math.max(0,Number(notificationUnreadCount)||0);
+ badge.textContent=count>99?'99+':String(count);badge.hidden=count===0;
+ button.setAttribute('aria-label',count?('Уведомления, непрочитанных: '+count):'Уведомления');
+}
+async function refreshNotificationUnreadCount(){
+ if(!signedIn()||!user?.id||notificationCountLoading)return;
+ const owner=user.id;notificationCountLoading=true;
+ try{const data=await api('/api/notifications/unread-count');if(user?.id===owner){notificationCountUserId=owner;notificationUnreadCount=Number(data.count)||0;updateNotificationBadge()}}
+ catch(error){console.warn('Unread notification count unavailable:',error.message)}
+ finally{notificationCountLoading=false}
+}
 function renderAccountMenu(){
   const active=signedIn();
   const blocked=active&&user.is_blocked===true;
@@ -241,6 +258,7 @@ function renderAccountMenu(){
   if(!$('#walletMenuButton'))$('#profileDropdown .profile-identity')?.insertAdjacentHTML('afterend','<button id="walletMenuButton" type="button" role="menuitem" data-account-action="wallet" data-open-wallet>Баланс</button>');
   if(!$('#messagesMenuButton'))$('#walletMenuButton')?.insertAdjacentHTML('afterend','<button id="messagesMenuButton" type="button" role="menuitem" data-account-action="messages">Личные сообщения</button>');
   decorateAccountMenu();
+  if(notificationCountUserId!==user.id){notificationCountUserId=user.id;notificationUnreadCount=0;updateNotificationBadge();void refreshNotificationUnreadCount()}
   if(headerWalletBalance===null)void refreshHeaderWalletBalance();
   const displayName=blocked?'Доступ ограничен':(user.full_name||user.email||'Участник FlowTix');
   const handle=blocked?'аккаунт заблокирован':(user.username||String(user.email||'user').split('@')[0]);
@@ -550,7 +568,7 @@ async function logoutAccount(){
     notificationsChannel=null;notificationsChannelUserId=null;
     if(supabaseAuth)await supabaseAuth.auth.signOut();
   }catch(error){console.warn('Sign-out cleanup failed:',error)}
-  user=null;headerWalletBalance=null;refreshHeaderWalletLabel();
+  user=null;headerWalletBalance=null;notificationUnreadCount=0;notificationCountUserId=null;updateNotificationBadge();refreshHeaderWalletLabel();
   renderAccountMenu();
   $('#workspace').hidden=true;
   $('#profileDropdown').hidden=true;
@@ -728,9 +746,11 @@ async function notificationsView() {
   $('#workspaceRefresh').textContent='Обновить уведомления ↻';
   $('#workspaceContent').innerHTML='<div class="workspace-card"><div class="notification-live"><span class="notification-live-dot '+(notificationsConnection==='SUBSCRIBED'?'is-live':'')+'"></span><span id="notificationsLiveStatus">'+(notificationsConnection==='SUBSCRIBED'?'Подключено · новые уведомления приходят сразу':'Подключаемся к уведомлениям…')+'</span></div><p>Сообщения от организаторов и FlowTix появятся здесь автоматически.</p></div><div class="notification-list" id="notificationList"><div class="workspace-card"><p>Загружаем уведомления…</p></div></div>';
   try{
-    const {notifications=[]}=await api('/api/notifications');
+    const {notifications:loadedNotifications=[]}=await api('/api/notifications');
     const list=$('#notificationList');
     if(!list)return;
+    let notifications=loadedNotifications;
+    try{await api('/api/notifications/read-all',{method:'PATCH'});notifications=loadedNotifications.map(notice=>({...notice,is_read:true}));notificationUnreadCount=0;updateNotificationBadge()}catch(error){void refreshNotificationUnreadCount()}
     list.innerHTML=notifications.length?notifications.map((notice)=>{
       const date=notice.created_at?new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short'}).format(new Date(notice.created_at)):'';
       return '<article class="workspace-card notification-card '+(notice.is_read?'':'unread')+'"><div class="notification-card-head"><h3>'+esc(notice.title||'Уведомление FlowTix')+'</h3><span class="status-pill">'+(notice.is_read?'Прочитано':'Новое')+'</span></div><p>'+esc(notice.message||'')+'</p>'+(date?'<small>'+esc(date)+'</small>':'')+'</article>';
@@ -758,7 +778,12 @@ async function subscribeToNotifications(){
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},(payload)=>{
         const notice=payload.new;
         if(!notice||notice.user_id!==user.id)return;
+        notificationUnreadCount++;updateNotificationBadge();
         toast((notice.title||'Новое уведомление')+(notice.message?' · '+notice.message:''));
+        if(NOTIFICATIONS_ROUTE)void notificationsView();
+      })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},()=>{
+        void refreshNotificationUnreadCount();
         if(NOTIFICATIONS_ROUTE)void notificationsView();
       })
       .subscribe((status)=>{
