@@ -737,7 +737,7 @@ async function adminView() {
     };
     $('#adminTabs',root).onclick=(e)=>{const b=e.target.closest('[data-admin-tab]');if(!b)return;$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===b));panel.innerHTML=panels[b.dataset.adminTab]||'';if(b.dataset.adminTab==='events')observeAdminEventFeed()};
     root.onchange=async(e)=>{
-      if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён');if(e.target.value==='cancelled'){e.target.closest('[data-admin-event-item]')?.remove();adminEventsOffset=Math.max(0,adminEventsOffset-1)}}catch(x){toast(x.message);await adminView()}}
+      if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён');const item=e.target.closest('[data-admin-event-item]');const pill=item?.querySelector('summary .status-pill');if(pill)pill.textContent=eventStatusLabel(e.target.value);if(e.target.value==='cancelled'){item?.remove();adminEventsOffset=Math.max(0,adminEventsOffset-1)}}catch(x){toast(x.message);await adminView()}}
         };
     root.onclick=async(e)=>{
       if(e.target.closest('#adminEventLoadMore')){await loadMoreAdminEvents();observeAdminEventFeed();return}
