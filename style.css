@@ -681,3 +681,8 @@ body.blocked-modal-open{overflow:hidden}
 .admin-event-item>summary:hover .admin-event-chevron{border-color:color-mix(in srgb,var(--violet) 35%,var(--line));background:color-mix(in srgb,var(--violet) 11%,var(--surface,#fff));color:var(--violet)}
 .admin-event-item[open] .admin-event-chevron{transform:rotate(180deg);border-color:color-mix(in srgb,var(--violet) 35%,var(--line));background:color-mix(in srgb,var(--violet) 12%,var(--surface,#fff));color:var(--violet)}
 @media(max-width:700px){.admin-event-item>summary{grid-template-columns:minmax(0,1fr) 34px}.admin-event-chevron{width:32px;height:32px}}
+
+/* Keep the custom role list above table and scroll containers. */
+.role-picker-menu{position:fixed;z-index:1000;top:0;left:0;right:auto;width:max-content;max-height:min(320px,calc(100dvh - 20px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.role-picker-menu[hidden]{display:none}
+@media(max-width:700px){.role-picker-menu{max-height:min(300px,calc(100dvh - 20px));padding:5px;border-radius:13px}.role-picker-option{min-height:42px;padding:9px 8px}}

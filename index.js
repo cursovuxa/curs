@@ -708,6 +708,44 @@ async function adminRoute(){
   try{await api('/api/admin/access');await adminView()}
   catch(error){const denied=error.message.includes('главному администратору')||error.message.includes('Недостаточно прав');$('#workspaceContent').innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(denied?'Доступ закрыт. Панель доступна только главному администратору.':error.message)+'</p><a class="button button-light" href="/">На главную</a></div>'}
 }
+function closeAdminRolePicker(picker){
+  picker?.classList.remove('is-open');
+  const toggle=picker?.querySelector('[data-role-picker-toggle]');
+  toggle?.setAttribute('aria-expanded','false');
+  const menu=picker?.querySelector('.role-picker-menu');
+  if(menu){menu.hidden=true;menu.style.removeProperty('left');menu.style.removeProperty('top');menu.style.removeProperty('width');menu.style.removeProperty('max-height')}
+}
+function positionAdminRolePicker(picker){
+  const menu=picker?.querySelector('.role-picker-menu');
+  if(!menu)return;
+  menu.hidden=false;
+  const rect=picker.getBoundingClientRect();
+  const viewportWidth=window.innerWidth||document.documentElement.clientWidth;
+  const viewportHeight=window.innerHeight||document.documentElement.clientHeight;
+  const naturalHeight=menu.scrollHeight;
+  const below=Math.max(0,viewportHeight-rect.bottom-8);
+  const above=Math.max(0,rect.top-8);
+  const openAbove=below<Math.min(naturalHeight,320)&&above>below;
+  const maxHeight=Math.min(320,viewportHeight-20,Math.max(100,openAbove?above:below));
+  const width=Math.min(Math.max(180,rect.width),viewportWidth-20);
+  const left=Math.max(10,Math.min(rect.left,viewportWidth-width-10));
+  const top=openAbove?Math.max(10,rect.top-maxHeight-7):Math.min(rect.bottom+7,viewportHeight-maxHeight-10);
+  menu.style.left=left+'px';
+  menu.style.top=top+'px';
+  menu.style.width=width+'px';
+  menu.style.maxHeight=maxHeight+'px';
+}
+document.addEventListener('click',(event)=>{
+  const target=event.target instanceof Element?event.target:null;
+  if(target?.closest('[data-role-picker]'))return;
+  document.querySelectorAll('.role-picker.is-open').forEach(closeAdminRolePicker);
+},true);
+document.addEventListener('scroll',(event)=>{
+  if(event.target instanceof Element&&event.target.closest('.role-picker-menu'))return;
+  document.querySelectorAll('.role-picker.is-open').forEach(closeAdminRolePicker);
+},true);
+window.addEventListener('resize',()=>document.querySelectorAll('.role-picker.is-open').forEach(closeAdminRolePicker));
+
 async function adminView() {
   const root=$('#workspaceContent');
   try{
@@ -836,9 +874,9 @@ async function adminView() {
         return
       }
       const toggle=e.target.closest('[data-role-picker-toggle]');
-      if(toggle){const picker=toggle.closest('[data-role-picker]');const open=!picker.classList.contains('is-open');root.querySelectorAll('.role-picker.is-open').forEach(x=>{x.classList.remove('is-open');x.querySelector('[data-role-picker-toggle]')?.setAttribute('aria-expanded','false');x.querySelector('.role-picker-menu').hidden=true});if(open){picker.classList.add('is-open');toggle.setAttribute('aria-expanded','true');picker.querySelector('.role-picker-menu').hidden=false}return}
+      if(toggle){const picker=toggle.closest('[data-role-picker]');const open=!picker.classList.contains('is-open');root.querySelectorAll('.role-picker.is-open').forEach(closeAdminRolePicker);if(open){picker.classList.add('is-open');toggle.setAttribute('aria-expanded','true');positionAdminRolePicker(picker)}return}
       const roleOption=e.target.closest('[data-role-picker-option]');
-      if(roleOption){const picker=roleOption.closest('[data-role-picker]');picker.classList.remove('is-open');picker.querySelector('[data-role-picker-toggle]').setAttribute('aria-expanded','false');picker.querySelector('.role-picker-menu').hidden=true;try{await api('/api/admin/users/'+roleOption.dataset.roleUser+'/role',{method:'PATCH',body:JSON.stringify({role:roleOption.dataset.role})});toast('Роль обновлена');await adminView()}catch(x){toast(x.message);await adminView()}return}
+      if(roleOption){const picker=roleOption.closest('[data-role-picker]');closeAdminRolePicker(picker);try{await api('/api/admin/users/'+roleOption.dataset.roleUser+'/role',{method:'PATCH',body:JSON.stringify({role:roleOption.dataset.role})});toast('Роль обновлена');await adminView()}catch(x){toast(x.message);await adminView()}return}
       if(!e.target.closest('[data-role-picker]'))root.querySelectorAll('.role-picker.is-open').forEach(x=>{x.classList.remove('is-open');x.querySelector('[data-role-picker-toggle]')?.setAttribute('aria-expanded','false');x.querySelector('.role-picker-menu').hidden=true});
       const block=e.target.closest('[data-block]');if(block){try{await api('/api/admin/users/'+block.dataset.block+'/block',{method:'PATCH',body:JSON.stringify({blocked:block.dataset.value==='true'})});toast('Доступ обновлён');await adminView()}catch(x){toast(x.message)}return}
       const cancel=e.target.closest('[data-cancel-ticket]');if(cancel){try{await api('/api/admin/tickets/'+cancel.dataset.cancelTicket+'/cancel',{method:'PATCH'});toast('Билет аннулирован');await adminView()}catch(x){toast(x.message)}return}
