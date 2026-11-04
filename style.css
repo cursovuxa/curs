@@ -849,3 +849,10 @@ body[data-theme] .toast[data-kind="info"]{border-left:4px solid var(--violet)}
 .chat-list-main>span:nth-child(2){min-width:0;flex:1;display:grid;gap:4px;text-align:left}
 .chat-list-main>span:nth-child(2)>b{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
 .chat-list-main>span:nth-child(2)>small{display:block;width:100%;max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;margin:0}
+
+
+@media(max-width:760px){
+ .messages-workspace:not(.has-active-chat) .chat-panel{display:none}
+ .messages-workspace.has-active-chat .chat-sidebar{display:none}
+ .messages-workspace.has-active-chat .chat-panel{display:flex;min-height:62dvh}
+}
