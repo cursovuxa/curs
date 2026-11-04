@@ -148,12 +148,13 @@ const allowRoles = (...roles) => (req, res, next) => {
 const requireRootAdmin = (req, res, next) => req.user.is_root_admin === true
   ? next()
   : res.status(403).json({ error: 'Доступ только главному администратору' });
-async function createNotification(userId,title,message,type='account_activity'){
+async function createNotification(userId,title,message,type='account_activity',actionUrl=null){
   if(!supabase||!userId)return;
   try{
     const {error}=await supabase.from('notifications').insert({
       user_id:userId,title:String(title||'Уведомление FlowTix').slice(0,200),
-      message:String(message||'').slice(0,2000),type,channel:'in_app'
+      message:String(message||'').slice(0,2000),type,channel:'in_app',
+      action_url:typeof actionUrl==='string'&&actionUrl.startsWith('/')?actionUrl.slice(0,500):null
     });
     if(error)console.error('[notifications] insert failed:',error.message);
   }catch(error){console.error('[notifications] insert failed:',error.message)}
@@ -1364,7 +1365,7 @@ app.get('/api/me/profile-links', requireUser, asyncRoute(async (req,res)=>{
 
 app.get('/api/messages/conversations', requireUser, asyncRoute(async (req,res)=>{
   const {data,error}=await supabase.from('direct_conversations')
-    .select('id,participant_a,participant_b,request_by,status,cleared_at_a,cleared_at_b,created_at,updated_at')
+    .select('id,participant_a,participant_b,request_by,status,cleared_at_a,cleared_at_b,last_read_at_a,last_read_at_b,created_at,updated_at')
     .or('participant_a.eq.'+req.user.id+',participant_b.eq.'+req.user.id)
     .order('updated_at',{ascending:false});
   if(error)return res.status(500).json({error:'Не удалось загрузить переписки'});
@@ -1372,7 +1373,15 @@ app.get('/api/messages/conversations', requireUser, asyncRoute(async (req,res)=>
     const party=await conversationParty(c,req.user.id);
     const {data:last}=await supabase.from('direct_messages').select('body,created_at,sender_id')
       .eq('conversation_id',c.id).order('created_at',{ascending:false}).limit(1).maybeSingle();
-    return {...c,other:party.other,lastMessage:last||null,
+    const ownSide=c.participant_a===req.user.id?'a':'b';
+    const readAt=c[ownSide==='a'?'last_read_at_a':'last_read_at_b']||c.created_at;
+    let unreadCount=0;
+    if(c.status==='active'){
+      const unread=await supabase.from('direct_messages').select('id',{count:'exact',head:true})
+        .eq('conversation_id',c.id).neq('sender_id',req.user.id).gt('created_at',readAt);
+      unreadCount=unread.error?0:(unread.count||0);
+    }
+    return {...c,other:party.other,lastMessage:last||null,unreadCount,
       clearedAt:c.participant_a===req.user.id?c.cleared_at_a:c.cleared_at_b};
   }));
   res.json({conversations});
@@ -1399,7 +1408,7 @@ app.post('/api/messages/requests', requireUser, asyncRoute(async(req,res)=>{
     conversation=created.data;error=created.error;
   }
   if(error)return res.status(400).json({error:'Не удалось отправить запрос на чат'});
-  await createNotification(otherId,'Запрос на личный чат',(req.user.full_name||'Пользователь')+' хочет начать с вами переписку.','chat_request');
+  await createNotification(otherId,'Запрос на личный чат',(req.user.full_name||'Пользователь')+' хочет начать с вами переписку.','chat_request','/messages/?conversation='+encodeURIComponent(conversation.id));
   res.status(201).json({conversation});
 }));
 app.patch('/api/messages/conversations/:id', requireUser, asyncRoute(async(req,res)=>{
@@ -1415,7 +1424,7 @@ app.patch('/api/messages/conversations/:id', requireUser, asyncRoute(async(req,r
     const result=await supabase.from('direct_conversations').update({status:action==='accept'?'active':'declined',updated_at:new Date().toISOString()}).eq('id',c.id).select('*').single();
     if(result.error)return res.status(400).json({error:'Не удалось сохранить решение'});
     await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:action==='accept'?'CHAT_REQUEST_ACCEPTED':'CHAT_REQUEST_DECLINED',entity_type:'conversation',entity_id:c.id,details:{}});
-    await createNotification(c.request_by,action==='accept'?'Запрос на чат принят':'Запрос на чат отклонён',(req.user.full_name||'Пользователь')+(action==='accept'?' принял ваш запрос. Теперь можно переписываться.':' отклонил запрос на личную переписку.'),'chat_request_result');
+    await createNotification(c.request_by,action==='accept'?'Запрос на чат принят':'Запрос на чат отклонён',(req.user.full_name||'Пользователь')+(action==='accept'?' принял ваш запрос. Теперь можно переписываться.':' отклонил запрос на личную переписку.'),'chat_request_result','/messages/?conversation='+encodeURIComponent(c.id));
     return res.json({conversation:result.data});
   }
   if(action==='clear'){
@@ -1437,7 +1446,9 @@ app.get('/api/messages/conversations/:id/messages', requireUser, asyncRoute(asyn
   if(!c||c.status!=='active'||![c.participant_a,c.participant_b].includes(req.user.id))return res.status(404).json({error:'Переписка не найдена'});
   const {data:blocks}=await supabase.from('user_blocks').select('blocker_id').or('and(blocker_id.eq.'+c.participant_a+',blocked_id.eq.'+c.participant_b+'),and(blocker_id.eq.'+c.participant_b+',blocked_id.eq.'+c.participant_a+')');
   if(blocks?.length)return res.status(403).json({error:'Чат закрыт из-за блокировки'});
-  const ownClear=c.participant_a===req.user.id?c.cleared_at_a:c.cleared_at_b;
+  const ownSide=c.participant_a===req.user.id?'a':'b';
+   const ownClear=ownSide==='a'?c.cleared_at_a:c.cleared_at_b;
+   await supabase.from('direct_conversations').update({[ownSide==='a'?'last_read_at_a':'last_read_at_b']:new Date().toISOString()}).eq('id',c.id);
   let query=supabase.from('direct_messages').select('id,conversation_id,sender_id,body,created_at').eq('conversation_id',c.id);
   if(ownClear)query=query.gt('created_at',ownClear);
   if(req.query.before)query=query.lt('created_at',String(req.query.before));
@@ -1457,7 +1468,7 @@ app.post('/api/messages/conversations/:id/messages', requireUser, asyncRoute(asy
   if(messageError)return res.status(400).json({error:'Не удалось отправить сообщение'});
   await supabase.from('direct_conversations').update({updated_at:new Date().toISOString()}).eq('id',c.id);
   const recipientId=c.participant_a===req.user.id?c.participant_b:c.participant_a;
-  await createNotification(recipientId,'Новое личное сообщение',(req.user.full_name||'Пользователь')+': '+body.slice(0,180),'direct_message');
+  await createNotification(recipientId,'Новое личное сообщение',(req.user.full_name||'Пользователь')+': '+body.slice(0,180),'direct_message','/messages/?conversation='+encodeURIComponent(c.id));
   res.status(201).json({message:data});
 }));
 app.post('/api/me/blocks/:id', requireUser, asyncRoute(async(req,res)=>{
