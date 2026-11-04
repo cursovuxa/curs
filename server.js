@@ -76,13 +76,21 @@ app.get('/api/health', async (_req, res) => {
 
 app.get('/api/events', async (req, res) => {
   if (!supabase) return res.status(503).json({ error: 'Database is not configured' });
-  const term = String(req.query.q || '').trim().slice(0, 100);
+  const term = String(req.query.q || '').trim().slice(0, 100).replace(/[,*()\\"']/g, '');
   const city = String(req.query.city || '').trim().slice(0, 100);
+  const categoryId=String(req.query.categoryId||'').trim();
+  const from=String(req.query.from||'').match(/^\d{4}-\d{2}-\d{2}$/)?.[0]||'';
+  const to=String(req.query.to||'').match(/^\d{4}-\d{2}-\d{2}$/)?.[0]||'';
+  let venueIds=null;
+  if(city){const {data:venues,error:venueError}=await supabase.from('venues').select('id').ilike('city','%'+city.replace(/[,*()\\"']/g,'')+'%');if(venueError)return res.status(500).json({error:'Не удалось отфильтровать мероприятия по городу'});venueIds=(venues||[]).map(v=>v.id);if(!venueIds.length)return res.json({events:[]})}
   let query = supabase.from('events')
     .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,rules,contact_email,contact_phone,dynamic_pricing_enabled,popularity_score,venue_id,category_id,organizer_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*),users!events_organizer_id_fkey(id,full_name,username,avatar_url,avatar_path,role,city,preferences)')
     .eq('status', 'published').order('start_date', { ascending: true });
-  if (term) query = query.ilike('title', '%' + term.replace(/[,%()]/g, '') + '%');
-  if (city) query = query.ilike('venues.city', city);
+  if (term) query = query.or('title.ilike.%'+term+'%,description.ilike.%'+term+'%,location_address.ilike.%'+term+'%');
+  if (venueIds) query = query.in('venue_id',venueIds);
+  if (/^[0-9a-f-]{36}$/i.test(categoryId)) query=query.eq('category_id',categoryId);
+  if (from) query=query.gte('start_date',from);
+  if (to) query=query.lte('start_date',to);
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
   let visibleEvents=data||[];
@@ -156,6 +164,52 @@ const allowRoles = (...roles) => (req, res, next) => {
 const requireRootAdmin = (req, res, next) => req.user.is_root_admin === true
   ? next()
   : res.status(403).json({ error: 'Доступ только главному администратору' });
+
+let mapGeocoderTail=Promise.resolve(),mapGeocoderLastAt=0;
+const mapGeocoderRequests=new Map();
+async function lookupVenueCoordinates(venue){
+ const task=mapGeocoderTail.then(async()=>{
+  const wait=Math.max(0,1100-(Date.now()-mapGeocoderLastAt));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));
+  const {data:cached}=await supabase.from('venues').select('latitude,longitude').eq('id',venue.id).maybeSingle();
+  if(cached?.latitude!=null&&cached?.longitude!=null)return {id:venue.id,latitude:Number(cached.latitude),longitude:Number(cached.longitude)};
+  mapGeocoderLastAt=Date.now();
+  try{
+   const endpoint=new URL(process.env.MAP_GEOCODER_URL||'https://nominatim.openstreetmap.org/search');
+   endpoint.searchParams.set('q',[venue.name,venue.address,venue.city,'Казахстан'].filter(Boolean).join(', '));
+   endpoint.searchParams.set('format','jsonv2');endpoint.searchParams.set('limit','1');
+   const response=await fetch(endpoint,{headers:{'User-Agent':process.env.MAP_GEOCODER_USER_AGENT||'FlowTix/1.0 (https://flowtix.online; contact: cursovuxawhunx@gmail.com)','Referer':'https://flowtix.online/'},signal:AbortSignal.timeout(8000)});
+   if(!response.ok)return null;
+   const results=await response.json(),place=Array.isArray(results)?results[0]:null;
+   if(!place||!Number.isFinite(Number(place.lat))||!Number.isFinite(Number(place.lon)))return null;
+   const coordinates={id:venue.id,latitude:Number(place.lat),longitude:Number(place.lon)};
+   const {error}=await supabase.from('venues').update({latitude:coordinates.latitude,longitude:coordinates.longitude}).eq('id',venue.id);
+   return error?null:coordinates;
+  }catch(error){console.warn('[map-geocoder] lookup failed:',error.message);return null}
+ });
+ mapGeocoderTail=task.then(()=>undefined,()=>undefined);
+ return task;
+}
+app.post('/api/events/geocode',asyncRoute(async(req,res)=>{
+ if(!supabase)return res.status(503).json({error:'База данных недоступна'});
+ const ids=[...new Set((Array.isArray(req.body?.venueIds)?req.body.venueIds:[]).map(String).filter(id=>/^[0-9a-f-]{36}$/i.test(id)))].slice(0,5);
+ if(!ids.length)return res.status(400).json({error:'Нет площадок для поиска координат'});
+ const ip=String(req.ip||req.get('x-forwarded-for')||'unknown').split(',')[0].slice(0,100),now=Date.now(),usage=mapGeocoderRequests.get(ip);
+ if(usage&&now-usage.startedAt<10*60*1000&&usage.count>=10)return res.status(429).json({error:'Лимит поиска координат исчерпан. Попробуйте позже.'});
+ if(!usage||now-usage.startedAt>=10*60*1000)mapGeocoderRequests.set(ip,{startedAt:now,count:1});else usage.count++;
+ const {data:publicEvents,error:eventError}=await supabase.from('events').select('venue_id').eq('status','published').in('venue_id',ids);
+ if(eventError)return res.status(500).json({error:'Не удалось подготовить карту'});
+ const allowed=[...new Set((publicEvents||[]).map(e=>e.venue_id).filter(Boolean))];
+ if(!allowed.length)return res.json({coordinates:[],message:'У этих мероприятий нет привязанной площадки.'});
+ const {data:venues,error:venueError}=await supabase.from('venues').select('id,name,address,city,latitude,longitude').in('id',allowed);
+ if(venueError)return res.status(500).json({error:'Не удалось загрузить площадки'});
+ const coordinates=[];
+ for(const venue of venues||[]){
+  if(venue.latitude!=null&&venue.longitude!=null){coordinates.push({id:venue.id,latitude:Number(venue.latitude),longitude:Number(venue.longitude)});continue}
+  const result=await lookupVenueCoordinates(venue);if(result)coordinates.push(result);
+ }
+ res.json({coordinates,message:coordinates.length?'Координаты площадок сохранены.':'Не удалось определить точку по адресу площадки. Проверьте адрес.'});
+}));
+
 async function createNotification(userId,title,message,type='account_activity',actionUrl=null){
   if(!supabase||!userId)return;
   try{
@@ -421,7 +475,7 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
   for (const item of completeProgram) {
     if (!item.client_key || programKeys.has(item.client_key)) return res.status(400).json({ error: 'В программе обнаружены повторяющиеся или пустые ключи элементов' });
     programKeys.add(item.client_key);
-    if (!item.title || !/^\\d{2}:\\d{2}$/.test(item.start_time) || !/^\\d{2}:\\d{2}$/.test(item.end_time) ||
+    if (!item.title || !/^\d{2}:\d{2}$/.test(item.start_time) || !/^\d{2}:\d{2}$/.test(item.end_time) ||
         !Number.isInteger(item.duration_minutes) || item.duration_minutes < 1 || item.duration_minutes > 1440 ||
         !Number.isInteger(item.max_attendees) || item.max_attendees < 1) {
       return res.status(400).json({ error: 'Каждому пункту нужны название, время, длительность и положительный лимит участников' });
@@ -1525,7 +1579,7 @@ app.patch('/api/events/:eventId/program/:programId', requireUser, allowRoles('or
   const start_time = String(req.body.start_time || '');
   const duration = Number(req.body.duration_minutes);
   const maxAttendees = Number(req.body.max_attendees);
-  if (!title || !/^\\d{2}:\\d{2}$/.test(start_time) ||
+  if (!title || !/^\d{2}:\d{2}$/.test(start_time) ||
       !Number.isInteger(duration) || duration < 1 || duration > 1440 ||
       !Number.isInteger(maxAttendees) || maxAttendees < 1 || maxAttendees > 100000) {
     return res.status(400).json({ error: 'Укажите название, время, длительность и лимит участников' });
