@@ -870,3 +870,31 @@ body[data-theme] .toast[data-kind="info"]{border-left:4px solid var(--violet)}
  .profile-link-add{align-items:stretch;flex-direction:column}
  .profile-link-add .button{width:100%}
 }
+
+
+/* Full public profiles and scroll-loaded notification feed. */
+.notification-load-more{display:flex;justify-content:center;min-height:44px;padding:16px;color:var(--muted);font-size:12px}
+.notification-load-more[hidden]{display:none}
+.public-profile-page{max-width:1080px;margin-inline:auto;display:grid;gap:24px}
+.public-profile-header{display:flex;align-items:center;gap:18px;padding:6px 0 22px;border-bottom:1px solid var(--line)}
+.public-profile-header .profile-avatar{width:88px;height:88px;flex-basis:88px;font-size:28px}
+.public-profile-identity{min-width:0}
+.public-profile-identity h2{margin:2px 0 4px;font-size:clamp(24px,4vw,38px)}
+.public-profile-identity .eyebrow{margin:0 0 6px}
+.public-profile-city{margin-left:auto;display:inline-flex;align-items:center;padding:9px 13px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--surface)}
+.public-profile-about,.public-profile-social,.public-profile-events{display:grid;gap:12px}
+.public-profile-about h3,.public-profile-social h3,.public-profile-events h3{margin:0}
+.public-profile-about p{margin:0;max-width:760px;color:var(--muted);line-height:1.75;white-space:pre-wrap}
+.public-profile-event-list{display:grid;gap:10px}
+.public-profile-event{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.public-profile-event>div{min-width:0}
+.public-profile-event small{color:var(--muted)}
+.public-profile-event h4{margin:4px 0}
+.public-profile-event p{margin:0;color:var(--muted);font-size:13px}
+.event-full-profile-link{width:max-content;margin:4px 0 14px}
+@media(max-width:760px){
+ .public-profile-header{align-items:flex-start;flex-wrap:wrap}
+ .public-profile-city{margin:0}
+ .public-profile-event{align-items:flex-start;flex-direction:column}
+ .event-full-profile-link{width:100%;justify-content:center}
+}
