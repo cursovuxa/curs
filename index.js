@@ -42,6 +42,7 @@ let notificationsChannel = null;
 let notificationsChannelUserId = null;
 let notificationsConnection = 'CONNECTING';
 let notificationUnreadCount=0,notificationCountUserId=null,notificationCountLoading=false;
+let notificationFeedOffset=0,notificationFeedHasMore=false,notificationFeedLoading=false,notificationFeedGeneration=0;
 let events = [];
 let organizerEvents = [];
 let categories = [];
@@ -748,25 +749,51 @@ async function visitorView() {
     void renderTicketQrCodes();
   }catch(error){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(error.message)+'</p>'}
 }
-async function notificationsView() {
-  if(!signedIn())return authOpen();
-  $('#workspace').hidden=false;
-  $('#workspaceTitle').textContent='Уведомления';
-  $('#workspaceRefresh').textContent='Обновить уведомления ↻';
-  $('#workspaceContent').innerHTML='<div class="workspace-card"><div class="notification-live"><span class="notification-live-dot '+(notificationsConnection==='SUBSCRIBED'?'is-live':'')+'"></span><span id="notificationsLiveStatus">'+(notificationsConnection==='SUBSCRIBED'?'Подключено · новые уведомления приходят сразу':'Подключаемся к уведомлениям…')+'</span></div><p>Сообщения от организаторов и FlowTix появятся здесь автоматически.</p></div><div class="notification-list" id="notificationList"><div class="workspace-card"><p>Загружаем уведомления…</p></div></div>';
-  try{
-    const {notifications:loadedNotifications=[]}=await api('/api/notifications');
-    const list=$('#notificationList');
-    if(!list)return;
-    let notifications=loadedNotifications;
-    try{await api('/api/notifications/read-all',{method:'PATCH'});notifications=loadedNotifications.map(notice=>({...notice,is_read:true}));notificationUnreadCount=0;updateNotificationBadge()}catch(error){void refreshNotificationUnreadCount()}
-    list.innerHTML=notifications.length?notifications.map((notice)=>{
-      const date=notice.created_at?new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short'}).format(new Date(notice.created_at)):'';
-      const actionUrl=typeof notice.action_url==='string'&&notice.action_url.startsWith('/')?notice.action_url:null;
-       return '<article class="workspace-card notification-card '+(notice.is_read?'':'unread')+'"><div class="notification-card-head"><h3>'+esc(notice.title||'Уведомление FlowTix')+'</h3><span class="status-pill">'+(notice.is_read?'Прочитано':'Новое')+'</span></div><p>'+esc(notice.message||'')+'</p>'+(actionUrl?'<a class="notification-source-link" href="'+esc(actionUrl)+'">Открыть переписку <span aria-hidden="true">→</span></a>':'')+(date?'<small>'+esc(date)+'</small>':'')+'</article>';
-    }).join(''):empty('Новых уведомлений пока нет. Когда организатор сообщит об изменениях, они появятся здесь.');
-  }catch(error){const list=$('#notificationList');if(list)list.innerHTML='<p class="connection-state">'+esc(error.message)+'</p>'}
+function notificationCardMarkup(notice){
+ const date=notice.created_at?new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short'}).format(new Date(notice.created_at)):'';
+ const actionUrl=typeof notice.action_url==='string'&&notice.action_url.startsWith('/')&&!notice.action_url.startsWith('//')?notice.action_url:null;
+ return '<article class="workspace-card notification-card '+(notice.is_read?'':'unread')+'"><div class="notification-card-head"><h3>'+esc(notice.title||'Уведомление FlowTix')+'</h3><span class="status-pill">'+(notice.is_read?'Прочитано':'Новое')+'</span></div><p>'+esc(notice.message||'')+'</p>'+(actionUrl?'<a class="notification-source-link" href="'+esc(actionUrl)+'">Открыть источник <span aria-hidden="true">→</span></a>':'')+(date?'<small>'+esc(date)+'</small>':'')+'</article>';
 }
+async function loadNotificationPage(){
+ if(notificationFeedLoading||!notificationFeedHasMore||!signedIn())return;
+ const generation=notificationFeedGeneration,owner=user?.id,offset=notificationFeedOffset;
+ notificationFeedLoading=true;
+ const sentinel=$('#notificationLoadMore');
+ if(sentinel){sentinel.hidden=false;sentinel.textContent='Загружаем ещё уведомления…'}
+ try{
+   const data=await api('/api/notifications?offset='+offset+'&limit=5');
+   if(generation!==notificationFeedGeneration||owner!==user?.id)return;
+   const loaded=data.notifications||[];
+   const readResults=await Promise.allSettled(loaded.map(notice=>notice.is_read?Promise.resolve():api('/api/notifications/'+encodeURIComponent(notice.id)+'/read',{method:'PATCH'})));
+   if(generation!==notificationFeedGeneration||owner!==user?.id)return;
+   const notices=loaded.map((notice,i)=>({...notice,is_read:notice.is_read||readResults[i]?.status==='fulfilled'}));
+   const list=$('#notificationList');if(!list)return;
+   if(offset===0&&!notices.length)list.innerHTML=empty('Уведомлений пока нет. Новые сообщения и события появятся здесь.');
+   else if(notices.length)list.insertAdjacentHTML('beforeend',notices.map(notificationCardMarkup).join(''));
+   notificationFeedOffset=offset+loaded.length;
+   notificationFeedHasMore=Boolean(data.hasMore);
+   if(sentinel){sentinel.hidden=!notificationFeedHasMore;sentinel.textContent=notificationFeedHasMore?'Прокрути вниз, чтобы загрузить следующие 5':'Все уведомления загружены'}
+   if(loaded.some((notice,i)=>!notice.is_read&&readResults[i]?.status==='fulfilled'))void refreshNotificationUnreadCount();
+ }catch(error){
+   if(sentinel){sentinel.hidden=false;sentinel.innerHTML='<button class="button button-light button-small" type="button" data-notification-retry>Повторить загрузку</button>'}
+   const list=$('#notificationList');if(list&&offset===0)list.innerHTML='<p class="connection-state">'+esc(error.message)+'</p>';
+ }finally{notificationFeedLoading=false}
+}
+async function notificationsView(){
+ if(!signedIn())return authOpen();
+ $('#workspace').hidden=false;
+ $('#workspaceTitle').textContent='Уведомления';
+ $('#workspaceRefresh').textContent='Обновить уведомления ↻';
+ $('#workspaceContent').innerHTML='<div class="workspace-card"><div class="notification-live"><span class="notification-live-dot '+(notificationsConnection==='SUBSCRIBED'?'is-live':'')+'"></span><span id="notificationsLiveStatus">'+(notificationsConnection==='SUBSCRIBED'?'Подключено · новые уведомления приходят сразу':'Подключаемся к уведомлениям…')+'</span></div><p>Первые 5 уведомлений уже загружены. Прокрути вниз, чтобы увидеть следующие.</p></div><div class="notification-list" id="notificationList"></div><div id="notificationLoadMore" class="notification-load-more" role="status"></div>';
+ notificationFeedGeneration++;notificationFeedOffset=0;notificationFeedHasMore=true;notificationFeedLoading=false;
+ await loadNotificationPage();
+}
+window.addEventListener('scroll',()=>{
+ if(!NOTIFICATIONS_ROUTE||!notificationFeedHasMore||notificationFeedLoading)return;
+ const sentinel=$('#notificationLoadMore');
+ if(sentinel&&!sentinel.hidden&&sentinel.getBoundingClientRect().top<window.innerHeight+240)void loadNotificationPage();
+},{passive:true});
+
 function renderAccountRoute(){
   if(ADMIN_ROUTE)return adminRoute();
   if(PROFILE_ROUTE)return showSettings();
@@ -808,7 +835,6 @@ async function subscribeToNotifications(){
        })
        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},()=>{
         void refreshNotificationUnreadCount();
-        if(NOTIFICATIONS_ROUTE)void notificationsView();
       })
       .subscribe((status)=>{
         notificationsConnection=status;
@@ -1587,6 +1613,7 @@ document.addEventListener('click',async event=>{
  if(el.closest('[data-chat-back]')){document.querySelector('.messages-workspace')?.classList.remove('has-active-chat');return}
  if(el.closest('[data-clear-chat]')){if(!activeChatId)return;try{const result=await api('/api/messages/conversations/'+encodeURIComponent(activeChatId),{method:'PATCH',body:JSON.stringify({action:'clear'})});if(result.deleted){activeChatId=null;activeChatOtherId=null;clearChatRealtime();$('#chatMessages').innerHTML='<div class="chat-empty">Оба участника очистили историю. Переписка удалена.</div>';$('#chatComposer').hidden=true;$('#chatActiveHeader').hidden=true}else{$('#chatMessages').innerHTML='<div class="chat-empty">История очищена у тебя. Новые сообщения будут видны здесь.</div>';activeChatMessages=[];const badge=$('#chatClearCount');if(badge)badge.textContent='1/2 очистили'}await refreshConversations()}catch(error){toast(error.message)}return}
  if(el.closest('[data-block-chat]')){if(!activeChatOtherId)return;if(!confirm('Заблокировать этого пользователя? Чат будет закрыт, его мероприятия скроются, а участие в твоих мероприятиях станет недоступно.'))return;try{await api('/api/me/blocks/'+encodeURIComponent(activeChatOtherId),{method:'POST'});toast('Пользователь заблокирован');activeChatId=null;activeChatOtherId=null;clearChatRealtime();await refreshConversations();$('#chatMessages').innerHTML='<div class="chat-empty">Чат закрыт блокировкой.</div>';$('#chatComposer').hidden=true;$('#chatActiveHeader').hidden=true}catch(error){toast(error.message)}return}
+ const retryNotifications=el.closest('[data-notification-retry]');if(retryNotifications){event.preventDefault();void loadNotificationPage();return}
  if(el.closest('[data-workspace-refresh]')||el.id==='workspaceRefresh'){
   if(MESSAGES_ROUTE){event.preventDefault();await refreshConversations();return}
   if(ACCOUNT_ROUTE){event.preventDefault();renderAccountRoute();return}
