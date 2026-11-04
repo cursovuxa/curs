@@ -30,6 +30,11 @@ let calendarMonthDate = new Date(new Date().getFullYear(), new Date().getMonth()
 let currentFilteredEvents = [];
 let selectedMapEventId = null;
 let searchTimer;
+let seatPickerEventId=null;
+let seatPickerState=null;
+let selectedSeatId=null;
+let seatPickerCountdownTimer=null;
+let seatPickerPollTimer=null;
 const api = async (path, options = {}) => {
   const token = sessionStorage.getItem(tokenKey);
   const response = await fetch(API_BASE + path, {
@@ -235,6 +240,11 @@ function setEventModalOpen(open) {
   modal.hidden=!open;
   document.body.classList.toggle('event-modal-open',open);
   if(open)modal.scrollTop=0;
+  if(!open){
+    clearInterval(seatPickerCountdownTimer);clearInterval(seatPickerPollTimer);
+    seatPickerCountdownTimer=null;seatPickerPollTimer=null;
+    seatPickerEventId=null;seatPickerState=null;selectedSeatId=null;
+  }
 }
 function openEvent(id) {
   api('/api/events/'+encodeURIComponent(id)).then(({event:e})=>{
@@ -259,12 +269,78 @@ function previewNewEvent(form) {
  const cover=form.querySelector('#createCoverPreview img')?.src||'';
  let program=[];try{program=collectProgramDraft(form.querySelector('#eventProgramList'))}catch(error){toast(error.message);return}renderEventPreview({...data,status:'draft',base_price:Number(data.base_price||0),total_seats:Number(data.total_seats||0),cover_image:cover,event_program:program,event_categories:categories.find(c=>String(c.id)===String(data.category_id)),venues:option?.value?{name:option.textContent.split(' · ')[0],address:option.dataset.address||''}:null});
 }
+async function completeRegistration(id,seatId=null) {
+  try {
+    const result=await api('/api/registrations',{method:'POST',body:JSON.stringify({eventId:id,...(seatId?{seatId}:{})})});
+    const event=events.find(item=>String(item.id)===String(id));
+    const visualFree=Number(event?.current_price??event?.base_price??0)>0&&Number(result.ticket?.price_paid||0)===0;
+    const seatLabel=result.ticket?.seat_label&&result.ticket.seat_label!=='Без места'?' · место '+result.ticket.seat_label:'';
+    setEventModalOpen(false);
+    toast((visualFree?'Билет без оплаты · ':'Билет оформлен · ')+result.ticket.ticket_number+seatLabel);
+    await loadEvents();
+  }catch(error){toast(error.message)}
+}
+const seatTypeLabels={standard:'Обычное',vip:'VIP',business:'Бизнес',free:'Бесплатное',accessible:'Доступное'};
+function seatButton(seat){
+  const labels={available:'Свободно',mine:'Ваша бронь',reserved:'Забронировано',occupied:'Занято'};
+  const selected=selectedSeatId===seat.id;
+  const disabled=seat.status==='reserved'||seat.status==='occupied';
+  return '<button type="button" class="seat-place seat-type-'+esc(seat.seat_type)+' '+(selected?'is-selected ':'')+'seat-state-'+esc(seat.status)+'" data-seat-id="'+esc(seat.id)+'" aria-label="'+esc(seat.row_label+seat.seat_number+' · '+(seatTypeLabels[seat.seat_type]||'Место')+' · '+(labels[seat.status]||''))+'" title="'+esc(seat.row_label+seat.seat_number+' · '+(seatTypeLabels[seat.seat_type]||'Место')+' · '+(labels[seat.status]||''))+'" '+(disabled?'disabled':'')+'><span>'+esc(seat.seat_number)+'</span></button>';
+}
+function renderSeatPicker(){
+  const root=$('#eventDialog');if(!root||!seatPickerState)return;
+  const event=events.find(item=>String(item.id)===String(seatPickerEventId))||{};
+  const seats=seatPickerState.seats||[];
+  const byRow=new Map();
+  seats.forEach(seat=>{const row=String(seat.row_label||'');if(!byRow.has(row))byRow.set(row,[]);byRow.get(row).push(seat)});
+  const rows=[...byRow.entries()].map(([label,items])=>'<div class="seat-row"><span class="seat-row-label">'+esc(label)+'</span><div class="seat-row-items">'+items.map(seatButton).join('')+'</div><span class="seat-row-label">'+esc(label)+'</span></div>').join('');
+  const selected=seats.find(seat=>seat.id===selectedSeatId);
+  const expiry=selected?.reserved_until||null;
+  const statusText=selected?(expiry?'Бронь держится 10 минут после выбора.':'Место выбрано.'):'Выбери свободное место на схеме зала.';
+  root.className='dialog event-dialog seat-map-dialog';
+  root.innerHTML='<div class="seat-picker-head"><div><p class="eyebrow dark-eyebrow">ВЫБОР МЕСТА</p><h2>'+esc(event.title||'Мероприятие')+'</h2><p>'+esc([event.start_date,event.start_time,event.venues?.name,event.venues?.city].filter(Boolean).join(' · '))+'</p></div><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="seat-picker-content"><div class="seat-picker-summary"><div><span class="seat-summary-dot available"></span>Свободно</div><div><span class="seat-summary-dot reserved"></span>На удержании</div><div><span class="seat-summary-dot occupied"></span>Занято</div></div><div class="seat-map-scroll"><div class="seat-stage">СЦЕНА</div><div class="seat-type-legend">'+['standard','vip','business','free','accessible'].filter(type=>seats.some(seat=>seat.seat_type===type)).map(type=>'<span><i class="seat-type-swatch seat-type-'+type+'"></i>'+seatTypeLabels[type]+'</span>').join('')+'</div><div class="seat-rows">'+(rows||'<p class="seat-empty">Схема этого зала пока не настроена.</p>')+'</div></div><div class="seat-picker-footer"><div class="seat-selection-copy"><b>'+(selected?esc(selected.row_label+selected.seat_number)+' · '+esc(seatTypeLabels[selected.seat_type]||'Место'):'Место не выбрано')+'</b><span id="seatHoldStatus">'+esc(statusText)+'</span><span id="seatHoldCountdown" aria-live="polite"></span></div><button class="button button-accent" data-confirm-seat '+(selected?'':'disabled')+'>Зарегистрироваться</button></div></div>';
+  clearInterval(seatPickerCountdownTimer);
+  if(expiry)seatPickerCountdownTimer=setInterval(()=>{
+    const seconds=Math.max(0,Math.ceil((new Date(expiry).getTime()-Date.now())/1000));
+    const countdown=$('#seatHoldCountdown');
+    if(countdown)countdown.textContent=seconds?('Осталось: '+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')):'Бронь истекла — выберите место заново.';
+    if(!seconds){clearInterval(seatPickerCountdownTimer);selectedSeatId=null;void refreshSeatPicker();}
+  },1000);
+}
+async function refreshSeatPicker(){
+  if(!seatPickerEventId)return;
+  try{
+    const state=await api('/api/events/'+encodeURIComponent(seatPickerEventId)+'/seats');
+    if(!state.seatSelectionRequired){seatPickerState=null;return}
+    seatPickerState=state;
+    const ownHold=(state.seats||[]).find(seat=>seat.id===selectedSeatId&&seat.status==='mine');
+    if(selectedSeatId&&!ownHold)selectedSeatId=null;
+    renderSeatPicker();
+  }catch(error){toast(error.message)}
+}
+async function reserveSelectedSeat(seatId){
+  if(!seatPickerEventId)return;
+  try{
+    const {reservation}=await api('/api/seat-reservations',{method:'POST',body:JSON.stringify({eventId:seatPickerEventId,seatId})});
+    selectedSeatId=seatId;
+    const selected=(seatPickerState?.seats||[]).find(seat=>seat.id===seatId);
+    if(selected){selected.status='mine';selected.reserved_until=reservation.reserved_until}
+    renderSeatPicker();
+  }catch(error){toast(error.message);await refreshSeatPicker()}
+}
 async function register(id) {
   if(!signedIn())return authOpen();
-  try { const result=await api('/api/registrations',{method:'POST',body:JSON.stringify({eventId:id})}); const event=events.find(item=>String(item.id)===String(id)); const visualFree=Number(event?.current_price??event?.base_price??0)>0&&Number(result.ticket?.price_paid||0)===0; toast(visualFree?'Билет оформлен без оплаты · '+result.ticket.ticket_number:'Готово! Билет '+result.ticket.ticket_number); await loadEvents(); }
-  catch(error){toast(error.message)}
-}
-async function toggleFavorite(id) {
+  seatPickerEventId=String(id);selectedSeatId=null;
+  try{
+    const state=await api('/api/events/'+encodeURIComponent(id)+'/seats');
+    if(!state.seatSelectionRequired)return completeRegistration(id);
+    seatPickerState=state;
+    $('#eventDialog').scrollTop=0;
+    renderSeatPicker();setEventModalOpen(true);
+    clearInterval(seatPickerPollTimer);
+    seatPickerPollTimer=setInterval(()=>void refreshSeatPicker(),15000);
+  }catch(error){toast(error.message)}
+}async function toggleFavorite(id) {
   if(!signedIn())return authOpen();
   const has=(user.favorites||[]).includes(id);
   try {
@@ -639,6 +715,8 @@ document.addEventListener('click',async(e)=>{
   const detail=e.target.closest('[data-details]');if(detail)return openEvent(detail.dataset.details);
   const organizerPreview=e.target.closest('[data-organizer-preview]');if(organizerPreview)return openOrganizerPreview(organizerPreview.dataset.organizerPreview);
   if(e.target.closest('[data-preview-create-event]'))return previewNewEvent($('#createEventForm'));
+  const seatPick=e.target.closest('[data-seat-id]');if(seatPick){if(!seatPick.disabled)await reserveSelectedSeat(seatPick.dataset.seatId);return}
+  const confirmSeat=e.target.closest('[data-confirm-seat]');if(confirmSeat&&selectedSeatId)return completeRegistration(seatPickerEventId,selectedSeatId);
   const reg=e.target.closest('[data-register]');if(reg)return register(reg.dataset.register);
   const close=e.target.closest('[data-close]');if(close){if(close.dataset.close==='eventModal')setEventModalOpen(false);else $('#'+close.dataset.close).hidden=true;return}
   const report=e.target.closest('[data-report]');if(report){$('#reportForm').innerHTML='<form id="complaintForm" class="form-grid"><input type="hidden" name="targetId" value="'+esc(report.dataset.report)+'"><label>Причина<input name="reason" required></label><label class="wide">Подробности<textarea name="details" required></textarea></label><button class="button button-dark">Отправить жалобу</button></form>';return}
