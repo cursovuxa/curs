@@ -334,6 +334,16 @@ app.post('/api/complaints', requireUser, asyncRoute(async (req, res) => {
   if (error) return res.status(400).json({ error: 'Не удалось отправить жалобу' });
   res.status(201).json({ complaint: data });
 }));
+app.get('/api/notifications/unread-count', requireUser, asyncRoute(async(req,res)=>{
+  const {count,error}=await supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',req.user.id).eq('is_read',false);
+  if(error)return res.status(500).json({error:'Не удалось загрузить счётчик уведомлений'});
+  res.json({count:Number(count)||0});
+}));
+app.patch('/api/notifications/read-all', requireUser, asyncRoute(async(req,res)=>{
+  const {error}=await supabase.from('notifications').update({is_read:true}).eq('user_id',req.user.id).eq('is_read',false);
+  if(error)return res.status(400).json({error:'Не удалось отметить уведомления прочитанными'});
+  res.json({updated:true});
+}));
 app.get('/api/notifications', requireUser, asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('notifications').select('*')
     .eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(100);
