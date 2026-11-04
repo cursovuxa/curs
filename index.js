@@ -788,12 +788,18 @@ async function subscribeToNotifications(){
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},(payload)=>{
          const notice=payload.new;
          if(!notice||notice.user_id!==user.id)return;
+         const isDirectMessage=notice.type==='direct_message';
          let openedConversation=false;
-         if(notice.type==='direct_message'&&notice.action_url){
-           try{const target=new URL(notice.action_url,window.location.origin);openedConversation=MESSAGES_ROUTE&&document.visibilityState==='visible'&&activeChatId===target.searchParams.get('conversation')}catch{}
+         if(isDirectMessage&&notice.action_url){
+           try{const target=new URL(notice.action_url,window.location.origin);openedConversation=activeChatId===target.searchParams.get('conversation')}catch{}
          }
-         if(openedConversation){
-           void api('/api/notifications/'+encodeURIComponent(notice.id)+'/read',{method:'PATCH'}).then(()=>refreshNotificationUnreadCount()).catch(()=>{});
+         const visibleMessagesPage=isDirectMessage&&MESSAGES_ROUTE&&document.visibilityState==='visible';
+         if(visibleMessagesPage){
+           if(openedConversation){
+             void api('/api/notifications/'+encodeURIComponent(notice.id)+'/read',{method:'PATCH'}).then(()=>refreshNotificationUnreadCount()).catch(()=>{});
+           }else{
+             notificationUnreadCount++;updateNotificationBadge();
+           }
            return;
          }
          notificationUnreadCount++;updateNotificationBadge();
