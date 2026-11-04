@@ -704,11 +704,17 @@ app.get('/api/staff/events/:eventId/participants', requireUser, allowRoles('staf
       .eq('event_id', req.params.eventId).eq('employee_id', employee.id).eq('status', 'assigned').maybeSingle();
     if (!assignment) return res.status(403).json({ error: 'Вы не назначены на это мероприятие' });
   }
-  const { data, error } = await supabase.from('tickets')
-    .select('id,ticket_number,status,seat_label,created_at,users(full_name,email)')
-    .eq('event_id', req.params.eventId).order('created_at', { ascending: true }).limit(1000);
-  if (error) return res.status(500).json({ error: 'Не удалось загрузить список участников' });
-  res.json({ participants: data });
+  const offset = Math.max(0, parseInt(req.query.offset || '0', 10) || 0);
+  const { data, error, count } = await supabase.from('tickets')
+    .select('id,ticket_number,status,seat_label,created_at,users!tickets_user_id_fkey(full_name,email)', { count: 'exact' })
+    .eq('event_id', req.params.eventId).in('status', ['valid','used'])
+    .order('created_at', { ascending: true }).order('id', { ascending: true }).range(offset, offset + 4);
+  if (error) {
+    console.error('[staff/participants] query failed:', error.message);
+    return res.status(500).json({ error: 'Не удалось загрузить список участников' });
+  }
+  const participants = data || [];
+  res.json({ participants, total: count || 0, hasMore: offset + participants.length < (count || 0) });
 }));
 app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('staff', 'admin'), asyncRoute(async (req, res) => {
   const ticketNumber = String(req.params.ticketNumber || '').trim().toUpperCase();
@@ -1236,7 +1242,19 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
+async function purgeExpiredUsedTickets() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase.rpc('purge_used_tickets_after_week', { p_batch_size: 100 });
+    if (error) throw error;
+    if (Number(data) > 0) console.log('[ticket-retention] deleted ' + Number(data) + ' used tickets past retention');
+  } catch (error) {
+    console.error('[ticket-retention] cleanup failed:', error.message);
+  }
+}
 app.listen(port, '0.0.0.0', () => console.log('FlowTix API listening on ' + port));
+void purgeExpiredUsedTickets();
+setInterval(purgeExpiredUsedTickets, 60 * 60 * 1000).unref();
 const pingUrl = process.env.RENDER_EXTERNAL_URL;
 if (pingUrl) {
   setInterval(() => {
