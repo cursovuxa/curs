@@ -645,7 +645,8 @@ function renderChatList(conversations){
  const entries=conversations.filter(x=>x.status==='active'||x.status==='pending');
  list.innerHTML=entries.length?entries.map(c=>{
    const incoming=c.status==='pending'&&c.request_by!==user.id,avatar=c.other?.avatar_url?'<img src="'+esc(c.other.avatar_url)+'" alt="">':esc((c.other?.full_name||'F')[0]);
-   return '<article class="chat-list-item '+(c.id===activeChatId?'active':'')+'"><button type="button" data-chat-open="'+esc(c.id)+'" data-chat-other="'+esc(c.other?.id||'')+'" class="chat-list-main"><span class="profile-avatar">'+avatar+'</span><span><b>'+esc(c.other?.full_name||c.other?.username||'Пользователь')+'</b><small>'+(incoming?'Запрос на переписку':c.status==='pending'?'Ожидает подтверждения':esc(c.lastMessage?.body||'Откройте переписку'))+'</small></span></button>'+(incoming?'<div class="chat-request-actions"><button class="button button-accent button-small" data-chat-request-action="accept" data-chat-id="'+esc(c.id)+'">Принять</button><button class="button button-light button-small" data-chat-request-action="decline" data-chat-id="'+esc(c.id)+'">Отклонить</button></div>':'')+'</article>';
+   const unreadCount=Math.max(0,Number(c.unreadCount)||0);
+   return '<article class="chat-list-item '+(c.id===activeChatId?'active':'')+'"><button type="button" data-chat-open="'+esc(c.id)+'" data-chat-other="'+esc(c.other?.id||'')+'" class="chat-list-main"><span class="profile-avatar">'+avatar+'</span><span><b>'+esc(c.other?.full_name||c.other?.username||'Пользователь')+'</b><small>'+(incoming?'Запрос на переписку':c.status==='pending'?'Ожидает подтверждения':esc(c.lastMessage?.body||'Откройте переписку'))+'</small></span>'+(unreadCount?'<span class="chat-unread-badge" aria-label="'+unreadCount+' непрочитанных сообщений">'+(unreadCount>99?'99+':unreadCount)+'</span>':'')+'</button>'+(incoming?'<div class="chat-request-actions"><button class="button button-accent button-small" data-chat-request-action="accept" data-chat-id="'+esc(c.id)+'">Принять</button><button class="button button-light button-small" data-chat-request-action="decline" data-chat-id="'+esc(c.id)+'">Отклонить</button></div>':'')+'</article>';
  }).join(''):empty('Здесь появятся личные переписки и запросы на чат.');
 }
 async function refreshConversations(){
@@ -659,6 +660,7 @@ async function openChatConversation(id){
  const data=await api('/api/messages/conversations/'+encodeURIComponent(id)+'/messages');
  activeChatMessages=data.messages||[];activeChatHasMore=Boolean(data.hasMore);
  if(messages){messages.innerHTML=activeChatMessages.map(messageBubble).join('')||'<div class="chat-empty">Пока нет сообщений. Начните переписку.</div>';messages.scrollTop=messages.scrollHeight;
+  document.querySelector('.messages-workspace')?.classList.add('has-active-chat');
    messages.onscroll=()=>{if(messages.scrollTop<40&&activeChatHasMore&&!activeChatLoading)void loadOlderChatMessages(messages)};
  }
  if(composer)composer.hidden=false;
@@ -670,6 +672,7 @@ async function openChatConversation(id){
    .on('postgres_changes',{event:'INSERT',schema:'public',table:'direct_messages',filter:'conversation_id=eq.'+id},payload=>{
      const msg=payload.new;if(!msg||activeChatMessages.some(x=>x.id===msg.id))return;
      activeChatMessages.push(msg);$('#chatMessages')?.insertAdjacentHTML('beforeend',messageBubble(msg));const box=$('#chatMessages');if(box)box.scrollTop=box.scrollHeight;
+      if(msg.sender_id!==user?.id&&document.visibilityState==='visible'){void api('/api/messages/conversations/'+encodeURIComponent(id)+'/read',{method:'PATCH'}).then(()=>refreshConversations()).catch(error=>console.warn('Could not mark chat read:',error.message))}
    })
    .subscribe();
  if(channel)chatRealtimeChannels.push(channel);
@@ -692,7 +695,13 @@ function messagesView(){
  if(!signedIn())return authOpen();
  $('#workspace').hidden=false;$('#workspaceTitle').textContent='Личные сообщения';$('#workspaceRefresh').textContent='Обновить';$('#workspace').scrollIntoView({behavior:'smooth'});
  $('#workspaceContent').innerHTML='<section class="messages-workspace"><aside class="chat-sidebar"><div class="chat-sidebar-heading"><div><p class="eyebrow dark-eyebrow">FLOWTIX DIRECT</p><h3>Сообщения</h3></div><span class="chat-live-dot">Realtime</span></div><div id="chatConversationList" class="chat-conversation-list"><div class="chat-loading">Загружаем запросы и переписки…</div></div></aside><section class="chat-panel"><header id="chatActiveHeader" class="chat-active-header" hidden><div class="chat-active-title"><button class="button button-light button-small chat-back-button" data-chat-back type="button">← Список</button><h3>Открой переписку</h3><small id="chatClearCount">0/2 очистили</small></div><div class="chat-actions"><button class="button button-light button-small" type="button" data-clear-chat>Очистить у меня</button><button class="button button-danger button-small" type="button" data-block-chat>Заблокировать</button></div></header><div id="chatMessages" class="chat-messages"><div class="chat-empty">Выбери переписку слева.</div></div><form id="chatComposer" class="chat-composer" hidden><div><textarea name="body" maxlength="512" rows="1" required placeholder="Написать сообщение…"></textarea><small><span id="chatCharCount">0</span>/512</small></div><button class="button button-accent" type="submit">Отправить</button></form></section></section>';
- void refreshConversations();
+ void refreshConversations().then(conversations=>{
+   const targetId=new URLSearchParams(window.location.search).get('conversation');
+   if(!targetId)return;
+   const target=conversations.find(item=>item.id===targetId);
+   if(target?.status==='active'&&!activeChatId)void openChatConversation(targetId).catch(error=>toast(error.message));
+   else if(target){const row=document.querySelector('[data-chat-open="'+CSS.escape(targetId)+'"]')?.closest('.chat-list-item');row?.scrollIntoView({behavior:'smooth',block:'center'});row?.classList.add('is-notification-target')}
+  });
  if(supabaseAuth){
   clearChatRealtime();const token=sessionStorage.getItem(tokenKey);if(token)supabaseAuth.realtime.setAuth(token);
   chatListChannel=supabaseAuth.channel('flowtix-conversation-list-'+user.id).on('postgres_changes',{event:'*',schema:'public',table:'direct_conversations'},()=>void refreshConversations()).subscribe();
@@ -753,7 +762,8 @@ async function notificationsView() {
     try{await api('/api/notifications/read-all',{method:'PATCH'});notifications=loadedNotifications.map(notice=>({...notice,is_read:true}));notificationUnreadCount=0;updateNotificationBadge()}catch(error){void refreshNotificationUnreadCount()}
     list.innerHTML=notifications.length?notifications.map((notice)=>{
       const date=notice.created_at?new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short'}).format(new Date(notice.created_at)):'';
-      return '<article class="workspace-card notification-card '+(notice.is_read?'':'unread')+'"><div class="notification-card-head"><h3>'+esc(notice.title||'Уведомление FlowTix')+'</h3><span class="status-pill">'+(notice.is_read?'Прочитано':'Новое')+'</span></div><p>'+esc(notice.message||'')+'</p>'+(date?'<small>'+esc(date)+'</small>':'')+'</article>';
+      const actionUrl=typeof notice.action_url==='string'&&notice.action_url.startsWith('/')?notice.action_url:null;
+       return '<article class="workspace-card notification-card '+(notice.is_read?'':'unread')+'"><div class="notification-card-head"><h3>'+esc(notice.title||'Уведомление FlowTix')+'</h3><span class="status-pill">'+(notice.is_read?'Прочитано':'Новое')+'</span></div><p>'+esc(notice.message||'')+'</p>'+(actionUrl?'<a class="notification-source-link" href="'+esc(actionUrl)+'">Открыть переписку <span aria-hidden="true">→</span></a>':'')+(date?'<small>'+esc(date)+'</small>':'')+'</article>';
     }).join(''):empty('Новых уведомлений пока нет. Когда организатор сообщит об изменениях, они появятся здесь.');
   }catch(error){const list=$('#notificationList');if(list)list.innerHTML='<p class="connection-state">'+esc(error.message)+'</p>'}
 }
@@ -776,13 +786,21 @@ async function subscribeToNotifications(){
     notificationsConnection='CONNECTING';
     notificationsChannel=supabaseAuth.channel('flowtix-notifications-'+user.id)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},(payload)=>{
-        const notice=payload.new;
-        if(!notice||notice.user_id!==user.id)return;
-        notificationUnreadCount++;updateNotificationBadge();
-        toast((notice.title||'Новое уведомление')+(notice.message?' · '+notice.message:''));
-        if(NOTIFICATIONS_ROUTE)void notificationsView();
-      })
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},()=>{
+         const notice=payload.new;
+         if(!notice||notice.user_id!==user.id)return;
+         let openedConversation=false;
+         if(notice.type==='direct_message'&&notice.action_url){
+           try{const target=new URL(notice.action_url,window.location.origin);openedConversation=MESSAGES_ROUTE&&document.visibilityState==='visible'&&activeChatId===target.searchParams.get('conversation')}catch{}
+         }
+         if(openedConversation){
+           void api('/api/notifications/'+encodeURIComponent(notice.id)+'/read',{method:'PATCH'}).then(()=>refreshNotificationUnreadCount()).catch(()=>{});
+           return;
+         }
+         notificationUnreadCount++;updateNotificationBadge();
+         toast((notice.title||'Новое уведомление')+(notice.message?' · '+notice.message:''));
+         if(NOTIFICATIONS_ROUTE)void notificationsView();
+       })
+       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:'user_id=eq.'+user.id},()=>{
         void refreshNotificationUnreadCount();
         if(NOTIFICATIONS_ROUTE)void notificationsView();
       })
@@ -1572,7 +1590,12 @@ document.addEventListener('input',event=>{
  const target=event.target;
  if(target.matches('#chatComposer textarea')){target.style.height='auto';target.style.height=Math.min(target.scrollHeight,180)+'px';const count=$('#chatCharCount');if(count)count.textContent=String(target.value.length)}
 });
-document.addEventListener('submit',async event=>{
+document.addEventListener('keydown',event=>{
+  const field=event.target;
+  if(!field.matches?.('#chatComposer textarea')||event.key!=='Enter'||event.shiftKey||event.isComposing)return;
+  event.preventDefault();field.form?.requestSubmit();
+ });
+ document.addEventListener('submit',async event=>{
  const form=event.target;
  if(form?.id==='chatComposer'){event.preventDefault();if(!activeChatId)return;const textarea=form.elements.body,body=textarea.value.trim();if(!body||body.length>512)return;const button=form.querySelector('[type=submit]');button.disabled=true;try{const {message}=await api('/api/messages/conversations/'+encodeURIComponent(activeChatId)+'/messages',{method:'POST',body:JSON.stringify({body})});if(!activeChatMessages.some(x=>x.id===message.id)){activeChatMessages.push(message);$('#chatMessages').insertAdjacentHTML('beforeend',messageBubble(message))}textarea.value='';textarea.style.height='auto';$('#chatCharCount').textContent='0';const box=$('#chatMessages');box.scrollTop=box.scrollHeight;await refreshConversations()}catch(error){toast(error.message)}finally{button.disabled=false}return}
 });
