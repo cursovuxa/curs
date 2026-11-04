@@ -60,12 +60,40 @@ let seatPickerState=null;
 let selectedSeatId=null;
 let seatPickerCountdownTimer=null;
 let seatPickerPollTimer=null;
+const currentAccessToken = async () => {
+  if (supabaseAuth) {
+    try {
+      const { data, error } = await supabaseAuth.auth.getSession();
+      if (!error && data.session?.access_token) {
+        sessionStorage.setItem(tokenKey, data.session.access_token);
+        return data.session.access_token;
+      }
+    } catch (error) {
+      console.warn('Could not refresh the cached Supabase session:', error);
+    }
+  }
+  return sessionStorage.getItem(tokenKey);
+};
 const api = async (path, options = {}) => {
-  const token = sessionStorage.getItem(tokenKey);
-  const response = await fetch(API_BASE + path, {
+  let token = await currentAccessToken();
+  const request = (accessToken) => fetch(API_BASE + path, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(options.headers || {}) }
+    headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: 'Bearer ' + accessToken } : {}), ...(options.headers || {}) }
   });
+  let response = await request(token);
+  if (response.status === 401 && supabaseAuth) {
+    try {
+      const { data, error } = await supabaseAuth.auth.refreshSession();
+      if (!error && data.session?.access_token) {
+        token = data.session.access_token;
+        sessionStorage.setItem(tokenKey, token);
+        supabaseAuth.realtime.setAuth(token);
+        response = await request(token);
+      }
+    } catch (error) {
+      console.warn('Supabase session refresh failed:', error);
+    }
+  }
   const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
   if (!response.ok) {
     if (data.code === 'ACCOUNT_BLOCKED') {
@@ -75,6 +103,7 @@ const api = async (path, options = {}) => {
     }
     const error = new Error(data.error || 'Запрос не выполнен (' + response.status + ')');
     error.code = data.code;
+    error.status = response.status;
     throw error;
   }
   return data;
@@ -523,7 +552,7 @@ async function register(id) {
   } catch(error){toast(error.message)}
 }
 async function loadSession(authUser=null) {
-  const token=sessionStorage.getItem(tokenKey);
+  const token=await currentAccessToken();
   if(!token){user=null;renderAccountMenu();return false}
   let account=null;
   let profileError=null;
@@ -533,11 +562,18 @@ async function loadSession(authUser=null) {
   }catch(error){
     profileError=error;
     if(!authUser&&supabaseAuth){
-      try{const {data,error:getUserError}=await supabaseAuth.auth.getUser();if(!getUserError)authUser=data.user}catch{}
+      try{const {data,error:sessionError}=await supabaseAuth.auth.getSession();if(!sessionError&&data.session?.user)authUser=data.session.user}catch{}
     }
     if(!authUser){
       console.error('Account profile could not be loaded:',error);
-      sessionStorage.removeItem(tokenKey);user=null;renderAccountMenu();return false;
+      if(error.status===401){
+        sessionStorage.removeItem(tokenKey);
+        if(supabaseAuth)try{await supabaseAuth.auth.signOut({scope:'local'})}catch{}
+        user=null;renderAccountMenu();return false;
+      }
+      renderAccountMenu();
+      toast('Сессия сохранена, но сервер временно недоступен. Попробуй обновить страницу позже.');
+      return Boolean(sessionStorage.getItem(tokenKey));
     }
     const email=authUser.email||'';
     const base=email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g,'').slice(0,15)||'user';
