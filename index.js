@@ -473,7 +473,7 @@ async function resumeQueueRegistration(eventId){
  if(state.joined&&state.status!=='ready'){renderQueueView(eventId,state);setEventModalOpen(true);void subscribeToEventQueue(eventId);return}
  seatPickerEventId=String(eventId);selectedSeatId=null;
  const seats=await api('/api/events/'+encodeURIComponent(eventId)+'/seats');
- if(!seats.seatSelectionRequired)return completeRegistration(eventId);
+ if(!seats.seatSelectionRequired)return chooseRegistrationPayment(eventId);
  seatPickerState=seats;renderSeatPicker();setEventModalOpen(true);
  clearInterval(seatPickerPollTimer);seatPickerPollTimer=setInterval(()=>void refreshSeatPicker(),15000);
 }
@@ -516,6 +516,46 @@ function previewNewEvent(form) {
  const cover=form.querySelector('#createCoverPreview img')?.src||'';
  let program=[];try{program=collectProgramDraft(form.querySelector('#eventProgramList'))}catch(error){toast(error.message);return}renderEventPreview({...data,status:'draft',base_price:Number(data.base_price||0),total_seats:Number(data.total_seats||0),cover_image:cover,event_program:program,event_categories:categories.find(c=>String(c.id)===String(data.category_id)),venues:option?.value?{name:option.textContent.split(' · ')[0],address:option.dataset.address||''}:null});
 }
+
+async function chooseRegistrationPayment(eventId,seatId=null){
+  const event=events.find(item=>String(item.id)===String(eventId))||{};
+  const amount=Number(event.current_price??event.base_price??0);
+  if(amount<=0)return completeRegistration(eventId,seatId);
+  let provider={available:false,provider:null};
+  try{provider=await api('/api/payments/config')}catch(error){console.warn('Payment options unavailable:',error.message)}
+  const root=$('#eventDialog');
+  root.className='dialog event-dialog payment-choice-dialog';
+  root.innerHTML='<section class="payment-choice-card"><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button><p class="eyebrow dark-eyebrow">ОФОРМЛЕНИЕ БИЛЕТА</p><h2>'+esc(event.title||'Мероприятие')+'</h2><div class="payment-choice-total"><span>К оплате</span><strong>'+money(amount)+'</strong></div><p class="payment-choice-seat">'+(seatId?'Место выбрано · бронь сохранится на время оформления':'Место без выбора')+'</p><div class="payment-choice-actions"><button type="button" class="button button-accent" data-payment-wallet>Оплатить с баланса</button><button type="button" class="button button-dark" data-payment-provider '+(provider.available?'':'disabled')+'>'+ (provider.available?'Оплатить через '+esc(provider.provider||'кассу'):'Касса пока не подключена')+'</button></div>'+(provider.available?'':'<p class="payment-provider-note">Подключение появится после настройки кассы. Пока можно оплатить с баланса.</p>')+'</section>';
+  root.dataset.paymentEvent=String(eventId);root.dataset.paymentSeat=seatId||'';
+  setEventModalOpen(true);
+}
+async function startProviderCheckout(){
+  const root=$('#eventDialog'),eventId=root?.dataset.paymentEvent,seatId=root?.dataset.paymentSeat||null;
+  if(!eventId)return;
+  const button=$('[data-payment-provider]',root);setBusy(button,true,'Готовим кассу…');
+  try{
+    const result=await api('/api/payments/checkout',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({eventId,...(seatId?{seatId}:{})})});
+    if(!result.checkoutUrl)throw new Error('Касса не вернула ссылку для оплаты');
+    window.location.assign(result.checkoutUrl);
+  }catch(error){toast(error.message);setBusy(button,false)}
+}
+async function handlePaymentReturn(){
+  const params=new URLSearchParams(location.search),intentId=params.get('paymentIntent');
+  if(!intentId||!signedIn())return;
+  let finished=false;
+  for(let attempt=0;attempt<45;attempt++){
+    try{
+      const state=await api('/api/payments/intents/'+encodeURIComponent(intentId));
+      if(state.status==='paid'){toast('Оплата подтверждена · билет оформлен');finished=true;await loadEvents();break}
+      if(['failed','expired','cancelled'].includes(state.status)){toast('Платёж не завершён. Бронь места снята.');finished=true;break}
+    }catch(error){console.warn('Payment confirmation refresh failed:',error.message);break}
+    await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+  if(!finished)toast('Платёж проверяется. Билет появится после подтверждения кассой.');
+  params.delete('paymentIntent');const query=params.toString();history.replaceState(null,'',location.pathname+(query?'?'+query:'')+location.hash);
+  if(DASHBOARD_ROUTE)await visitorView();
+}
+
 async function completeRegistration(id,seatId=null) {
   try {
     const result=await api('/api/registrations',{method:'POST',body:JSON.stringify({eventId:id,...(seatId?{seatId}:{})})});
@@ -587,7 +627,7 @@ async function register(id) {
     if(queue.joined){if(queue.status==='ready')return resumeQueueRegistration(id);renderQueueView(id,queue);setEventModalOpen(true);void subscribeToEventQueue(id);return}
     const state=await api('/api/events/'+encodeURIComponent(id)+'/seats');
     if(Number(state.event?.available_seats||0)<=0)return joinEventQueue(id);
-    if(!state.seatSelectionRequired)return completeRegistration(id);
+    if(!state.seatSelectionRequired)return chooseRegistrationPayment(id);
     seatPickerState=state;
     $('#eventDialog').scrollTop=0;
     renderSeatPicker();setEventModalOpen(true);
@@ -1553,7 +1593,9 @@ document.addEventListener('click',async(e)=>{
   const organizerPreview=e.target.closest('[data-organizer-preview]');if(organizerPreview)return openOrganizerPreview(organizerPreview.dataset.organizerPreview);
   if(e.target.closest('[data-preview-create-event]'))return previewNewEvent($('#createEventForm'));
   const seatPick=e.target.closest('[data-seat-id]');if(seatPick){if(!seatPick.disabled)await reserveSelectedSeat(seatPick.dataset.seatId);return}
-  const confirmSeat=e.target.closest('[data-confirm-seat]');if(confirmSeat&&selectedSeatId)return completeRegistration(seatPickerEventId,selectedSeatId);
+  const confirmSeat=e.target.closest('[data-confirm-seat]');if(confirmSeat&&selectedSeatId)return chooseRegistrationPayment(seatPickerEventId,selectedSeatId);
+   if(e.target.closest('[data-payment-wallet]'))return completeRegistration($('#eventDialog').dataset.paymentEvent,$('#eventDialog').dataset.paymentSeat||null);
+   if(e.target.closest('[data-payment-provider]'))return startProviderCheckout();
   const reg=e.target.closest('[data-register]');if(reg)return register(reg.dataset.register);
   const close=e.target.closest('[data-close]');if(close){if(close.dataset.close==='eventModal')setEventModalOpen(false);else $('#'+close.dataset.close).hidden=true;return}
   const report=e.target.closest('[data-report]');if(report){$('#reportForm').innerHTML='<form id="complaintForm" class="form-grid"><input type="hidden" name="targetId" value="'+esc(report.dataset.report)+'"><label>Причина<input name="reason" required></label><label class="wide">Подробности<textarea name="details" required></textarea></label><button class="button button-dark">Отправить жалобу</button></form>';return}
@@ -1874,6 +1916,7 @@ async function init(){
     $('#authError').textContent='Не удалось загрузить Google-вход: '+(error.message||'попробуй снова');
   }
   const [hasSession]=await Promise.all([loadSession(),loadCategories()]);
+  if(hasSession&&new URLSearchParams(location.search).has('paymentIntent'))void handlePaymentReturn();
   if(!ACCOUNT_ROUTE){await loadEvents();const eventId=new URLSearchParams(window.location.search).get('eventId');if(eventId){history.replaceState(null,'',window.location.pathname+window.location.hash);openEvent(eventId)}}
   if(ACCOUNT_ROUTE&&hasSession&&user?.is_blocked){sessionStorage.setItem('flowtix_blocked_route_notice','1');window.location.replace('/');return}
   if(!ACCOUNT_ROUTE&&user?.is_blocked&&sessionStorage.getItem('flowtix_blocked_route_notice')==='1'){sessionStorage.removeItem('flowtix_blocked_route_notice');showBlockedAccountModal()}
