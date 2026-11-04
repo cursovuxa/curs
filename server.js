@@ -621,10 +621,23 @@ app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
 }));
 app.get('/api/tickets/mine', requireUser, asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('tickets')
-    .select('*,events(id,title,start_date,start_time,venues(name,city))')
+    .select('*,events(id,title,start_date,start_time,end_time,location_address,event_categories(name),venues(name,city,address))')
     .eq('user_id', req.user.id).order('created_at', { ascending: false });
-  if (error) { console.error('[admin/tickets] query failed:', error.message); return res.status(500).json({ error: 'Не удалось загрузить билеты' }); }
-  res.json({ tickets: data });
+  if (error) { console.error('[tickets/mine] query failed:', error.message); return res.status(500).json({ error: 'Не удалось загрузить билеты' }); }
+  const nowParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Qyzylorda', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date());
+  const nowFields = Object.fromEntries(nowParts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  const localNow = nowFields.year+'-'+nowFields.month+'-'+nowFields.day+'T'+nowFields.hour+':'+nowFields.minute+':'+nowFields.second;
+  const tickets = (data || []).map(ticket => {
+    const event = ticket.events;
+    const eventEnd = event?.start_date
+      ? String(event.start_date).slice(0,10)+'T'+String(event.end_time || event.start_time || '23:59:59').slice(0,8)
+      : '';
+    return { ...ticket, is_expired: Boolean(eventEnd && eventEnd < localNow) };
+  });
+  res.json({ tickets });
 }));
 app.get('/api/reviews/mine', requireUser, asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('reviews')
@@ -698,23 +711,35 @@ app.get('/api/staff/events/:eventId/participants', requireUser, allowRoles('staf
   res.json({ participants: data });
 }));
 app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('staff', 'admin'), asyncRoute(async (req, res) => {
-  let q = supabase.from('tickets').select('id,event_id,status,user_id').eq('ticket_number', req.params.ticketNumber).maybeSingle();
-  const { data: ticket, error } = await q;
-  if (error || !ticket) return res.status(404).json({ error: 'Билет не найден' });
-  if (ticket.status !== 'valid') return res.status(409).json({ error: ticket.status === 'used' ? 'Билет уже использован' : 'Билет недействителен' });
-  if (req.user.role === 'staff') {
-    const { data: emp } = await supabase.from('employees').select('id').eq('user_id', req.user.id).maybeSingle();
-    if (!emp) return res.status(403).json({ error: 'Сотрудник не назначен на это мероприятие' });
-    const { data: assignment } = await supabase.from('event_staff_assignments').select('id')
-      .eq('event_id', ticket.event_id).eq('employee_id', emp.id).eq('status', 'assigned').maybeSingle();
-    if (!assignment) return res.status(403).json({ error: 'У вас нет доступа к мероприятию' });
+  const ticketNumber = String(req.params.ticketNumber || '').trim();
+  const eventId = String(req.body.eventId || '');
+  if (!ticketNumber || ticketNumber.length > 40 || !/^[0-9a-f-]{36}$/i.test(eventId)) {
+    return res.status(400).json({ error: 'Выберите мероприятие и укажите корректный билет' });
   }
-  const { data: checked, error: checkError } = await supabase.from('tickets')
-    .update({ status: 'used', used_at: new Date().toISOString(), used_by_staff_id: req.user.id })
-    .eq('id', ticket.id).eq('status', 'valid').select('id,ticket_number,status,used_at').maybeSingle();
-  if (checkError) return res.status(500).json({ error: 'Не удалось отметить вход' });
-  if (!checked) return res.status(409).json({ error: 'Билет уже проверен' });
-  res.json({ ticket: checked });
+  const { data, error } = await supabase.rpc('staff_check_in_ticket', {
+    p_ticket_number: ticketNumber,
+    p_event_id: eventId,
+    p_staff_id: req.user.id,
+    p_bypass_assignment: req.user.role === 'admin'
+  });
+  if (error) {
+    const message = error.message || '';
+    const status = message.includes('ticket_not_found') ? 404
+      : message.includes('staff_assignment_required') ? 403 : 409;
+    const errorText = message.includes('wrong_event') ? 'Билет предназначен для другого мероприятия.'
+      : message.includes('ticket_already_used') ? 'Билет уже был использован.'
+      : message.includes('ticket_expired') ? 'Билет недействителен: время мероприятия истекло.'
+      : message.includes('ticket_invalid') ? 'Билет недействителен.'
+      : message.includes('staff_assignment_required') ? 'Сотрудник не назначен на это мероприятие.'
+      : message.includes('ticket_not_found') ? 'Билет не найден.'
+      : 'Не удалось проверить билет.';
+    return res.status(status).json({ error: errorText });
+  }
+  await supabase.from('audit_logs').insert({
+    actor_id: req.user.id, actor_name: req.user.full_name, action: 'STAFF_TICKET_CHECKED_IN',
+    entity_type: 'ticket', entity_id: data.id, details: { ticket_number: data.ticket_number, event_id: data.event_id }
+  });
+  res.json({ ticket: data });
 }));
 app.get('/api/moderation/complaints', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('complaints').select('*,users!complaints_author_id_fkey(full_name,email)')
