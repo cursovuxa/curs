@@ -35,6 +35,7 @@ begin
   end if;
   return new;
 end $$;
+drop trigger if exists events_dynamic_price on public.events;
 create trigger events_dynamic_price
 before insert or update of base_price,current_price,total_seats,available_seats,dynamic_pricing_enabled
 on public.events for each row execute function public.set_event_dynamic_price();
