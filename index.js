@@ -56,7 +56,15 @@ const api = async (path, options = {}) => {
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(options.headers || {}) }
   });
   const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Запрос не выполнен (' + response.status + ')');
+  if (!response.ok) {
+    if (data.code === 'ACCOUNT_BLOCKED') {
+      if (user) { user.is_blocked = true; renderAccountMenu(); }
+      showBlockedAccountModal();
+    }
+    const error = new Error(data.error || 'Запрос не выполнен (' + response.status + ')');
+    error.code = data.code;
+    throw error;
+  }
   return data;
 };
 const esc = (value = '') => String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -121,6 +129,39 @@ function toast(message) { const el = $('#toast'); el.textContent = message; el.c
 function empty(message = 'Когда появятся данные, они отобразятся в этом разделе.') { return '<div class="empty-state"><span class="empty-star">✳</span><h3>Пока здесь тихо</h3><p>'+esc(message)+'</p></div>'; }
 function setBusy(button, busy, text) { if (!button) return; button.disabled = busy; if (busy) { button.dataset.label = button.textContent; button.textContent = text || 'Сохраняем…'; } else if (button.dataset.label) button.textContent = button.dataset.label; }
 function signedIn() { return Boolean(user && sessionStorage.getItem(tokenKey)); }
+function ensureBlockedAccountModal(){
+  if($('#blockedAccountOverlay'))return;
+  document.body.insertAdjacentHTML('beforeend','<div class="overlay blocked-account-overlay" id="blockedAccountOverlay" hidden><section class="dialog blocked-account-dialog" role="dialog" aria-modal="true" aria-labelledby="blockedAccountTitle" aria-describedby="blockedAccountText"><button class="dialog-close" type="button" data-blocked-dismiss aria-label="Закрыть">×</button><div class="blocked-account-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 20 6v5.7c0 5-3.4 8.1-8 9.8-4.6-1.7-8-4.8-8-9.8V6l8-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 8v5m0 3h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><p class="eyebrow">FLOWTIX · ДОСТУП</p><h2 id="blockedAccountTitle">Аккаунт заблокирован</h2><p id="blockedAccountText" class="blocked-account-copy">Для этого аккаунта временно закрыты действия и личные разделы. Главная страница и просмотр мероприятий остаются доступны.</p><div class="blocked-account-note"><strong>Можно продолжить просмотр</strong><span>Поиск, категории и подробности мероприятий работают в режиме просмотра.</span></div><div class="blocked-account-actions"><button class="button button-light" type="button" data-blocked-dismiss>Продолжить просмотр</button><button class="button button-dark" type="button" data-blocked-logout>Выйти и войти в другой аккаунт</button></div></section></div>');
+}
+function showBlockedAccountModal(){
+  ensureBlockedAccountModal();
+  const modal=$('#blockedAccountOverlay');
+  modal.hidden=false;
+  document.body.classList.add('blocked-modal-open');
+  modal.querySelector('[data-blocked-dismiss]')?.focus({preventScroll:true});
+}
+function hideBlockedAccountModal(){
+  const modal=$('#blockedAccountOverlay');
+  if(modal)modal.hidden=true;
+  document.body.classList.remove('blocked-modal-open');
+}
+function isAllowedBlockedRead(target){
+  return Boolean(target.closest('#searchForm,#searchInput,#cityInput,#categoryBar,[data-category],[data-details],[data-period],[data-calendar-date],[data-calendar-shift],[data-map-event],[data-close="eventModal"],#eventModal,a[href="#"],a[href="#events"],a[href^="https://"],a[href^="http://"],a[href^="mailto:"],a[href^="tel:"]'));
+}
+document.addEventListener('click',(event)=>{
+  if(!signedIn()||user?.is_blocked!==true)return;
+  const target=event.target instanceof Element?event.target:null;
+  if(!target||target.closest('#blockedAccountOverlay')||isAllowedBlockedRead(target))return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  showBlockedAccountModal();
+},true);
+document.addEventListener('submit',(event)=>{
+  if(!signedIn()||user?.is_blocked!==true||event.target?.id==='searchForm')return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  showBlockedAccountModal();
+},true);
 function putAvatar(node,url,name){
   if(!node)return;
   node.replaceChildren();
@@ -133,14 +174,17 @@ function putAvatar(node,url,name){
 }
 function renderAccountMenu(){
   const active=signedIn();
+  const blocked=active&&user.is_blocked===true;
   $('#authOpen').hidden=active;
   $('#profileMenuWrap').hidden=!active;
-  $('#workspaceNav').hidden=!active;
+  $('#workspaceNav').hidden=!active||blocked;
   const adminLink=$('#profileAdminLink');
-  if(adminLink)adminLink.hidden=!active||user.is_root_admin!==true;
+  if(adminLink)adminLink.hidden=!active||blocked||user.is_root_admin!==true;
+  const trigger=$('#profileMenuToggle');
+  if(trigger){trigger.title=blocked?'Аккаунт заблокирован — нажмите, чтобы узнать подробности':'';trigger.setAttribute('aria-label',blocked?'Аккаунт заблокирован':'Открыть меню аккаунта');trigger.classList.toggle('is-account-blocked',blocked)}
   if(!active)return;
-  const displayName=user.full_name||user.email||'Участник FlowTix';
-  const handle=user.username||String(user.email||'user').split('@')[0];
+  const displayName=blocked?'Доступ ограничен':(user.full_name||user.email||'Участник FlowTix');
+  const handle=blocked?'аккаунт заблокирован':(user.username||String(user.email||'user').split('@')[0]);
   ['#profileName','#profileMenuName'].forEach((selector)=>{const node=$(selector);if(node)node.textContent=displayName});
   ['#profileUsername','#profileMenuUsername'].forEach((selector)=>{const node=$(selector);if(node)node.textContent='@'+handle});
   putAvatar($('#profileAvatar'),user.avatar_url,displayName);
@@ -419,6 +463,11 @@ async function loadSession(authUser=null) {
   user={...account,favorites:[]};
   applyTheme(user.preferences?.theme||localStorage.getItem(themeKey)||'rose',{save:!user.preferences?.theme&&!profileError});
   renderAccountMenu();
+  if(user.is_blocked){
+    $('#profileDropdown').hidden=true;
+    renderEvents();
+    return true;
+  }
   void subscribeToNotifications();
   try{
     const fav=await api('/api/favorites');
@@ -769,6 +818,9 @@ async function adminView() {
   }catch(error){root.innerHTML='<div class="workspace-card"><p class="connection-state">'+esc(error.message)+'</p></div>'}
 }
 document.addEventListener('click',async(e)=>{
+  if(e.target.closest('[data-blocked-dismiss]')){hideBlockedAccountModal();return}
+  if(e.target.closest('[data-blocked-logout]')){hideBlockedAccountModal();await logoutAccount();authOpen('login');return}
+  if(e.target.id==='blockedAccountOverlay'){hideBlockedAccountModal();return}
   if(e.target.id==='eventModal'){setEventModalOpen(false);return}
   const period=e.target.closest('[data-period]');
   if(period){const today=new Date();selectedCalendarDate=localDateKey(period.dataset.period==='tomorrow'?shiftDate(today,1):today);calendarMonthDate=new Date(dateFromKey(selectedCalendarDate).getFullYear(),dateFromKey(selectedCalendarDate).getMonth(),1);renderCalendar(currentFilteredEvents);$('#calendarEvents').scrollIntoView({behavior:'smooth',block:'center'});return}
@@ -994,6 +1046,8 @@ async function init(){
   }
   const [hasSession]=await Promise.all([loadSession(),loadCategories()]);
   if(!ACCOUNT_ROUTE)await loadEvents();
+  if(ACCOUNT_ROUTE&&hasSession&&user?.is_blocked){sessionStorage.setItem('flowtix_blocked_route_notice','1');window.location.replace('/');return}
+  if(!ACCOUNT_ROUTE&&user?.is_blocked&&sessionStorage.getItem('flowtix_blocked_route_notice')==='1'){sessionStorage.removeItem('flowtix_blocked_route_notice');showBlockedAccountModal()}
   if(ACCOUNT_ROUTE){if(hasSession)renderAccountRoute();else authOpen('login')}
 }
 init();

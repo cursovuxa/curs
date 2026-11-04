@@ -627,3 +627,28 @@ body[data-theme="halloween"] .brand-text-fallback{color:var(--ink,#fff)}
 .admin-event-end{padding:12px;text-align:center;color:var(--muted);font-size:11px}
 .is-hidden{display:none!important}
 @media(max-width:700px){.admin-event-item>summary{grid-template-columns:minmax(0,1fr) 18px;gap:8px}.admin-event-item>summary time,.admin-event-item>summary .status-pill{grid-column:1}.admin-event-item>summary .admin-event-chevron{grid-column:2;grid-row:1}.admin-event-details{grid-template-columns:minmax(0,1fr)}}
+
+/* Blocked-account read-only notice: colors inherit the currently selected FlowTix theme. */
+.profile-trigger.is-account-blocked{border-color:var(--coral);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 15%,transparent)}
+.blocked-account-overlay{z-index:80}
+.blocked-account-dialog{width:min(100%,510px);padding:34px;background:var(--surface,#fff);color:var(--ink);border:1px solid var(--line);border-radius:26px}
+.blocked-account-dialog h2{margin:8px 42px 10px 0;color:var(--ink);letter-spacing:-.035em;line-height:1.12}
+.blocked-account-dialog .eyebrow{margin:4px 0;color:var(--violet);font-weight:800;letter-spacing:.14em;font-size:10px}
+.blocked-account-icon{display:grid;place-items:center;width:56px;height:56px;margin-bottom:18px;border-radius:18px;background:color-mix(in srgb,var(--coral) 18%,var(--surface,#fff));color:var(--violet)}
+.blocked-account-icon svg{width:29px;height:29px}
+.blocked-account-copy{color:var(--muted);font-size:14px;line-height:1.65}
+.blocked-account-note{display:grid;gap:4px;margin:20px 0;padding:15px 16px;border:1px solid var(--line);border-radius:15px;background:color-mix(in srgb,var(--violet) 7%,var(--surface,#fff));font-size:12px;line-height:1.5}
+.blocked-account-note span{color:var(--muted)}
+.blocked-account-actions{display:grid;grid-template-columns:1fr;gap:10px;margin-top:22px}
+.blocked-account-actions .button{min-height:48px;white-space:normal}
+.blocked-account-actions .button-light{border:1px solid var(--line);background:var(--surface,#fff);color:var(--ink)}
+.blocked-account-actions .button-dark{background:var(--ink);color:var(--paper)}
+body.blocked-modal-open{overflow:hidden}
+@media(max-width:560px){
+  .blocked-account-overlay{padding:12px;align-items:end}
+  .blocked-account-dialog{width:100%;max-height:min(88dvh,720px);overflow:auto;padding:27px 21px calc(21px + env(safe-area-inset-bottom));border-radius:24px 24px 18px 18px}
+  .blocked-account-dialog h2{font-size:26px}
+  .blocked-account-copy{font-size:13px}
+  .blocked-account-actions{gap:8px}
+  .blocked-account-actions .button{width:100%;padding:13px 12px}
+}
