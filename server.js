@@ -540,6 +540,7 @@ app.patch('/api/admin/users/:id/block', requireUser, requireRootAdmin, asyncRout
     .eq('id', target.id).select('id,email,is_blocked').single();
   if (error) return res.status(400).json({ error: 'Защищённый статус изменён, но профиль не синхронизирован' });
   await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: blocked ? 'USER_BLOCKED' : 'USER_UNBLOCKED', entity_type: 'user', entity_id: target.id, details: { email: target.email } });
+  await createNotification(target.id,blocked?'Аккаунт заблокирован':'Аккаунт разблокирован',blocked?'Администратор ограничил доступ к аккаунту.':'Доступ к аккаунту восстановлен.','account_access');
   res.json({ user: data });
 }));
 app.patch('/api/admin/users/:id/role', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
@@ -566,6 +567,8 @@ app.patch('/api/admin/users/:id/role', requireUser, requireRootAdmin, asyncRoute
     if (!employee) await supabase.from('employees').insert({ user_id: data.id, position: 'Сотрудник мероприятия' });
   }
   await supabase.from('audit_logs').insert({ actor_id: req.user.id, actor_name: req.user.full_name, action: 'USER_ROLE_CHANGED', entity_type: 'user', entity_id: target.id, details: { role } });
+  const roleNames={visitor:'Посетитель',organizer:'Организатор',staff:'Сотрудник мероприятия',moderator:'Модератор'};
+  await createNotification(target.id,'Роль аккаунта изменена','Теперь ваша роль: '+roleNames[role]+'.','account_role');
   res.json({ user: data });
 }));
 
