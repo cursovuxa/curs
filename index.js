@@ -457,7 +457,7 @@ async function subscribeToEventQueue(eventId){
  await stopEventQueueRealtime();
  if(!supabaseAuth)return;
  eventQueueChannel=supabaseAuth.channel('flowtix-event-queue:'+eventId)
-  .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queue_tokens',filter:'event_id=eq.'+eventId},()=>void refreshEventQueue())
+  .on('postgres_changes',{event:'UPDATE',schema:'public',table:'event_queue_state',filter:'event_id=eq.'+eventId},()=>void refreshEventQueue())
   .subscribe();
  queueRefreshTimer=setInterval(()=>void refreshEventQueue(),20000);
 }
@@ -519,7 +519,9 @@ function previewNewEvent(form) {
 
 async function chooseRegistrationPayment(eventId,seatId=null){
   const event=events.find(item=>String(item.id)===String(eventId))||{};
-  const amount=Number(event.current_price??event.base_price??0);
+  const baseAmount=Number(event.current_price??event.base_price??0);
+  const pickedSeat=(seatPickerState?.seats||[]).find(seat=>String(seat.id)===String(seatId));
+  const amount=Math.round((baseAmount*Number(pickedSeat?.price_multiplier||1)+Number.EPSILON)*100)/100;
   if(amount<=0)return completeRegistration(eventId,seatId);
   let provider={available:false,provider:null};
   try{provider=await api('/api/payments/config')}catch(error){console.warn('Payment options unavailable:',error.message)}
