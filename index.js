@@ -725,6 +725,7 @@ async function adminView() {
         if(button){button.hidden=!adminEventsHasMore;button.disabled=false;button.textContent='Загрузить ещё 10'}
         const end=panel.querySelector('#adminEventEnd');
         if(end){end.hidden=adminEventsHasMore;end.textContent='Показаны все мероприятия.'}
+        observeAdminEventFeed();
       }catch(error){toast(error.message);if(button){button.disabled=false;button.textContent='Повторить загрузку'}}
       finally{adminEventsLoading=false}
     };
