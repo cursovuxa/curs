@@ -46,7 +46,7 @@ let notificationsChannelUserId = null;
 let notificationsConnection = 'CONNECTING';
 let notificationUnreadCount=0,notificationCountUserId=null,notificationCountLoading=false;
 let notificationFeedOffset=0,notificationFeedHasMore=false,notificationFeedLoading=false,notificationFeedGeneration=0;
-let events = [];
+let events = [],catalogEvents=[];
 let organizerEvents = [];
 let categories = [];
 let activeCategory = '';
@@ -54,6 +54,8 @@ let selectedCalendarDate = localDateKey(new Date());
 let calendarMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let currentFilteredEvents = [];
 let selectedMapEventId = null;
+let mapUserCoords=null,eventLeafletMap=null,mapGeocodeInFlight=false;const mapGeocodeRequested=new Set();
+let calendarView='month',calendarMineOnly=false;
 let searchTimer;
 let seatPickerEventId=null;
 let seatPickerState=null;
@@ -234,7 +236,7 @@ function hideBlockedAccountModal(){
   document.body.classList.remove('blocked-modal-open');
 }
 function isAllowedBlockedRead(target){
-  return Boolean(target.closest('#searchForm,#searchInput,#cityInput,#categoryBar,[data-category],[data-details],[data-period],[data-calendar-date],[data-calendar-shift],[data-map-event],[data-close="eventModal"],#eventModal,a[href="#"],a[href="#events"],a[href^="https://"],a[href^="http://"],a[href^="mailto:"],a[href^="tel:"]'));
+  return Boolean(target.closest('#searchForm,#searchInput,#cityInput,#categoryBar,[data-category],[data-map-locate],[data-details],[data-period],[data-calendar-date],[data-calendar-shift],[data-map-event],[data-close="eventModal"],#eventModal,a[href="#"],a[href="#events"],a[href^="https://"],a[href^="http://"],a[href^="mailto:"],a[href^="tel:"]'));
 }
 document.addEventListener('click',(event)=>{
   if(!signedIn()||user?.is_blocked!==true)return;
@@ -338,44 +340,24 @@ function eventDateKey(event) { return String(event.start_date||'').slice(0,10); 
 function eventLocationQuery(event) {
   return [event.location_address,event.venues?.address,event.venues?.name,event.venues?.city].filter(Boolean).join(', ');
 }
-function renderCalendar(source) {
-  const grid=$('#calendarGrid');if(!grid)return;
-  const year=calendarMonthDate.getFullYear(),month=calendarMonthDate.getMonth();
-  $('#calendarMonth').textContent=new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric'}).format(calendarMonthDate);
-  const firstOffset=(new Date(year,month,1).getDay()+6)%7,daysInMonth=new Date(year,month+1,0).getDate();
-  const countByDate=new Map();
-  source.forEach(event=>{const key=eventDateKey(event);if(key)countByDate.set(key,(countByDate.get(key)||0)+1)});
-  const cells=[];
-  for(let index=0;index<42;index++){
-    const day=index-firstOffset+1;
-    if(day<1||day>daysInMonth){cells.push('<span class="calendar-day calendar-day-empty" aria-hidden="true"></span>');continue}
-    const key=localDateKey(new Date(year,month,day)),count=countByDate.get(key)||0;
-    cells.push('<button type="button" class="calendar-day '+(selectedCalendarDate===key?'selected ':'')+(count?'has-events':'')+'" data-calendar-date="'+key+'" aria-label="'+esc(new Intl.DateTimeFormat('ru-RU',{dateStyle:'full'}).format(dateFromKey(key))+(count?', событий: '+count:''))+'"><span>'+day+'</span>'+(count?'<small>'+count+'</small>':'')+'</button>');
-  }
-  grid.innerHTML=cells.join('');
-  const selected=dateFromKey(selectedCalendarDate);
-  $('#calendarEvents').innerHTML='<div class="calendar-events-heading"><b>'+esc(new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'}).format(selected))+'</b><span class="event-count">'+(source.filter(e=>eventDateKey(e)===selectedCalendarDate).length||0)+' событий</span></div>'+
-    (source.some(e=>eventDateKey(e)===selectedCalendarDate)?'<div class="events-grid">'+source.filter(e=>eventDateKey(e)===selectedCalendarDate).map(eventCard).join('')+'</div>':empty('На эту дату опубликованных мероприятий нет.'));
-}
-function renderMap(source,preferredId=null) {
-  const root=$('#mapContent');if(!root)return;
-  const locations=source.filter(event=>eventLocationQuery(event));
-  const selected=locations.find(event=>String(event.id)===String(preferredId||selectedMapEventId))||locations[0];
-  selectedMapEventId=selected?.id||null;
-  if(!selected){root.innerHTML=empty('Для отображения карты у мероприятий должен быть указан адрес.');return}
-  const query=eventLocationQuery(selected),encoded=encodeURIComponent(query);
-  const cards=locations.map(event=>'<button type="button" class="map-event '+(String(event.id)===String(selected.id)?'active':'')+'" data-map-event="'+esc(event.id)+'"><b>'+esc(event.title)+'</b><span>'+esc([event.venues?.city,event.location_address||event.venues?.address].filter(Boolean).join(' · '))+'</span></button>').join('');
-  root.innerHTML='<div class="map-frame"><iframe title="Карта: '+esc(selected.title)+'" src="https://maps.google.com/maps?q='+encoded+'&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe><a class="map-open-link" href="https://www.google.com/maps/search/?api=1&query='+encoded+'" target="_blank" rel="noopener noreferrer">Открыть в Картах ↗</a></div><div class="map-event-list">'+cards+'</div>';
-}
+function calendarRange(){const selected=dateFromKey(selectedCalendarDate),year=selected.getFullYear(),month=selected.getMonth();if(calendarView==='day')return {from:selected,to:selected,label:new Intl.DateTimeFormat('ru-RU',{dateStyle:'full'}).format(selected)};if(calendarView==='week'){const from=shiftDate(selected,-((selected.getDay()+6)%7)),to=shiftDate(from,6);return {from,to,label:new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short'}).format(from)+' — '+new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric'}).format(to)}}return {from:new Date(year,month,1),to:new Date(year,month+1,0),label:new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric'}).format(selected)}}
+function scheduleRows(source,range){const merged=calendarMineOnly?[...source,...organizerEvents]:source,unique=[...new Map(merged.map(e=>[String(e.id),e])).values()],rows=unique.filter(e=>{const d=dateFromKey(eventDateKey(e));return d>=range.from&&d<=range.to}).sort((a,b)=>(eventDateKey(a)+String(a.start_time||'')).localeCompare(eventDateKey(b)+String(b.start_time||'')));return calendarMineOnly&&user?.id?rows.filter(e=>String(e.organizer_id)===String(user.id)):rows}
+function scheduleItem(e,items,includeDate){const venue=e.venues?.name||e.venues?.address||e.location_address||'Площадка не указана',start=String(e.start_time||'').slice(0,5),end=String(e.end_time||'').slice(0,5),busy=Boolean(e.venue_id&&start&&end&&items.some(x=>x.id!==e.id&&String(x.venue_id)===String(e.venue_id)&&eventDateKey(x)===eventDateKey(e)&&String(x.start_time||'').slice(0,5)<end&&String(x.end_time||'').slice(0,5)>start)),free=Math.max(0,Number(e.available_seats??0)),total=Math.max(0,Number(e.total_seats??0)),organizer=e.users?.full_name||e.users?.username||'Организатор FlowTix';return '<article class="schedule-event"><div class="schedule-event-time">'+(includeDate?'<small>'+esc(new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short'}).format(dateFromKey(eventDateKey(e))))+'</small>':'')+'<b>'+esc(start||'Время не указано')+(end?'–'+esc(end):'')+'</b></div><div class="schedule-event-main"><button type="button" data-details="'+esc(e.id)+'">'+esc(e.title)+'</button><span>'+esc(venue)+' · '+esc(e.venues?.city||'')+'</span><small>Организатор: '+esc(organizer)+' · Свободно '+free+' из '+total+' мест · Занято '+Math.max(0,total-free)+'</small>'+(busy?'<em class="schedule-conflict">Площадка занята параллельным событием</em>':'')+'</div></article>'}
+function renderCalendar(source){const grid=$('#calendarGrid');if(!grid)return;const range=calendarRange(),selected=dateFromKey(selectedCalendarDate),items=scheduleRows(source,range);$('#calendarMonth').textContent=range.label;grid.className='calendar-grid'+(calendarView==='day'?' calendar-grid-day':'');const weekdays=document.querySelector('.calendar-weekdays');if(weekdays)weekdays.hidden=calendarView!=='month';$('[data-calendar-view]').forEach(button=>button.classList.toggle('active',button.dataset.calendarView===calendarView));const mineToggle=$('#calendarMineToggle');if(mineToggle){mineToggle.hidden=!user||!['organizer','admin'].includes(user.role);mineToggle.classList.toggle('active',calendarMineOnly)}let dates=[];if(calendarView==='month'){const offset=(new Date(selected.getFullYear(),selected.getMonth(),1).getDay()+6)%7,days=new Date(selected.getFullYear(),selected.getMonth()+1,0).getDate();for(let i=0;i<42;i++){const d=i-offset+1;if(d>0&&d<=days)dates.push(new Date(selected.getFullYear(),selected.getMonth(),d))}}else if(calendarView==='week'){const monday=shiftDate(selected,-((selected.getDay()+6)%7));for(let i=0;i<7;i++)dates.push(shiftDate(monday,i))}else dates=[selected];const calendarSource=calendarMineOnly?[...source,...organizerEvents]:source,counts=new Map();calendarSource.forEach(e=>{const k=eventDateKey(e);counts.set(k,(counts.get(k)||0)+1)});grid.innerHTML=dates.map(date=>{const key=localDateKey(date),count=counts.get(key)||0,label=calendarView==='month'?String(date.getDate()):new Intl.DateTimeFormat('ru-RU',{weekday:'short',day:'numeric'}).format(date);return '<button type="button" class="calendar-day '+(key===selectedCalendarDate?'selected ':'')+(count?'has-events':'')+'" data-calendar-date="'+key+'" aria-label="'+esc(new Intl.DateTimeFormat('ru-RU',{dateStyle:'full'}).format(date)+(count?', событий: '+count:''))+'"><span>'+esc(label)+'</span>'+(count?'<small>'+count+'</small>':'')+'</button>'}).join('');const heading=calendarView==='month'?'События за месяц':calendarView==='week'?'Расписание на неделю':'Расписание на день';$('#calendarEvents').innerHTML='<div class="calendar-events-heading"><b>'+heading+'</b><span class="event-count">'+items.length+' '+plural(items.length,['событие','события','событий'])+'</span></div>'+(items.length?'<div class="calendar-schedule">'+items.map(e=>scheduleItem(e,items,calendarView==='month')).join('')+'</div>':empty('На выбранный период опубликованных мероприятий нет.'))}
+function mapDistance(e){if(!mapUserCoords)return null;const lat=Number(e.venues?.latitude),lon=Number(e.venues?.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lon))return null;const rad=x=>x*Math.PI/180,dLat=rad(lat-mapUserCoords.latitude),dLon=rad(lon-mapUserCoords.longitude),a=Math.sin(dLat/2)**2+Math.cos(rad(mapUserCoords.latitude))*Math.cos(rad(lat))*Math.sin(dLon/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
+function mapRoute(e){const dest=e.venues?.latitude!=null&&e.venues?.longitude!=null?e.venues.latitude+','+e.venues.longitude:eventLocationQuery(e);return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(dest)}
+async function requestMapCoordinates(ids){const pending=ids.filter(id=>id&&!mapGeocodeRequested.has(String(id))).slice(0,5);if(!pending.length||mapGeocodeInFlight)return;pending.forEach(id=>mapGeocodeRequested.add(String(id)));mapGeocodeInFlight=true;try{const result=await api('/api/events/geocode',{method:'POST',body:JSON.stringify({venueIds:pending})});const coords=new Map((result.coordinates||[]).map(v=>[String(v.id),v]));let found=0;for(const list of [events,catalogEvents,currentFilteredEvents])for(const event of list){const venue=event.venues&&coords.get(String(event.venue_id));if(venue){event.venues.latitude=venue.latitude;event.venues.longitude=venue.longitude;found++}}if(found)renderMap(currentFilteredEvents,selectedMapEventId);else if(result.message)toast(result.message)}catch(error){console.info('Map geocoding unavailable:',error.message)}finally{mapGeocodeInFlight=false}}
+function renderMap(source,preferredId=null){const root=$('#mapContent');if(!root)return;if(eventLeafletMap){eventLeafletMap.remove();eventLeafletMap=null}const list=source.filter(e=>eventLocationQuery(e));if(preferredId)selectedMapEventId=preferredId;const selected=list.find(e=>String(e.id)===String(selectedMapEventId))||list[0];selectedMapEventId=selected?.id||null;if(!list.length){root.innerHTML=empty('У мероприятий пока нет указанного адреса.');return}const mapped=list.filter(e=>e.venues?.latitude!=null&&e.venues?.longitude!=null&&Number.isFinite(Number(e.venues.latitude))&&Number.isFinite(Number(e.venues.longitude))),missing=list.filter(e=>e.venue_id&&(!e.venues?.latitude||!e.venues?.longitude)),cards=list.map(e=>{const d=mapDistance(e);return '<article class="map-event-card '+(String(e.id)===String(selected?.id)?'active':'')+'"><button type="button" class="map-event" data-map-event="'+esc(e.id)+'"><b>'+esc(e.title)+'</b><span>'+esc([new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short'}).format(dateFromKey(eventDateKey(e))),String(e.start_time||'').slice(0,5),e.venues?.city,e.venues?.name||e.location_address||e.venues?.address].filter(Boolean).join(' · '))+'</span><small>Стоимость: '+esc(money(e.current_price??e.base_price??0))+' · Свободно: '+Math.max(0,Number(e.available_seats||0))+'</small>'+(d!==null?'<small>Расстояние: '+d.toFixed(1)+' км</small>':'')+'</button><a class="map-route-link" target="_blank" rel="noopener noreferrer" href="'+esc(mapRoute(e))+'">Построить маршрут ↗</a></article>'}).join('');const mapContent=mapped.length?'<div id="eventsLeafletMap" class="events-leaflet-map" role="application" aria-label="Карта мероприятий"></div>':'<iframe id="eventsAddressMap" class="events-address-map" title="Карта мероприятий" src="https://maps.google.com/maps?q='+encodeURIComponent(eventLocationQuery(selected))+'&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';root.innerHTML='<div class="map-frame">'+mapContent+'<div class="map-frame-actions"><button type="button" class="button button-light button-small" data-map-locate>Расстояние от меня</button>'+(missing.length?'<button type="button" class="button button-light button-small" data-map-geocode>Добавить точки на карту ('+missing.length+')</button>':'')+(selected?'<a class="map-open-link" href="'+esc(mapRoute(selected))+'" target="_blank" rel="noopener noreferrer">Маршрут ↗</a>':'')+'</div><p class="map-data-note">'+(mapped.length?mapped.length+' из '+list.length+' мероприятий отмечены точками. ':'')+'Координаты ищутся один раз и сохраняются. Адреса передаются в OpenStreetMap для поиска; <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noopener noreferrer">условия геокодирования</a>. '+(mapped.length?'Карта © OpenStreetMap contributors.':'Карта Google Maps.')+'</p></div><div class="map-event-list">'+cards+'</div>';
+if(!mapped.length&&missing.length&&!mapGeocodeInFlight)void requestMapCoordinates(missing.map(e=>e.venue_id));
+if(window.L&&mapped.length){eventLeafletMap=L.map('eventsLeafletMap',{scrollWheelZoom:false}).setView([Number(mapped[0].venues.latitude),Number(mapped[0].venues.longitude)],12);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(eventLeafletMap);const bounds=[];mapped.forEach(e=>{const d=mapDistance(e),popup='<b>'+esc(e.title)+'</b><br>'+esc(new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium'}).format(dateFromKey(eventDateKey(e))))+' · '+esc(String(e.start_time||'').slice(0,5))+'<br>'+esc(money(e.current_price??e.base_price??0))+' · свободно '+Math.max(0,Number(e.available_seats||0))+'<br>'+(d!==null?'Расстояние: '+d.toFixed(1)+' км<br>':'')+'<button type="button" data-details="'+esc(e.id)+'">Подробнее</button> · <a target="_blank" rel="noopener noreferrer" href="'+esc(mapRoute(e))+'">Маршрут ↗</a>';const marker=L.marker([Number(e.venues.latitude),Number(e.venues.longitude)]).addTo(eventLeafletMap).bindPopup(popup);marker.on('click',()=>{selectedMapEventId=String(e.id);root.querySelectorAll('.map-event-card').forEach(c=>c.classList.toggle('active',c.querySelector('[data-map-event]')?.dataset.mapEvent===selectedMapEventId))});bounds.push([Number(e.venues.latitude),Number(e.venues.longitude)])});if(bounds.length>1)eventLeafletMap.fitBounds(L.latLngBounds(bounds),{padding:[28,28],maxZoom:13});setTimeout(()=>eventLeafletMap?.invalidateSize(),80)}else if(mapped.length){const node=$('#eventsLeafletMap');if(node)node.innerHTML='<iframe class="events-address-map" title="Карта мероприятий" src="https://maps.google.com/maps?q='+encodeURIComponent(eventLocationQuery(selected))+'&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>'}}
 function renderEvents() {
   if(ACCOUNT_ROUTE)return;
-  const query=$('#searchInput').value.trim().toLocaleLowerCase('ru');
-  const city=$('#cityInput').value.trim().toLocaleLowerCase('ru');
-  const today=localDateKey(new Date());
-  const allUpcoming=events.filter(e=>eventDateKey(e)>=today);
-  const filtered=allUpcoming.filter((e)=>{
-    const text=[e.title,e.description,e.location_address,e.venues?.address,e.event_categories?.name,e.venues?.city,e.venues?.name].join(' ').toLocaleLowerCase('ru');
-    return (!query||text.includes(query))&&(!city||(e.venues?.city||'').toLocaleLowerCase('ru').includes(city))&&(!activeCategory||e.category_id===activeCategory);
+  const parsed=parseSmartEventSearch($('#searchInput').value),query=parsed.q.toLocaleLowerCase('ru');
+  const city=($('#cityInput').value.trim()||parsed.city).toLocaleLowerCase('ru');
+  const today=localDateKey(new Date()),allUpcoming=events.filter(e=>eventDateKey(e)>=today);
+  const filtered=allUpcoming.filter(e=>{
+    const text=[e.title,e.description,e.location_address,e.venues?.address,e.event_categories?.name,e.venues?.city,e.venues?.name].join(' ').toLocaleLowerCase('ru'),date=eventDateKey(e);
+    return (!query||query.split(/\s+/).every(word=>text.includes(word)))&&(!city||(e.venues?.city||'').toLocaleLowerCase('ru').includes(city))&&(!(activeCategory||parsed.categoryId)||e.category_id===(activeCategory||parsed.categoryId))&&(!parsed.from||date>=parsed.from)&&(!parsed.to||date<=parsed.to);
   }).sort((a,b)=>(eventDateKey(a)+String(a.start_time||'')).localeCompare(eventDateKey(b)+String(b.start_time||'')));
   currentFilteredEvents=filtered;
   const tomorrow=localDateKey(shiftDate(new Date(),1));
@@ -419,14 +401,35 @@ async function loadCategories() {
   try { const r=await api('/api/categories'); categories=r.categories||[]; $('#categoryBar').innerHTML='<button class="category active" data-category="">Все события</button>'+categories.map(c=>'<button class="category" data-category="'+esc(c.id)+'">'+esc(c.name)+'</button>').join(''); }
   catch { /* category filters are optional; the event list remains live */ }
 }
+function normalizedSearchWord(value){return String(value||'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[^а-яa-z0-9-]/g,'').replace(/(ами|ями|ого|ему|ому|ыми|ими|ая|яя|ое|ее|ые|ие|ой|ый|ий|ом|ем|ам|ям|ах|ях|ов|ев|ей|у|ю|а|я|ы|и|е)$/,'')}
+function parseSmartEventSearch(raw){
+ const text=String(raw||'').trim().toLocaleLowerCase('ru').replace(/ё/g,'е'),now=new Date(),today=localDateKey(now);
+ const stop=new Set(['мероприятие','мероприятия','событие','события','найти','покажи','покажите','хочу','ищу','рядом','около','в','на','по','с','для','и','городе','город','выходные','выходных','эти','этот','эту','неделе','неделю','сегодня','завтра','айти']);
+ let from='',to='';
+ if(/сегодня/.test(text))from=to=today;
+ else if(/завтра/.test(text))from=to=localDateKey(shiftDate(now,1));
+ else if(/выходн/.test(text)){let delta=(6-now.getDay()+7)%7;if(delta===0&&now.getDay()!==6)delta=7;const sat=shiftDate(now,delta);from=localDateKey(sat);to=localDateKey(shiftDate(sat,1))}
+ else if(/на этой неделе|на неделе/.test(text)){from=today;to=localDateKey(shiftDate(now,6-((now.getDay()+6)%7)))}
+ let category=categories.find(c=>text.includes(String(c.name||'').toLocaleLowerCase('ru'))) || null;
+ const synonyms=[[/\bit\b|айти|технолог|конференц/i,['it','конференц','технолог']],[/бизнес|стартап/i,['бизнес','стартап']],[/концерт|музык|шоу/i,['концерт','музык','шоу']],[/образован|обуч|лекци/i,['образован','обуч']],[/спорт|фитнес/i,['спорт','фитнес']]];
+ if(!category)for(const [pattern,keys] of synonyms){if(pattern.test(text)){category=categories.find(c=>keys.some(key=>String(c.name||'').toLocaleLowerCase('ru').includes(key)))||null;if(category)break}}
+ const cities=[...new Set([...catalogEvents.map(e=>e.venues?.city).filter(Boolean),user?.city].filter(Boolean))];let city='';
+ for(const item of cities){const parts=String(item).toLocaleLowerCase('ru').replace(/ё/g,'е').split(/\s+/);if(parts.every(p=>text.includes(p)||text.split(/\s+/).some(w=>normalizedSearchWord(w)===normalizedSearchWord(p)))){city=item;break}}
+ const words=text.split(/\s+/).filter(Boolean),q=words.filter(word=>!stop.has(normalizedSearchWord(word))&&!(category&&String(category.name||'').split(/[^а-яa-z0-9]+/i).some(n=>normalizedSearchWord(n)===normalizedSearchWord(word)))&&!cities.some(c=>String(c).split(/\s+/).some(n=>normalizedSearchWord(n)===normalizedSearchWord(word)))).join(' ');
+ return {q:q.slice(0,100),city,categoryId:category?.id||'',from,to};
+}
 async function loadEvents() {
   $('#connectionState').textContent='';
   try {
-    const params=new URLSearchParams();
-    if($('#searchInput').value.trim())params.set('q',$('#searchInput').value.trim());
-    if($('#cityInput').value.trim())params.set('city',$('#cityInput').value.trim());
+    const parsed=parseSmartEventSearch($('#searchInput').value),manualCity=$('#cityInput').value.trim(),params=new URLSearchParams();
+    activeCategory=parsed.categoryId||activeCategory;$('[data-category]').forEach(button=>button.classList.toggle('active',button.dataset.category===activeCategory));
+    if(parsed.q)params.set('q',parsed.q);
+    const city=manualCity||parsed.city;if(city)params.set('city',city);
+    if(parsed.categoryId||activeCategory)params.set('categoryId',parsed.categoryId||activeCategory);
+    if(parsed.from)params.set('from',parsed.from);
+    if(parsed.to)params.set('to',parsed.to);
     const result=await api('/api/events'+(params.size?'?'+params:''));
-    events=result.events||[];
+    events=result.events||[];if(!catalogEvents.length&&!$('#searchInput').value.trim()&&!manualCity)catalogEvents=events.slice();
     renderEvents();
     if(signedIn())void loadPersonalizedRecommendations();
   } catch(error) {
@@ -1559,11 +1562,15 @@ document.addEventListener('click',async(e)=>{
   if(e.target.id==='blockedAccountOverlay'){hideBlockedAccountModal();return}
   if(e.target.id==='eventModal'){setEventModalOpen(false);return}
   const period=e.target.closest('[data-period]');
-  if(period){const today=new Date();selectedCalendarDate=localDateKey(period.dataset.period==='tomorrow'?shiftDate(today,1):today);calendarMonthDate=new Date(dateFromKey(selectedCalendarDate).getFullYear(),dateFromKey(selectedCalendarDate).getMonth(),1);renderCalendar(currentFilteredEvents);$('#calendarEvents').scrollIntoView({behavior:'smooth',block:'center'});return}
+  if(period){const today=new Date();calendarView=period.dataset.period==='week'?'week':'day';selectedCalendarDate=localDateKey(period.dataset.period==='tomorrow'?shiftDate(today,1):today);calendarMonthDate=new Date(dateFromKey(selectedCalendarDate).getFullYear(),dateFromKey(selectedCalendarDate).getMonth(),1);renderCalendar(currentFilteredEvents);$('#calendarEvents').scrollIntoView({behavior:'smooth',block:'center'});return}
+  const calendarViewButton=e.target.closest('[data-calendar-view]');if(calendarViewButton){calendarView=calendarViewButton.dataset.calendarView;renderCalendar(currentFilteredEvents);return}
+  const calendarMine=e.target.closest('[data-calendar-owner]');if(calendarMine){calendarMineOnly=!calendarMineOnly;renderCalendar(currentFilteredEvents);return}
   const calendarDay=e.target.closest('[data-calendar-date]');
   if(calendarDay){selectedCalendarDate=calendarDay.dataset.calendarDate;const selected=dateFromKey(selectedCalendarDate);calendarMonthDate=new Date(selected.getFullYear(),selected.getMonth(),1);renderCalendar(currentFilteredEvents);return}
   const calendarShift=e.target.closest('[data-calendar-shift]');
-  if(calendarShift){calendarMonthDate=new Date(calendarMonthDate.getFullYear(),calendarMonthDate.getMonth()+Number(calendarShift.dataset.calendarShift),1);selectedCalendarDate=localDateKey(calendarMonthDate);renderCalendar(currentFilteredEvents);return}
+  if(calendarShift){const amount=Number(calendarShift.dataset.calendarShift),selected=dateFromKey(selectedCalendarDate);if(calendarView==='month'){const day=selected.getDate(),first=new Date(selected.getFullYear(),selected.getMonth()+amount,1),last=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();selectedCalendarDate=localDateKey(new Date(first.getFullYear(),first.getMonth(),Math.min(day,last)))}else selectedCalendarDate=localDateKey(shiftDate(selected,amount*(calendarView==='week'?7:1)));const next=dateFromKey(selectedCalendarDate);calendarMonthDate=new Date(next.getFullYear(),next.getMonth(),1);renderCalendar(currentFilteredEvents);return}
+  const mapGeocode=e.target.closest('[data-map-geocode]');if(mapGeocode){const ids=currentFilteredEvents.filter(e=>e.venue_id&&(!e.venues?.latitude||!e.venues?.longitude)).map(e=>e.venue_id);await requestMapCoordinates(ids);return}
+  const mapLocate=e.target.closest('[data-map-locate]');if(mapLocate){if(!navigator.geolocation){toast('Геолокация недоступна в этом браузере');return}mapLocate.disabled=true;navigator.geolocation.getCurrentPosition(position=>{mapUserCoords={latitude:position.coords.latitude,longitude:position.coords.longitude};renderMap(currentFilteredEvents,selectedMapEventId);toast('Расстояние рассчитано от вашего местоположения')},()=>{mapLocate.disabled=false;toast('Не удалось получить местоположение. Разрешите доступ к геолокации')},{enableHighAccuracy:true,timeout:10000,maximumAge:300000});return}
   const mapEvent=e.target.closest('[data-map-event]');
   if(mapEvent){renderMap(currentFilteredEvents,mapEvent.dataset.mapEvent);return}
   const deleteProgram=e.target.closest('[data-program-delete]');if(deleteProgram){const eventItem=deleteProgram.closest('.organizer-event-item'),eventId=eventItem?.querySelector('[data-event-edit]')?.dataset.eventEdit;if(!eventId)return;try{await api('/api/events/'+eventId+'/program/'+deleteProgram.dataset.programDelete,{method:'DELETE'});toast('Пункт программы удалён');await organizerView()}catch(x){toast(x.message)}return}
