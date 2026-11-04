@@ -111,6 +111,11 @@ async function loadQrCodeLibrary(){
   if(!window.flowtixQrCodePromise)window.flowtixQrCodePromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/vendor/qrcode.min.js';script.async=true;script.onload=()=>resolve(window.QRCode);script.onerror=()=>reject(new Error('Не удалось загрузить генератор QR-кода'));document.head.append(script)});
   return window.flowtixQrCodePromise;
 }
+async function loadQrScannerFallback(){
+  if(window.jsQR)return window.jsQR;
+  if(!window.flowtixJsQrPromise)window.flowtixJsQrPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/vendor/jsQR.js';script.async=true;script.onload=()=>window.jsQR?resolve(window.jsQR):reject(new Error('QR-декодер не загрузился'));script.onerror=()=>reject(new Error('Не удалось загрузить QR-декодер'));document.head.append(script)});
+  return window.flowtixJsQrPromise;
+}
 async function renderTicketQrCodes(){
   const nodes=$$('[data-ticket-qr]');if(!nodes.length)return;
   try{const QR=await loadQrCodeLibrary();nodes.forEach(node=>{node.replaceChildren();new QR(node,{text:node.dataset.ticketQr,width:96,height:96,colorDark:'#17121d',colorLight:'#ffffff',correctLevel:QR.CorrectLevel.M})})}
@@ -742,16 +747,27 @@ async function submitTicketCheckIn(form){
  finally{ticketScannerBusy=false}
 }
 async function startTicketScanner(){
- if(!window.BarcodeDetector){toast('В этом браузере сканер QR недоступен. Введите номер билета вручную.');return}
  if(!navigator.mediaDevices?.getUserMedia){toast('Браузер не разрешил доступ к камере. Введите номер билета вручную.');return}
  try{
-  const detector=new BarcodeDetector({formats:['qr_code']});
+  const detector=window.BarcodeDetector?new BarcodeDetector({formats:['qr_code']}):null;
+  const fallback=detector?null:await loadQrScannerFallback();
+  const video=$('#ticketScannerVideo');
+  const canvas=document.createElement('canvas'),context=canvas.getContext('2d',{willReadFrequently:true});
   ticketScannerStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
-  const video=$('#ticketScannerVideo');video.srcObject=ticketScannerStream;video.hidden=false;await video.play();
+  video.srcObject=ticketScannerStream;video.hidden=false;await video.play();
   $('[data-start-ticket-scan]').hidden=true;$('[data-stop-ticket-scan]').hidden=false;
-  const scan=async()=>{if(!ticketScannerStream||ticketScannerBusy)return;try{const found=await detector.detect(video);if(found.length){const form=$('#scanForm');form.elements.ticket.value=found[0].rawValue;stopTicketScanner();await submitTicketCheckIn(form);return}}catch(error){console.warn('QR scan failed:',error)}ticketScannerFrame=requestAnimationFrame(scan)};
+  const scan=async()=>{
+   if(!ticketScannerStream||ticketScannerBusy)return;
+   try{
+    let raw='';
+    if(detector){const found=await detector.detect(video);raw=found[0]?.rawValue||''}
+    else if(video.videoWidth){canvas.width=Math.max(1,Math.floor(video.videoWidth/2));canvas.height=Math.max(1,Math.floor(video.videoHeight/2));context.drawImage(video,0,0,canvas.width,canvas.height);const pixels=context.getImageData(0,0,canvas.width,canvas.height);raw=fallback(pixels.data,pixels.width,pixels.height,{inversionAttempts:'dontInvert'})?.data||''}
+    if(raw){const form=$('#scanForm');form.elements.ticket.value=raw;stopTicketScanner();await submitTicketCheckIn(form);return}
+   }catch(error){console.warn('QR scan failed:',error)}
+   ticketScannerFrame=requestAnimationFrame(scan);
+  };
   ticketScannerFrame=requestAnimationFrame(scan);
- }catch(error){stopTicketScanner();toast(error.name==='NotAllowedError'?'Разрешите доступ к камере в браузере.':('Не удалось открыть камеру: '+error.message))}
+ }catch(error){stopTicketScanner();toast(error.name==='NotAllowedError'?'Разрешите доступ к камере.':('Не удалось запустить сканер: '+error.message))}
 }
 async function staffView() {
   try {
