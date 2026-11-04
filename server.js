@@ -806,10 +806,62 @@ app.delete('/api/moderation/reviews/:id', requireUser, allowRoles('moderator','a
   res.json({ success: true });
 }));
 
-app.get('/api/admin/audit-logs', requireUser, allowRoles('admin'), asyncRoute(async (_req, res) => {
-  const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(500);
+app.get('/api/admin/audit-logs', requireUser, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const offset = Math.max(0, parseInt(req.query.offset || '0', 10) || 0);
+  const { data, error } = await supabase.from('audit_logs').select('*')
+    .order('created_at', { ascending: false }).order('id', { ascending: false }).range(offset, offset + 10);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить журнал' });
-  res.json({ logs: data });
+  const logs = (data || []).slice(0, 10);
+  const ids = (type) => [...new Set(logs.filter((row) => row.entity_type === type && row.entity_id).map((row) => row.entity_id))];
+  const eventIds = [...new Set([
+    ...ids('event'),
+    ...logs.map((row) => row.details?.event_id).filter(Boolean)
+  ])];
+  const [users, events, tickets] = await Promise.all([
+    ids('user').length ? supabase.from('users').select('id,full_name,email').in('id', ids('user')) : Promise.resolve({ data: [] }),
+    eventIds.length ? supabase.from('events').select('id,title').in('id', eventIds) : Promise.resolve({ data: [] }),
+    ids('ticket').length ? supabase.from('tickets').select('id,ticket_number,event_id').in('id', ids('ticket')) : Promise.resolve({ data: [] })
+  ]);
+  const userById = new Map((users.data || []).map((user) => [user.id, user]));
+  const eventById = new Map((events.data || []).map((event) => [event.id, event]));
+  const ticketById = new Map((tickets.data || []).map((ticket) => [ticket.id, ticket]));
+  const roleNames = { visitor: 'Посетитель', organizer: 'Организатор', staff: 'Сотрудник', moderator: 'Модератор', admin: 'Администратор' };
+  const statusNames = { published: 'Опубликовано', draft: 'Черновик', canceled: 'Отменено', cancelled: 'Отменено', archived: 'В архиве', pending: 'На проверке' };
+  const settingNames = { site_name: 'Название сайта', support_email: 'Почта поддержки', maintenance_mode: 'Режим обслуживания', visual_payments_enabled: 'Визуальные платежи' };
+  const logsWithLabels = logs.map((row) => {
+    const details = row.details || {};
+    const ticket = row.entity_type === 'ticket' ? ticketById.get(row.entity_id) : null;
+    const eventId = row.entity_type === 'event' ? row.entity_id : (ticket?.event_id || details.event_id);
+    const eventName = eventById.get(eventId)?.title;
+    let entityLabel = 'Настройки платформы';
+    if (row.entity_type === 'user') {
+      const user = userById.get(row.entity_id);
+      entityLabel = user?.full_name || user?.email || details.email || 'Аккаунт пользователя';
+    } else if (row.entity_type === 'event') {
+      entityLabel = eventById.get(row.entity_id)?.title || 'Мероприятие';
+    } else if (row.entity_type === 'ticket') {
+      entityLabel = ['Билет ' + (ticket?.ticket_number || details.ticket_number || ''), eventName].filter(Boolean).join(' · ');
+    } else if (row.entity_type && row.entity_type !== 'platform_settings') {
+      entityLabel = ({ venue: 'Площадка', review: 'Отзыв', complaint: 'Жалоба' })[row.entity_type] || 'Запись';
+    }
+    let detailLabel = '';
+    if (row.action === 'REGISTER_FOR_EVENT') {
+      const amount = Number(details.amount || 0);
+      detailLabel = [eventName, amount > 0 ? 'Оплачено ' + amount.toLocaleString('ru-RU') + ' ₸' : 'Без оплаты'].filter(Boolean).join(' · ');
+    } else if (row.action === 'USER_ROLE_CHANGED') {
+      detailLabel = details.role ? 'Новая роль: ' + (roleNames[details.role] || 'Посетитель') : '';
+    } else if (row.action === 'ADMIN_EVENT_STATUS_CHANGED') {
+      detailLabel = details.status ? 'Статус: ' + (statusNames[details.status] || 'обновлён') : '';
+    } else if (row.action === 'USER_BLOCKED' || row.action === 'USER_UNBLOCKED') {
+      detailLabel = details.email || '';
+    } else if (row.action === 'ADMIN_SETTINGS_UPDATED') {
+      detailLabel = Object.keys(details).map((key) => settingNames[key]).filter(Boolean).join(', ');
+    } else if (row.action === 'ADMIN_TICKET_CANCELLED' || row.action === 'ADMIN_TICKET_DELETED') {
+      detailLabel = details.refund ? 'Возврат на баланс: ' + Number(details.refund).toLocaleString('ru-RU') + ' ₸' : '';
+    }
+    return { ...row, entity_label: entityLabel, detail_label: detailLabel };
+  });
+  res.json({ logs: logsWithLabels, hasMore: (data || []).length > 10 });
 }));
 async function countAuthUsers(){
   let count=0;
