@@ -346,10 +346,14 @@ app.patch('/api/notifications/read-all', requireUser, asyncRoute(async(req,res)=
   res.json({updated:true});
 }));
 app.get('/api/notifications', requireUser, asyncRoute(async (req, res) => {
+  const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0);
+  const limit=Math.max(1,Math.min(5,parseInt(req.query.limit||'5',10)||5));
   const { data, error } = await supabase.from('notifications').select('*')
-    .eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(100);
+    .eq('user_id', req.user.id).order('created_at', { ascending: false })
+    .range(offset,offset+limit);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить уведомления' });
-  res.json({ notifications: data });
+  const rows=data||[];
+  res.json({ notifications: rows.slice(0,limit), hasMore: rows.length>limit, offset });
 }));
 app.patch('/api/notifications/:id/read', requireUser, asyncRoute(async (req, res) => {
   const { error } = await supabase.from('notifications').update({ is_read: true })
