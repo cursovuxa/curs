@@ -682,7 +682,8 @@ async function adminView() {
       ?'<span class="role-picker-root">'+roleIcons.admin+'<span>Главный администратор</span></span>'
       :'<div class="role-picker" data-role-picker><button class="role-picker-trigger" type="button" data-role-picker-toggle aria-label="Выбрать роль" aria-haspopup="listbox" aria-expanded="false">'+(roleIcons[current]||roleIcons.visitor)+'<span>'+(roles[current]||'Посетитель')+'</span><svg class="role-picker-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="role-picker-menu" role="listbox" aria-label="Роль пользователя" hidden>'+Object.entries(roles).map(([role,label])=>'<button class="role-picker-option" type="button" role="option" aria-selected="'+(role===current)+'" data-role-picker-option data-role-user="'+esc(id)+'" data-role="'+role+'">'+roleIcons[role]+'<span>'+label+'</span>'+(role===current?'<svg class="role-picker-check" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3.5 8.3 3 3 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':'')+'</button>').join('')+'</div></div>';
     const userRows=(users.users||[]).map(x=>'<tr><td>'+esc(x.full_name||'—')+'<br><small>'+esc(x.email)+'</small></td><td>'+rolePicker(x.id,x.role)+'</td><td>'+(x.is_blocked?'Заблокирован':'Активен')+'</td><td><button class="button button-light button-small" data-block="'+esc(x.id)+'" data-value="'+(!x.is_blocked)+'" '+(x.id===user.id?'disabled':'')+'>'+(x.is_blocked?'Разблокировать':'Заблокировать')+'</button></td></tr>').join('');
-    const eventRows=(events.events||[]).map(x=>'<tr><td>'+esc(x.title)+'<br><small>'+esc(x.users?.email||'')+'</small></td><td>'+esc(x.start_date||'')+'</td><td><select data-event-status="'+esc(x.id)+'">'+['draft','pending_moderation','published','rejected','cancelled','completed'].map(s=>'<option value="'+s+'" '+(x.status===s?'selected':'')+'>'+esc(eventStatusLabel(s))+'</option>').join('')+'</select></td><td>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</td></tr>').join('');
+    const renderAdminEvent=x=>'<details class="admin-event-item" data-admin-event-item="'+esc(x.id)+'"><summary><span class="admin-event-summary-title"><b>'+esc(x.title||'Мероприятие')+'</b><small>'+esc(x.users?.email||'Организатор не указан')+'</small></span><time>'+esc(x.start_date||'Дата не указана')+'</time><span class="status-pill">'+esc(eventStatusLabel(x.status))+'</span><span class="admin-event-chevron" aria-hidden="true">⌄</span></summary><div class="admin-event-details"><div><small>Организатор</small><b>'+esc(x.users?.full_name||x.users?.email||'—')+'</b></div><div><small>Площадка</small><b>'+esc([x.venues?.name,x.location_address||x.venues?.address,x.venues?.city].filter(Boolean).join(' · ')||'Не указана')+'</b></div><div><small>Свободные места</small><b>'+esc((x.available_seats??'—')+' / '+(x.total_seats??'—'))+'</b></div><div><small>Стоимость</small><b>'+esc(money(x.base_price))+'</b></div><label class="admin-event-status">Статус<select data-event-status="'+esc(x.id)+'">'+['draft','pending_moderation','published','rejected','cancelled','completed'].map(status=>'<option value="'+status+'" '+(x.status===status?'selected':'')+'>'+esc(eventStatusLabel(status))+'</option>').join('')+'</select></label><button type="button" class="button button-danger button-small" data-delete-event="'+esc(x.id)+'">Удалить мероприятие</button></div></details>';
+    const eventRows=(events.events||[]).map(renderAdminEvent).join('');
     const venueRows=(venues.venues||[]).map(v=>'<details class="workspace-row"><summary><b>'+esc(v.name)+'</b> · '+esc(v.city)+'</summary><form data-admin-venue="'+esc(v.id)+'" class="form-grid"><label>Название<input name="name" value="'+esc(v.name)+'" required></label><label>Город<input name="city" value="'+esc(v.city)+'" required></label><label class="wide">Адрес<input name="address" value="'+esc(v.address)+'" required></label><label class="wide">Описание<textarea name="description">'+esc(v.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить</button></form></details>').join('');
     const ticketRows=(tickets.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.email||'')+'</small></td><td>'+esc(ticketStatusLabel(t.status))+'</td><td>'+esc(money(t.price_paid))+'</td><td>'+(t.status==='valid'?'<button class="button button-danger button-small" data-cancel-ticket="'+esc(t.id)+'">Аннулировать</button>':'—')+'</td></tr>').join('');
     const paymentRows=(payments.payments||[]).map(p=>'<tr><td>'+esc(new Date(p.created_at).toLocaleString('ru'))+'</td><td>'+esc(p.users?.email||'—')+'</td><td>'+esc(p.tickets?.events?.title||p.tickets?.ticket_number||'—')+'</td><td>'+esc(money(p.amount))+'</td><td>'+esc(p.status)+' · '+esc(p.payment_method||'—')+'</td></tr>').join('');
@@ -694,7 +695,7 @@ async function adminView() {
     const logsHtml=(logs.logs||[]).map(x=>'<tr><td>'+esc(new Date(x.created_at).toLocaleString('ru'))+'</td><td>'+esc(x.actor_name||'Система')+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.entity_type)+' '+esc(x.entity_id||'')+'</td></tr>').join('');
     const panels={
       users:'<div class="workspace-card"><h3>Пользователи и роли</h3><p>Роли назначает только главный администратор.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Участник</th><th>Роль</th><th>Доступ</th><th></th></tr></thead><tbody>'+userRows+'</tbody></table></div></div>',
-      events:'<div class="workspace-card"><h3>Мероприятия</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Мероприятие / организатор</th><th>Дата</th><th>Статус</th><th>Места</th></tr></thead><tbody>'+eventRows+'</tbody></table></div></div>',
+      events:'<div class="workspace-card"><h3>Мероприятия</h3><p class="workspace-help">Сначала загружаются 10 последних. Листай ниже, чтобы увидеть следующие. Удаление убирает событие из активного списка и сохраняет историю билетов и отзывов.</p><div id="adminEventList" class="admin-event-list">'+(events.error?'<p class="connection-state">'+esc(events.error)+'</p>':eventRows||empty('Активных мероприятий пока нет.'))+'</div><button id="adminEventLoadMore" type="button" class="button button-light button-small '+(events.hasMore?'':'is-hidden')+'">Загрузить ещё 10</button><p id="adminEventEnd" class="admin-event-end '+(events.hasMore?'is-hidden':'')+'">'+((events.events||[]).length?'Показаны все мероприятия.':'')+'</p></div>',
       venues:'<div class="workspace-card"><h3>Площадки</h3>'+(venueRows||empty('Площадок пока нет.'))+'</div>',
       tickets:'<div class="workspace-card"><h3>Билеты</h3>'+(tickets.error?'<p class="connection-state">'+esc(tickets.error)+'</p>':'<div class="scroll-table"><table class="data-table"><thead><tr><th>Номер</th><th>Событие / владелец</th><th>Статус</th><th>Цена</th><th></th></tr></thead><tbody>'+ticketRows+'</tbody></table></div>')+'</div>',
       payments:'<div class="workspace-card"><h3>Платежи</h3><p>Платёжные записи для сверки. Статус не меняется вручную без платёжного провайдера.</p><div class="scroll-table"><table class="data-table"><thead><tr><th>Дата</th><th>Аккаунт</th><th>Билет</th><th>Сумма</th><th>Статус</th></tr></thead><tbody>'+paymentRows+'</tbody></table></div></div>',
@@ -706,11 +707,51 @@ async function adminView() {
     const tabs=Object.entries({users:'Аккаунты',events:'Мероприятия',venues:'Площадки',tickets:'Билеты',payments:'Платежи',complaints:'Жалобы',reviews:'Отзывы',settings:'Настройки',logs:'Журнал'});
     root.innerHTML=loadWarning+'<div class="stats-grid">'+[['Пользователи',stats.users??'—'],['Мероприятия',stats.events??'—'],['Билеты',stats.tickets??'—'],['Выручка',stats.error?'—':money(stats.revenue)],['Открытые жалобы',stats.openComplaints??'—']].map(x=>'<div class="workspace-card"><small>'+esc(x[0])+'</small><h3>'+esc(x[1])+'</h3></div>').join('')+'</div><div id="adminTabs" class="category-bar">'+tabs.map(([key,label],i)=>'<button type="button" class="category '+(!i?'active':'')+'" data-admin-tab="'+key+'">'+label+'</button>').join('')+'</div><div id="adminPanel">'+panels.users+'</div>';
     const panel=$('#adminPanel',root);
-    $('#adminTabs',root).onclick=(e)=>{const b=e.target.closest('[data-admin-tab]');if(!b)return;$$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===b));panel.innerHTML=panels[b.dataset.adminTab]||''};
+    let adminEventsOffset=(events.events||[]).length;
+    let adminEventsHasMore=Boolean(events.hasMore);
+    let adminEventsLoading=false;
+    let adminEventsObserver=null;
+    const loadMoreAdminEvents=async()=>{
+      if(adminEventsLoading||!adminEventsHasMore||!panel.querySelector('#adminEventList'))return;
+      adminEventsLoading=true;
+      const button=panel.querySelector('#adminEventLoadMore');
+      if(button){button.disabled=true;button.textContent='Загружаем…'}
+      try{
+        const result=await api('/api/admin/events?offset='+adminEventsOffset);
+        const list=panel.querySelector('#adminEventList');
+        if(!list)return;
+        if(result.events?.length){list.insertAdjacentHTML('beforeend',result.events.map(renderAdminEvent).join(''));adminEventsOffset+=result.events.length}
+        adminEventsHasMore=Boolean(result.hasMore);
+        if(button){button.hidden=!adminEventsHasMore;button.disabled=false;button.textContent='Загрузить ещё 10'}
+        const end=panel.querySelector('#adminEventEnd');
+        if(end){end.hidden=adminEventsHasMore;end.textContent='Показаны все мероприятия.'}
+      }catch(error){toast(error.message);if(button){button.disabled=false;button.textContent='Повторить загрузку'}}
+      finally{adminEventsLoading=false}
+    };
+    const observeAdminEventFeed=()=>{
+      adminEventsObserver?.disconnect();
+      const button=panel.querySelector('#adminEventLoadMore');
+      if(!button||button.hidden||!adminEventsHasMore)return;
+      if('IntersectionObserver' in window){adminEventsObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))void loadMoreAdminEvents()},{rootMargin:'220px'});adminEventsObserver.observe(button)}
+    };
+    $('#adminTabs',root).onclick=(e)=>{const b=e.target.closest('[data-admin-tab]');if(!b)return;$('[data-admin-tab]',root).forEach(x=>x.classList.toggle('active',x===b));panel.innerHTML=panels[b.dataset.adminTab]||'';if(b.dataset.adminTab==='events')observeAdminEventFeed()};
     root.onchange=async(e)=>{
-      if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён')}catch(x){toast(x.message);await adminView()}}
+      if(e.target.matches('[data-event-status]')){try{await api('/api/admin/events/'+e.target.dataset.eventStatus,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус мероприятия обновлён');if(e.target.value==='cancelled'){e.target.closest('[data-admin-event-item]')?.remove();adminEventsOffset=Math.max(0,adminEventsOffset-1)}}catch(x){toast(x.message);await adminView()}}
         };
     root.onclick=async(e)=>{
+      if(e.target.closest('#adminEventLoadMore')){await loadMoreAdminEvents();observeAdminEventFeed();return}
+      const deleteEvent=e.target.closest('[data-delete-event]');
+      if(deleteEvent){
+        if(!confirm('Убрать мероприятие из активной системы? Билеты и отзывы сохранятся в истории.'))return;
+        try{
+          await api('/api/admin/events/'+encodeURIComponent(deleteEvent.dataset.deleteEvent),{method:'DELETE'});
+          deleteEvent.closest('[data-admin-event-item]')?.remove();
+          adminEventsOffset=Math.max(0,adminEventsOffset-1);
+          toast('Мероприятие убрано из активного списка; история сохранена');
+          if(!panel.querySelector('[data-admin-event-item]')&&!adminEventsHasMore)panel.querySelector('#adminEventList').innerHTML=empty('Активных мероприятий пока нет.');
+        }catch(error){toast(error.message)}
+        return
+      }
       const toggle=e.target.closest('[data-role-picker-toggle]');
       if(toggle){const picker=toggle.closest('[data-role-picker]');const open=!picker.classList.contains('is-open');root.querySelectorAll('.role-picker.is-open').forEach(x=>{x.classList.remove('is-open');x.querySelector('[data-role-picker-toggle]')?.setAttribute('aria-expanded','false');x.querySelector('.role-picker-menu').hidden=true});if(open){picker.classList.add('is-open');toggle.setAttribute('aria-expanded','true');picker.querySelector('.role-picker-menu').hidden=false}return}
       const roleOption=e.target.closest('[data-role-picker-option]');
