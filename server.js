@@ -824,7 +824,7 @@ async function enrichComplaintTargets(complaints=[]){
 }
 app.get('/api/moderation/complaints', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('complaints').select('*,users!complaints_author_id_fkey(id,full_name,email,username)')
-    .order('created_at', { ascending: false });
+    .in('status',['new','in_review']).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
   try{res.json({ complaints: await enrichComplaintTargets(data||[]) })}
   catch(targetError){console.error('[moderation] complaint targets failed:',targetError.message);res.status(500).json({error:'Не удалось загрузить объект жалобы'})}
@@ -833,25 +833,32 @@ app.patch('/api/moderation/complaints/:id', requireUser, allowRoles('moderator',
   const nextStatus=String(req.body.status||'');
   if (!['in_review','resolved','rejected'].includes(nextStatus)) return res.status(400).json({ error: 'Недопустимый статус' });
   const {data:previous,error:lookupError}=await supabase.from('complaints')
-    .select('id,author_id,status,reason').eq('id',req.params.id).maybeSingle();
+    .select('id,author_id,status,reason,target_type,target_id').eq('id',req.params.id).maybeSingle();
   if(lookupError)return res.status(500).json({error:'Не удалось загрузить жалобу'});
   if(!previous)return res.status(404).json({error:'Жалоба не найдена'});
+  if(previous.status==='new'&&nextStatus!=='in_review')return res.status(409).json({error:'Сначала возьмите жалобу в работу'});
+  if(previous.status!=='new'&&previous.status!=='in_review')return res.status(409).json({error:'Эта жалоба уже закрыта'});
+  if(previous.status==='in_review'&&nextStatus==='in_review')return res.status(409).json({error:'Жалоба уже находится в работе'});
   const moderatorNotes=String(req.body.moderatorNotes||'').trim().slice(0,1000);
   const { data, error } = await supabase.from('complaints').update({
     status: nextStatus, moderator_notes: moderatorNotes,
     reviewed_by: req.user.id, updated_at: new Date().toISOString()
   }).eq('id', req.params.id).select('*').single();
   if (error) return res.status(400).json({ error: 'Не удалось обновить жалобу' });
-  const statusLabels={in_review:'взята в работу',resolved:'рассмотрена и принята',rejected:'рассмотрена и отклонена'};
-  if(previous.status!==nextStatus){
-    const extra=moderatorNotes?' Комментарий: '+moderatorNotes:'';
-    await createNotification(previous.author_id,'Изменён статус жалобы','Ваша жалоба «'+String(previous.reason||'').slice(0,160)+'» '+statusLabels[nextStatus]+'.'+extra,'complaint_status','/notifications/');
-    await supabase.from('audit_logs').insert({
-      actor_id:req.user.id,actor_name:req.user.full_name,action:'COMPLAINT_STATUS_CHANGED',
-      entity_type:'complaint',entity_id:data.id,details:{from:previous.status,to:nextStatus,author_id:previous.author_id}
-    });
+  const statusLabels={in_review:'взята в работу',resolved:'рассмотрена и одобрена',rejected:'рассмотрена и отклонена'};
+  const extra=moderatorNotes?' Комментарий: '+moderatorNotes:'';
+  await createNotification(previous.author_id,'Изменён статус жалобы','Ваша жалоба «'+String(previous.reason||'').slice(0,160)+'» '+statusLabels[nextStatus]+'.'+extra,'complaint_status','/notifications/');
+  await supabase.from('audit_logs').insert({
+    actor_id:req.user.id,actor_name:req.user.full_name,action:'COMPLAINT_STATUS_CHANGED',
+    entity_type:'complaint',entity_id:data.id,details:{from:previous.status,to:nextStatus,author_id:previous.author_id,reason:previous.reason,target_type:previous.target_type,target_id:previous.target_id,moderator_notes:moderatorNotes}
+  });
+  const finalDecision=nextStatus==='resolved'||nextStatus==='rejected';
+  if(finalDecision){
+    const {data:deleted,error:deleteError}=await supabase.from('complaints').delete().eq('id',data.id).select('id').maybeSingle();
+    if(deleteError)return res.status(500).json({error:'Решение сохранено, но карточку жалобы удалить не удалось'});
+    if(!deleted)return res.status(404).json({error:'Карточка жалобы уже удалена'});
   }
-  res.json({ complaint: data });
+  res.json({ complaint: data, deleted: finalDecision });
 }));
 app.get('/api/moderation/users', requireUser, allowRoles('moderator','admin'), asyncRoute(async (_req, res) => {
   const { data: authResult, error: authError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 500 });
@@ -1204,7 +1211,7 @@ app.get('/api/admin/payments', requireUser, requireRootAdmin, asyncRoute(async (
 app.get('/api/admin/complaints', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('complaints')
     .select('*,users!complaints_author_id_fkey(id,full_name,email,username)')
-    .order('created_at', { ascending: false }).limit(500);
+    .in('status',['new','in_review']).order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
   try{res.json({ complaints: await enrichComplaintTargets(data||[]) })}
   catch(targetError){console.error('[admin] complaint targets failed:',targetError.message);res.status(500).json({error:'Не удалось загрузить объект жалобы'})}
