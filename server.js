@@ -599,10 +599,6 @@ app.post('/api/seat-reservations/release', requireUser, asyncRoute(async (req, r
 
 app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
   const eventId = String(req.body.eventId || '');
-  const { data: paymentSetting, error: settingError } = await supabase.from('platform_settings')
-    .select('value').eq('key', 'visual_payments_enabled').maybeSingle();
-  if (settingError) return res.status(500).json({ error: 'Не удалось проверить режим оплаты' });
-  const visualPaymentsEnabled = paymentSetting?.value === true;
   const { data, error } = await supabase.rpc('wallet_register_for_event', {
     p_user_id: req.user.id, p_event_id: eventId, p_seat_id: req.body.seatId || null
   });
@@ -619,7 +615,7 @@ app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
   await supabase.from('audit_logs').insert({
     actor_id: req.user.id, actor_name: req.user.full_name,
     action: 'REGISTER_FOR_EVENT', entity_type: 'ticket',
-    entity_id: data.ticket.id, details: { event_id: eventId, visual_payment_bypass: visualPaymentsEnabled }
+    entity_id: data.ticket.id, details: { event_id: eventId, payment_method: 'wallet', amount: data.ticket.price_paid }
   });
   res.status(201).json(data);
 }));
