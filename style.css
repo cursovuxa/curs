@@ -663,3 +663,13 @@ body.blocked-modal-open{overflow:hidden}
 .admin-event-status select:focus-visible{outline:0;border-color:var(--violet);box-shadow:0 0 0 3px color-mix(in srgb,var(--violet) 18%,transparent)}
 .admin-event-status:focus-within::after{transform:rotate(225deg)}
 @media(max-width:700px){.admin-event-status select{width:100%;min-height:44px;font-size:13px}.admin-event-status::after{right:16px;bottom:18px}}
+
+/* Clear, theme-aware dropdown affordance for the admin event status control. */
+.admin-event-status{position:relative}
+.admin-event-status::before{content:"";position:absolute;right:8px;bottom:5px;width:30px;height:30px;border-radius:10px;background:color-mix(in srgb,var(--ink) 7%,var(--surface,#fff));pointer-events:none;transition:background .18s ease,transform .18s ease}
+.admin-event-status::after{content:"";position:absolute;right:17px;bottom:15px;width:12px;height:8px;border:0;background:var(--ink);clip-path:polygon(0 18%,50% 68%,100% 18%,100% 48%,50% 100%,0 48%);pointer-events:none;transform:none;transition:background .18s ease,transform .18s ease}
+.admin-event-status:hover::before,.admin-event-status:focus-within::before{background:color-mix(in srgb,var(--violet) 15%,var(--surface,#fff))}
+.admin-event-status:hover::after,.admin-event-status:focus-within::after{background:var(--violet)}
+.admin-event-status select,.admin-event-status select[data-event-status]{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:50px;min-height:42px}
+.admin-event-status:focus-within::after{transform:rotate(180deg)}
+@media(max-width:700px){.admin-event-status::before{right:8px;bottom:7px;width:30px;height:30px}.admin-event-status::after{right:17px;bottom:17px}}
