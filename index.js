@@ -751,6 +751,7 @@ async function submitTicketCheckIn(form){
 }
 async function startTicketScanner(){
  if(!navigator.mediaDevices?.getUserMedia){toast('Браузер не разрешил доступ к камере. Введите номер билета вручную.');return}
+ const scanForm=$('#scanForm');if(!scanForm?.elements.eventId?.value){const message=$('#scanResult');if(message)message.textContent='Сначала выберите назначенное мероприятие.';return}
  try{
   const detector=window.BarcodeDetector?new BarcodeDetector({formats:['qr_code']}):null;
   const fallback=detector?null:await loadQrScannerFallback();
@@ -765,12 +766,27 @@ async function startTicketScanner(){
     let raw='';
     if(detector){const found=await detector.detect(video);raw=found[0]?.rawValue||''}
     else if(video.videoWidth){canvas.width=Math.max(1,Math.floor(video.videoWidth/2));canvas.height=Math.max(1,Math.floor(video.videoHeight/2));context.drawImage(video,0,0,canvas.width,canvas.height);const pixels=context.getImageData(0,0,canvas.width,canvas.height);raw=fallback(pixels.data,pixels.width,pixels.height,{inversionAttempts:'dontInvert'})?.data||''}
-    if(raw){const form=$('#scanForm');form.elements.ticket.value=raw;stopTicketScanner();await submitTicketCheckIn(form);return}
+    if(raw){const form=$('#scanForm'),qr=parseTicketQr(raw);stopTicketScanner();if(!qr.ticketNumber){$('#scanResult').textContent='QR-код распознан, но в нём нет номера билета.';return}form.elements.ticket.value=qr.ticketNumber;$('#scanResult').textContent='QR распознан · код билета '+qr.ticketNumber+'. Нажмите «Проверить и отметить вход».';return}
    }catch(error){console.warn('QR scan failed:',error)}
    ticketScannerFrame=requestAnimationFrame(scan);
   };
   ticketScannerFrame=requestAnimationFrame(scan);
  }catch(error){stopTicketScanner();toast(error.name==='NotAllowedError'?'Разрешите доступ к камере.':('Не удалось запустить сканер: '+error.message))}
+}
+function setStaffEventPicker(form,eventId){
+  const value=String(eventId||'');
+  const input=form?.elements.eventId;
+  const picker=form?.querySelector('[data-staff-event-picker]');
+  if(!input||!picker)return;
+  input.value=value;
+  const selected=picker.querySelector('[data-staff-event-option="'+CSS.escape(value)+'"]');
+  const label=picker.querySelector('[data-staff-event-current]');
+  if(label)label.textContent=selected?.querySelector('span')?.textContent||'Выберите мероприятие';
+  picker.querySelectorAll('[data-staff-event-option]').forEach(option=>option.classList.toggle('is-selected',option===selected));
+  const toggle=picker.querySelector('[data-staff-event-toggle]');
+  toggle?.setAttribute('aria-expanded','false');
+  const menu=picker.querySelector('[data-staff-event-menu]');
+  if(menu)menu.hidden=true;
 }
 async function staffView() {
   try {
@@ -785,8 +801,13 @@ async function staffView() {
       return '<details class="workspace-card" open><summary><b>'+esc(event.title||'Мероприятие')+'</b> · '+esc(event.start_date||'')+' · '+esc(event.venues?.name||'')+'</summary><h4>Участники ('+participants.length+')</h4>'+(error?'<p class="connection-state">'+esc(error)+'</p>':participants.length?'<div class="scroll-table"><table class="data-table"><thead><tr><th>Билет</th><th>Посетитель</th><th>Место</th><th>Статус</th></tr></thead><tbody>'+participants.map(p=>'<tr><td>'+esc(p.ticket_number)+'</td><td>'+esc(p.users?.full_name||p.users?.email||'')+'</td><td>'+esc(p.seat_label||'—')+'</td><td>'+esc(p.status)+'</td></tr>').join('')+'</tbody></table></div>':empty('Список участников пока пуст.'))+'</details>';
     }).join('');
     const assignedEvents=[...new Map(assignments.map(a=>a.events).filter(e=>e?.id).map(e=>[String(e.id),e])).values()];
-    const scanOptions=assignedEvents.map(e=>'<option value="'+esc(e.id)+'">'+esc(e.title||'Мероприятие')+' · '+esc(e.start_date||'')+'</option>').join('');
-    $('#workspaceContent').innerHTML=(cards||'<div class="workspace-card">'+empty('Назначенных мероприятий пока нет.')+'</div>')+'<div class="workspace-card staff-checkin-card"><h3>Проверка билета</h3><p>Выберите своё мероприятие и отсканируйте QR-код участника.</p><form id="scanForm" class="staff-checkin-form"><label>Мероприятие<select name="eventId" required><option value="">Выберите мероприятие</option>'+scanOptions+'</select></label><label>Номер билета или QR-данные<input name="ticket" placeholder="FT-…" autocomplete="off" required></label><div class="staff-checkin-actions"><button class="button button-light" type="button" data-start-ticket-scan>Сканировать QR</button><button class="button button-dark">Проверить и отметить вход</button><button class="button button-light" type="button" data-stop-ticket-scan hidden>Остановить камеру</button></div><video id="ticketScannerVideo" class="ticket-scanner-video" playsinline muted hidden></video></form><p id="scanResult" class="ticket-scan-result" role="status" aria-live="polite"></p></div>';
+    const eventPicker=assignedEvents.length
+      ?'<div class="staff-event-picker" data-staff-event-picker><input type="hidden" name="eventId" value=""><button type="button" class="staff-event-toggle" data-staff-event-toggle aria-expanded="false"><span data-staff-event-current>Выберите мероприятие</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="staff-event-menu" data-staff-event-menu hidden>'+assignedEvents.map(e=>'<button type="button" class="staff-event-option" data-staff-event-option="'+esc(e.id)+'"><span>'+esc(e.title||'Мероприятие')+'</span><small>'+esc([e.start_date,e.start_time,e.venues?.name].filter(Boolean).join(' · '))+'</small></button>').join('')+'</div></div>'
+      :'<div class="staff-assignment-empty"><b>Нет назначенных мероприятий</b><span>Попросите организатора или администратора назначить вас сотрудником мероприятия.</span></div>';
+    const checkin=assignedEvents.length
+      ?'<form id="scanForm" class="staff-checkin-form"><label>Мероприятие'+eventPicker+'</label><label>Код билета<input name="ticket" placeholder="FT-…" autocomplete="off" required></label><div class="staff-checkin-actions"><button class="button button-light" type="button" data-start-ticket-scan>Сканировать QR</button><button class="button button-dark" type="submit">Проверить и отметить вход</button><button class="button button-light" type="button" data-stop-ticket-scan hidden>Остановить камеру</button></div><video id="ticketScannerVideo" class="ticket-scanner-video" playsinline muted hidden></video></form><p id="scanResult" class="ticket-scan-result" role="status" aria-live="polite"></p>'
+      :'<div class="staff-checkin-empty">Проверка билетов появится после назначения на мероприятие.</div>';
+    $('#workspaceContent').innerHTML=(cards||'<div class="workspace-card staff-assignment-card"><div class="staff-assignment-empty"><b>Пока нет назначенных мероприятий</b><span>Когда организатор добавит вас в команду, здесь появятся мероприятие, список участников и проверка билетов.</span></div></div>')+'<div class="workspace-card staff-checkin-card"><h3>Проверка билета</h3><p>Выберите назначенное мероприятие, отсканируйте QR и проверьте код билета.</p>'+checkin+'</div>';
   }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
 }
 async function moderatorView() {
@@ -1165,7 +1186,14 @@ document.addEventListener('change',async(e)=>{
   if(e.target.matches('[data-category]')){activeCategory=e.target.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===e.target));renderEvents()}
   if(e.target.matches('[data-complaint]')){try{await api('/api/moderation/complaints/'+e.target.dataset.complaint,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус жалобы обновлён')}catch(x){toast(x.message)}}
 });
-document.addEventListener('click',(event)=>{const target=event.target instanceof Element?event.target:null;if(target?.closest('[data-start-ticket-scan]')){event.preventDefault();void startTicketScanner()}if(target?.closest('[data-stop-ticket-scan]')){event.preventDefault();stopTicketScanner()}});
+document.addEventListener('click',(event)=>{
+ const target=event.target instanceof Element?event.target:null;
+ const toggle=target?.closest('[data-staff-event-toggle]');
+ if(toggle){const picker=toggle.closest('[data-staff-event-picker]'),menu=picker?.querySelector('[data-staff-event-menu]'),open=toggle.getAttribute('aria-expanded')!=='true';if(menu)menu.hidden=!open;toggle.setAttribute('aria-expanded',String(open));return}
+ const option=target?.closest('[data-staff-event-option]');
+ if(option){const form=option.closest('form');setStaffEventPicker(form,option.dataset.staffEventOption);return}
+ if(target&&!target.closest('[data-staff-event-picker]'))document.querySelectorAll('[data-staff-event-picker]').forEach(picker=>{const menu=picker.querySelector('[data-staff-event-menu]'),button=picker.querySelector('[data-staff-event-toggle]');if(menu)menu.hidden=true;button?.setAttribute('aria-expanded','false')});
+ if(target?.closest('[data-start-ticket-scan]')){event.preventDefault();void startTicketScanner()}if(target?.closest('[data-stop-ticket-scan]')){event.preventDefault();stopTicketScanner()}});
 document.addEventListener('submit',async(e)=>{
   if(e.target.id==='walletTopupForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;if(form.dataset.attemptAmount&&form.dataset.attemptAmount!==form.elements.amount.value)form.dataset.key=crypto.randomUUID();form.dataset.attemptAmount=form.elements.amount.value;try{const topped=await api('/api/wallet/topups',{method:'POST',body:JSON.stringify({amount:Number(form.elements.amount.value),idempotencyKey:form.dataset.key})});headerWalletBalance=Number(topped.balance||0);refreshHeaderWalletLabel();toast('Баланс пополнен');await openWallet()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
   if(e.target.id==='ticketActionForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;try{const del=form.dataset.deleteOnly==='true';await api('/api/admin/tickets/'+encodeURIComponent(form.dataset.ticketId)+(del?'':'/cancel'),{method:del?'DELETE':'PATCH',...(del?{}:{body:JSON.stringify({refund:form.elements.refund.checked,block:form.elements.block.checked,notify:form.elements.notify.checked,deleteRecord:form.elements.deleteRecord.checked})})});closeMoneyDialog('ticketActionModal');adminSelectedTab='tickets';toast(del?'Запись билета удалена':'Билет аннулирован, место освобождено');await adminView()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
