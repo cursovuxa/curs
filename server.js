@@ -1316,9 +1316,12 @@ app.get('/api/profiles/:id', asyncRoute(async (req, res) => {
     const { data } = await supabase.auth.getUser(token);
     viewerId = data?.user?.id || null;
   }
-  const { data: profile, error } = await supabase.from('users')
-    .select('id,full_name,username,avatar_url,avatar_path,role,city,preferences,is_blocked')
-    .eq('id', req.params.id).maybeSingle();
+  const lookup=String(req.params.id||'').trim();
+  let profileQuery=supabase.from('users').select('id,full_name,username,avatar_url,avatar_path,role,city,preferences,is_blocked');
+  if(/^[0-9a-f-]{36}$/i.test(lookup))profileQuery=profileQuery.eq('id',lookup);
+  else if(/^[a-z0-9_]{3,24}$/i.test(lookup))profileQuery=profileQuery.eq('username',lookup);
+  else return res.status(404).json({error:'Профиль не найден'});
+  const { data: profile, error } = await profileQuery.maybeSingle();
   if (error) return res.status(500).json({ error: 'Не удалось загрузить профиль' });
   if (!profile || profile.is_blocked) return res.status(404).json({ error: 'Профиль не найден' });
   let blocked = false;
@@ -1332,10 +1335,16 @@ app.get('/api/profiles/:id', asyncRoute(async (req, res) => {
   const { data: links, error: linksError } = await supabase.from('profile_links').select('id,url,platform')
     .eq('user_id', profile.id).eq('status','approved').order('created_at');
   if (linksError) return res.status(500).json({ error: 'Не удалось загрузить ссылки профиля' });
+  const {data:hostedEvents,error:eventsError}=await supabase.from('events')
+    .select('id,title,start_date,start_time,location_address,cover_image,venues(name,city,address)')
+    .eq('organizer_id',profile.id).eq('status','published')
+    .gte('start_date',new Date().toISOString().slice(0,10))
+    .order('start_date',{ascending:true}).limit(12);
+  if(eventsError)return res.status(500).json({error:'Не удалось загрузить мероприятия профиля'});
   res.json({ profile: await signedUserAvatar({
     id: profile.id, full_name: profile.full_name, username: profile.username, avatar_url: profile.avatar_url,
     avatar_path: profile.avatar_path, role: profile.role, city: profile.city,
-    about: profile.preferences?.about || '', links: links || []
+    about: profile.preferences?.about || '', links: links || [], events:hostedEvents||[]
   }) });
 }));
 
