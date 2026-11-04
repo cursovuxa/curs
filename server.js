@@ -326,13 +326,23 @@ app.delete('/api/favorites/:eventId', requireUser, asyncRoute(async (req, res) =
 }));
 app.post('/api/complaints', requireUser, asyncRoute(async (req, res) => {
   const { targetType, targetId, reason, details } = req.body;
-  if (!reason || !details) return res.status(400).json({ error: 'Укажите причину и подробности' });
+  const safeReason=String(reason||'').trim().slice(0,200);
+  const safeDetails=String(details||'').trim().slice(0,4000);
+  if (!safeReason || !safeDetails) return res.status(400).json({ error: 'Укажите причину и подробности' });
+  const allowedTargets=['event','user','review','ticket'];
+  const normalizedTarget=allowedTargets.includes(targetType)?targetType:'event';
   const { data, error } = await supabase.from('complaints').insert({
-    author_id: req.user.id, target_type: targetType || 'event',
-    target_id: targetId || null, reason: String(reason).slice(0, 200),
-    details: String(details).slice(0, 4000), status: 'new'
+    author_id: req.user.id, target_type: normalizedTarget,
+    target_id: targetId || null, reason: safeReason,
+    details: safeDetails, status: 'new'
   }).select('*').single();
   if (error) return res.status(400).json({ error: 'Не удалось отправить жалобу' });
+  let targetLabel=normalizedTarget==='event'?'мероприятию':'объекту';
+  if(normalizedTarget==='event'&&targetId){
+    const {data:event}=await supabase.from('events').select('title').eq('id',targetId).maybeSingle();
+    if(event?.title)targetLabel='мероприятию «'+String(event.title).slice(0,180)+'»';
+  }
+  await notifyRootAdmin('Поступила новая жалоба',(req.user.full_name||'Пользователь')+' отправил жалобу на '+targetLabel+'. Причина: '+safeReason,'complaint_received','/admin/');
   res.status(201).json({ complaint: data });
 }));
 app.get('/api/notifications/unread-count', requireUser, asyncRoute(async(req,res)=>{
@@ -800,12 +810,27 @@ app.get('/api/moderation/complaints', requireUser, allowRoles('moderator', 'admi
   res.json({ complaints: data });
 }));
 app.patch('/api/moderation/complaints/:id', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (req, res) => {
-  if (!['in_review','resolved','rejected'].includes(req.body.status)) return res.status(400).json({ error: 'Недопустимый статус' });
+  const nextStatus=String(req.body.status||'');
+  if (!['in_review','resolved','rejected'].includes(nextStatus)) return res.status(400).json({ error: 'Недопустимый статус' });
+  const {data:previous,error:lookupError}=await supabase.from('complaints')
+    .select('id,author_id,status,reason').eq('id',req.params.id).maybeSingle();
+  if(lookupError)return res.status(500).json({error:'Не удалось загрузить жалобу'});
+  if(!previous)return res.status(404).json({error:'Жалоба не найдена'});
+  const moderatorNotes=String(req.body.moderatorNotes||'').trim().slice(0,1000);
   const { data, error } = await supabase.from('complaints').update({
-    status: req.body.status, moderator_notes: String(req.body.moderatorNotes || '').slice(0, 3000),
+    status: nextStatus, moderator_notes: moderatorNotes,
     reviewed_by: req.user.id, updated_at: new Date().toISOString()
   }).eq('id', req.params.id).select('*').single();
   if (error) return res.status(400).json({ error: 'Не удалось обновить жалобу' });
+  const statusLabels={in_review:'взята в работу',resolved:'рассмотрена и принята',rejected:'рассмотрена и отклонена'};
+  if(previous.status!==nextStatus){
+    const extra=moderatorNotes?' Комментарий: '+moderatorNotes:'';
+    await createNotification(previous.author_id,'Изменён статус жалобы','Ваша жалоба «'+String(previous.reason||'').slice(0,160)+'» '+statusLabels[nextStatus]+'.'+extra,'complaint_status','/notifications/');
+    await supabase.from('audit_logs').insert({
+      actor_id:req.user.id,actor_name:req.user.full_name,action:'COMPLAINT_STATUS_CHANGED',
+      entity_type:'complaint',entity_id:data.id,details:{from:previous.status,to:nextStatus,author_id:previous.author_id}
+    });
+  }
   res.json({ complaint: data });
 }));
 app.get('/api/moderation/users', requireUser, allowRoles('moderator','admin'), asyncRoute(async (_req, res) => {
