@@ -805,7 +805,7 @@ app.post('/api/venues', requireUser, allowRoles('organizer','admin'), asyncRoute
   res.status(201).json({ venue: data });
 }));
 app.get('/api/organizer/venues', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
-  const { data, error } = await supabase.from('venues').select('*').eq('owner_id', req.user.id).order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('venues').select('*').or('owner_id.eq.' + req.user.id + ',owner_id.is.null').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить ваши площадки' });
   res.json({ venues: data });
 }));
