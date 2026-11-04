@@ -11,7 +11,8 @@ const paymentProviderName = String(process.env.PAYMENT_PROVIDER_NAME || '').trim
 const paymentCreateUrl = String(process.env.PAYMENT_PROVIDER_CREATE_URL || '').trim();
 const paymentApiKey = String(process.env.PAYMENT_PROVIDER_API_KEY || '');
 const paymentWebhookSecret = String(process.env.PAYMENT_WEBHOOK_SECRET || '');
-const publicSiteUrl = String(process.env.PUBLIC_SITE_URL || 'https://flowtix.online').replace(/\\/$/, '');
+const publicSiteUrl = String(process.env.PUBLIC_SITE_URL || 'https://flowtix.online').replace(/\/$/, '');
+const paymentWebhookUrl = String(process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '') + '/api/webhooks/payments';
 const paymentProviderReady = Boolean(paymentProviderName && paymentCreateUrl && paymentApiKey && paymentWebhookSecret);
 const isRootEmail = (email) => Boolean(rootAdminEmail) && String(email || '').trim().toLowerCase() === rootAdminEmail;
 const validRoles = new Set(['visitor', 'organizer', 'staff', 'moderator', 'admin']);
@@ -643,7 +644,7 @@ app.post('/api/payments/checkout', requireUser, asyncRoute(async (req,res) => {
   if(intent.checkout_url&&intent.provider_reference)return res.json({intentId:intent.id,checkoutUrl:intent.checkout_url,expiresAt:intent.expires_at});
   const merchantReference=String(intent.id);
   try{
-    const response=await fetch(paymentCreateUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+paymentApiKey,'Idempotency-Key':idempotencyKey},body:JSON.stringify({merchant_reference:merchantReference,amount:Number(intent.amount),currency:intent.currency||'KZT',description:'Билет FlowTix',return_url:publicSiteUrl+'/?paymentIntent='+encodeURIComponent(merchantReference),webhook_url:publicSiteUrl.replace(/\\/$/,'')+'/api/webhooks/payments'}),signal:AbortSignal.timeout(15000)});
+    const response=await fetch(paymentCreateUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+paymentApiKey,'Idempotency-Key':idempotencyKey},body:JSON.stringify({merchant_reference:merchantReference,amount:Number(intent.amount),currency:intent.currency||'KZT',description:'Билет FlowTix',return_url:publicSiteUrl+'/?paymentIntent='+encodeURIComponent(merchantReference),webhook_url:paymentWebhookUrl}),signal:AbortSignal.timeout(15000)});
     const providerResult=await response.json().catch(()=>({}));
     const checkoutUrl=String(providerResult.checkout_url||providerResult.checkoutUrl||'');
     const providerReference=String(providerResult.provider_reference||providerResult.id||'');
