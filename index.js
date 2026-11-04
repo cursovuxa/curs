@@ -135,7 +135,7 @@ function accountMenuIcon(kind){
 }
 function decorateAccountMenu(){
  const icons={profile:'profile',workspace:'workspace',notifications:'notifications',messages:'messages',admin:'admin',logout:'logout'};
- $('#profileDropdown [role="menuitem"]').forEach(button=>{const action=button.dataset.accountAction;const kind=action==='wallet'?'wallet':icons[action];if(kind&&!button.querySelector('.account-menu-icon'))button.insertAdjacentHTML('afterbegin',accountMenuIcon(kind))});
+ $$( '#profileDropdown [role="menuitem"]' ).forEach(button=>{const action=button.dataset.accountAction;const kind=action==='wallet'?'wallet':icons[action];if(kind&&!button.querySelector('.account-menu-icon'))button.insertAdjacentHTML('afterbegin',accountMenuIcon(kind))});
  updateNotificationBadge();
 }
 async function eventCoverDataUrl(file) {
