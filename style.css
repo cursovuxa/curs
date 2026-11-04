@@ -774,3 +774,38 @@ body[data-theme="halloween"] .ticket-scan-result.is-success{color:#77e1b6}
 .event-organizer-chip-detail{display:flex;width:100%;justify-content:flex-start;padding:12px 14px;background:color-mix(in srgb,var(--violet) 7%,var(--surface));border-color:color-mix(in srgb,var(--violet) 24%,var(--line))}
 .event-organizer-chip-detail .profile-chip-arrow{margin-left:auto;font-size:11px;font-weight:800;white-space:nowrap}
 @media(max-width:520px){.event-organizer-chip-detail .profile-chip-arrow{font-size:0}.event-organizer-chip-detail .profile-chip-arrow:after{content:"↗";font-size:16px}}
+
+/* Admin account modal: theme-aware fields and balanced sections */
+.admin-user-modal-overlay .admin-user-modal{width:min(820px,calc(100vw - 32px));max-height:min(90dvh,960px);padding:clamp(20px,3vw,30px);background:var(--surface,var(--paper));color:var(--ink);scrollbar-color:color-mix(in srgb,var(--violet) 45%,var(--line)) transparent}
+.admin-user-modal .admin-profile-heading{border:1px solid var(--line);background:color-mix(in srgb,var(--violet) 8%,var(--surface,var(--paper)))}
+.admin-user-modal #adminUserProfileForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:20px;padding:18px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface,var(--paper)) 92%,var(--violet))}
+.admin-user-modal #adminUserProfileForm>label,.admin-user-modal .admin-balance-form>label,.admin-user-modal .profile-link-add>label{display:grid;align-content:start;gap:7px;min-width:0;color:var(--muted);font-size:12px;font-weight:700}
+.admin-user-modal #adminUserProfileForm input,.admin-user-modal #adminUserProfileForm textarea,.admin-user-modal .admin-balance-form input,.admin-user-modal .profile-link-add input,.admin-user-modal .profile-link-row input{width:100%;min-width:0;min-height:44px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--paper)!important;color:var(--ink)!important;font:500 14px/1.4 "DM Sans",sans-serif;outline:none;box-shadow:none}
+.admin-user-modal #adminUserProfileForm input:focus,.admin-user-modal #adminUserProfileForm textarea:focus,.admin-user-modal .admin-balance-form input:focus,.admin-user-modal .profile-link-add input:focus,.admin-user-modal .profile-link-row input:focus{border-color:var(--violet);box-shadow:0 0 0 3px color-mix(in srgb,var(--violet) 18%,transparent)}
+.admin-user-modal #adminUserProfileForm textarea{min-height:96px;resize:vertical}
+.admin-user-modal #adminUserProfileForm input[type=file]{padding:7px;font-size:12px}
+.admin-user-modal #adminUserProfileForm input[type=file]::file-selector-button{margin-right:10px;padding:8px 12px;border:0;border-radius:9px;background:color-mix(in srgb,var(--violet) 13%,var(--surface,var(--paper)));color:var(--ink);font:700 12px "DM Sans",sans-serif;cursor:pointer}
+.admin-user-modal #adminUserProfileForm>button{align-self:end;justify-self:start;min-width:190px}
+.admin-user-modal .admin-balance-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px;padding:18px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface,var(--paper)) 94%,var(--violet))}
+.admin-user-modal .admin-balance-form h3{grid-column:1/-1;margin:0 0 2px;font-size:17px}
+.admin-user-modal .admin-balance-form button{grid-column:1/-1;justify-self:start;min-width:190px}
+.admin-user-modal .admin-profile-links{margin-top:18px;padding:18px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface,var(--paper)) 94%,var(--violet))}
+.admin-user-modal .admin-profile-links h3{margin:0 0 12px}
+.admin-user-modal .admin-profile-links .profile-link-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;gap:9px;padding:10px;border-radius:12px;background:var(--surface,var(--paper))}
+.admin-user-modal .admin-profile-links .profile-link-row>span:first-child{display:grid;place-items:center;color:var(--violet)}
+.admin-user-modal .profile-link-add{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;margin:16px 0 0}
+.admin-user-modal .profile-link-add button{min-height:44px}
+.admin-user-modal .profile-modal-actions{padding-top:16px;border-top:1px solid var(--line)}
+@media(max-width:620px){
+ .admin-user-modal-overlay{padding:10px!important}
+ .admin-user-modal-overlay .admin-user-modal{width:100%;max-height:calc(100dvh - 20px);padding:18px;border-radius:20px}
+ .admin-user-modal #adminUserProfileForm{grid-template-columns:minmax(0,1fr);gap:12px;padding:14px}
+ .admin-user-modal #adminUserProfileForm .wide{grid-column:1}
+ .admin-user-modal .admin-balance-form{grid-template-columns:minmax(0,1fr);padding:14px}
+ .admin-user-modal .admin-balance-form h3,.admin-user-modal .admin-balance-form button{grid-column:1}
+ .admin-user-modal .admin-profile-links{padding:14px}
+ .admin-user-modal .admin-profile-links .profile-link-row{grid-template-columns:auto minmax(0,1fr);align-items:center}
+ .admin-user-modal .admin-profile-links .profile-link-row .link-status,.admin-user-modal .admin-profile-links .profile-link-row button{grid-row:auto}
+ .admin-user-modal .profile-link-add{grid-template-columns:minmax(0,1fr)}
+ .admin-user-modal .profile-link-add button,.admin-user-modal #adminUserProfileForm>button,.admin-user-modal .admin-balance-form button{width:100%;justify-self:stretch}
+}
