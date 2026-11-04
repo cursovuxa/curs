@@ -805,7 +805,7 @@ app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('s
 }));
 app.get('/api/moderation/complaints', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('complaints').select('*,users!complaints_author_id_fkey(full_name,email)')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
   res.json({ complaints: data });
 }));
@@ -1184,7 +1184,7 @@ app.get('/api/admin/payments', requireUser, requireRootAdmin, asyncRoute(async (
 app.get('/api/admin/complaints', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('complaints')
     .select('*,users!complaints_author_id_fkey(full_name,email)')
-    .order('created_at', { ascending: true }).limit(500);
+    .order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
   res.json({ complaints: data });
 }));
