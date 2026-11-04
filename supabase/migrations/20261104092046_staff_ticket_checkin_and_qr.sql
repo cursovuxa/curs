@@ -10,7 +10,7 @@ as $$
 declare
   t public.tickets%rowtype;
   e public.events%rowtype;
-  v_employee_id uuid;
+  employee_id uuid;
   updated_ticket public.tickets%rowtype;
 begin
   if p_ticket_number is null or length(trim(p_ticket_number)) < 5 or p_event_id is null or p_staff_id is null then
@@ -36,10 +36,10 @@ begin
   end if;
 
   if not coalesce(p_bypass_assignment, false) then
-    select emp.id into v_employee_id from public.employees as emp where emp.user_id = p_staff_id;
-    if v_employee_id is null or not exists (
-      select 1 from public.event_staff_assignments as assignment
-       where assignment.event_id = t.event_id and assignment.employee_id = v_employee_id and assignment.status = 'assigned'
+    select id into employee_id from public.employees where user_id = p_staff_id;
+    if employee_id is null or not exists (
+      select 1 from public.event_staff_assignments
+       where event_id = t.event_id and employee_id = employee_id and status = 'assigned'
     ) then
       raise exception 'staff_assignment_required';
     end if;

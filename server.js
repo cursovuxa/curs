@@ -711,7 +711,7 @@ app.get('/api/staff/events/:eventId/participants', requireUser, allowRoles('staf
   res.json({ participants: data });
 }));
 app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('staff', 'admin'), asyncRoute(async (req, res) => {
-  const ticketNumber = String(req.params.ticketNumber || '').trim();
+  const ticketNumber = String(req.params.ticketNumber || '').trim().toUpperCase();
   const eventId = String(req.body.eventId || '');
   if (!ticketNumber || ticketNumber.length > 40 || !/^[0-9a-f-]{36}$/i.test(eventId)) {
     return res.status(400).json({ error: 'Выберите мероприятие и укажите корректный билет' });
