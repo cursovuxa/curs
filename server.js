@@ -507,6 +507,64 @@ app.patch('/api/admin/users/:id/role', requireUser, requireRootAdmin, asyncRoute
   res.json({ user: data });
 }));
 
+app.get('/api/events/:id/seats', requireUser, asyncRoute(async (req, res) => {
+  const { data: event, error: eventError } = await supabase.from('events')
+    .select('id,hall_id,total_seats,available_seats,halls(id,name,total_capacity,layout_config)')
+    .eq('id', req.params.id).eq('status', 'published').maybeSingle();
+  if (eventError) return res.status(500).json({ error: 'Не удалось загрузить схему мест' });
+  if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  if (!event.hall_id) return res.json({ seatSelectionRequired: false, seats: [], event });
+  const { error: ensureError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: event.hall_id });
+  if (ensureError) return res.status(500).json({ error: 'Не удалось подготовить схему зала' });
+  const [seatResult, reservationResult, ticketResult] = await Promise.all([
+    supabase.from('seats').select('id,row_label,seat_number,seat_type,price_multiplier')
+      .eq('hall_id', event.hall_id).order('row_label').order('seat_number').limit(2000),
+    supabase.from('seat_reservations').select('seat_id,user_id,reserved_until')
+      .eq('event_id', event.id).eq('status', 'reserved').gt('reserved_until', new Date().toISOString()),
+    supabase.from('tickets').select('seat_id').eq('event_id', event.id).in('status', ['valid', 'used']).not('seat_id', 'is', null)
+  ]);
+  if (seatResult.error || reservationResult.error || ticketResult.error) {
+    return res.status(500).json({ error: 'Не удалось загрузить доступность мест' });
+  }
+  const capacity = Math.min(Number(event.total_seats || seatResult.data.length), seatResult.data.length);
+  const reservations = new Map((reservationResult.data || []).map(item => [item.seat_id, item]));
+  const occupied = new Set((ticketResult.data || []).map(item => item.seat_id));
+  const seats = seatResult.data.slice(0, capacity).map(seat => {
+    const hold = reservations.get(seat.id);
+    const status = occupied.has(seat.id) ? 'occupied'
+      : hold ? (hold.user_id === req.user.id ? 'mine' : 'reserved') : 'available';
+    return { ...seat, status, reserved_until: hold?.user_id === req.user.id ? hold.reserved_until : null };
+  });
+  res.json({ seatSelectionRequired: true, event, seats });
+}));
+
+app.post('/api/seat-reservations', requireUser, asyncRoute(async (req, res) => {
+  const eventId = String(req.body.eventId || '');
+  const seatId = String(req.body.seatId || '');
+  if (!eventId || !seatId) return res.status(400).json({ error: 'Выберите место' });
+  const { data, error } = await supabase.rpc('reserve_event_seat', {
+    p_user_id: req.user.id, p_event_id: eventId, p_seat_id: seatId
+  });
+  if (error) {
+    const reason = error.message || '';
+    const status = reason.includes('sold_out') || reason.includes('seat_unavailable') ? 409 : 400;
+    const message = reason.includes('sold_out') ? 'Свободных мест больше нет'
+      : reason.includes('seat_unavailable') ? 'Это место уже выбрали. Обновил схему — выберите другое.'
+      : 'Не удалось временно забронировать место';
+    return res.status(status).json({ error: message });
+  }
+  res.status(201).json({ reservation: data });
+}));
+
+app.post('/api/seat-reservations/release', requireUser, asyncRoute(async (req, res) => {
+  const { eventId, seatId } = req.body || {};
+  const { data, error } = await supabase.rpc('release_event_seat', {
+    p_user_id: req.user.id, p_event_id: String(eventId || ''), p_seat_id: String(seatId || '')
+  });
+  if (error) return res.status(400).json({ error: 'Не удалось отменить бронь места' });
+  res.json({ released: Boolean(data) });
+}));
+
 app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
   const eventId = String(req.body.eventId || '');
   const { data: paymentSetting, error: settingError } = await supabase.from('platform_settings')
@@ -514,16 +572,16 @@ app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
   if (settingError) return res.status(500).json({ error: 'Не удалось проверить режим оплаты' });
   const visualPaymentsEnabled = paymentSetting?.value === true;
   const { data, error } = await supabase.rpc('register_for_event', {
-    p_user_id: req.user.id, p_event_id: eventId, p_visual_payments_enabled: visualPaymentsEnabled
+    p_user_id: req.user.id, p_event_id: eventId, p_visual_payments_enabled: visualPaymentsEnabled, p_seat_id: req.body.seatId || null
   });
   if (error) {
     const reason = error.message || '';
     const status = reason.includes('payment_provider_required') ? 501
       : reason.includes('already_registered') ? 409
-      : reason.includes('sold_out') ? 409 : 400;
+      : reason.includes('sold_out') || reason.includes('seat_unavailable') ? 409 : 400;
     const message = reason.includes('payment_provider_required') ? 'Оплата пока недоступна: платёжный провайдер не подключён. Платные регистрации закрыты.'
       : reason.includes('already_registered') ? 'Вы уже зарегистрированы'
-      : reason.includes('sold_out') ? 'Свободных мест больше нет' : 'Не удалось зарегистрироваться';
+      : reason.includes('sold_out') ? 'Свободных мест больше нет' : reason.includes('seat_required') ? 'Выберите место на схеме зала' : reason.includes('seat_unavailable') ? 'Выбранное место уже заняли. Выберите другое.' : reason.includes('reservation_expired') ? 'Время брони истекло. Выберите место ещё раз.' : 'Не удалось зарегистрироваться';
     return res.status(status).json({ error: message });
   }
   await supabase.from('audit_logs').insert({
