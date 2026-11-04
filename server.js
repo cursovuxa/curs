@@ -379,6 +379,14 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
     if (!eventAddress) eventAddress = String(venue.address || '').trim();
   }
   if (!eventAddress) return res.status(400).json({ error: 'Укажите адрес мероприятия или выберите площадку с адресом' });
+  if (hall_id) {
+    const { data: hall } = await supabase.from('halls').select('id,venue_id,total_capacity').eq('id', hall_id).maybeSingle();
+    if (!hall || String(hall.venue_id) !== String(venue_id) || Number(total_seats) > Number(hall.total_capacity)) {
+      return res.status(400).json({ error: 'Выберите зал этой площадки и не превышайте его вместимость' });
+    }
+    const { error: seatError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: hall.id });
+    if (seatError) return res.status(500).json({ error: 'Не удалось подготовить места в зале' });
+  }
   const { data, error } = await supabase.from('events').insert({
     organizer_id: req.user.id, title: String(title).trim().slice(0, 180),
     description: String(description || '').slice(0, 10000),
@@ -440,6 +448,21 @@ app.patch('/api/events/:id', requireUser, allowRoles('organizer', 'admin'), asyn
   if (req.body.contact_email !== undefined) changes.contact_email = String(req.body.contact_email || '').trim().slice(0, 254) || null;
   if (req.body.contact_phone !== undefined) changes.contact_phone = String(req.body.contact_phone || '').trim().slice(0, 40) || null;
   if (req.body.rules !== undefined) changes.rules = String(req.body.rules || '').trim().slice(0, 5000);
+  if (req.body.hall_id !== undefined) {
+    const hallId = req.body.hall_id || null;
+    if (hallId) {
+      const { data: hall } = await supabase.from('halls').select('id,venue_id,total_capacity').eq('id', hallId).maybeSingle();
+      const { data: current } = await supabase.from('events').select('venue_id,total_seats').eq('id', req.params.id).eq('organizer_id', req.user.id).maybeSingle();
+      const venueId = changes.venue_id !== undefined ? changes.venue_id : current?.venue_id;
+      const capacity = changes.total_seats !== undefined ? Number(changes.total_seats) : Number(current?.total_seats || 0);
+      if (!hall || String(hall.venue_id) !== String(venueId) || capacity > Number(hall.total_capacity)) {
+        return res.status(400).json({ error: 'Выберите зал этой площадки и не превышайте его вместимость' });
+      }
+      const { error: seatError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: hall.id });
+      if (seatError) return res.status(500).json({ error: 'Не удалось подготовить места в зале' });
+    }
+    changes.hall_id = hallId;
+  }
   const { data, error } = await supabase.from('events').update(changes)
     .eq('id', req.params.id).eq('organizer_id', req.user.id).select('*').maybeSingle();
   if (error) return res.status(400).json({ error: 'Не удалось изменить мероприятие' });
@@ -784,6 +807,40 @@ app.get('/api/organizer/venues', requireUser, allowRoles('organizer','admin'), a
   const { data, error } = await supabase.from('venues').select('*').eq('owner_id', req.user.id).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить ваши площадки' });
   res.json({ venues: data });
+}));
+app.get('/api/organizer/halls', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('halls')
+    .select('id,name,venue_id,total_capacity,layout_config,venues(name,address,city,owner_id)')
+    .order('name');
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить схемы залов' });
+  const halls = (data || []).filter(hall => req.user.role === 'admin' || !hall.venues?.owner_id || hall.venues.owner_id === req.user.id);
+  res.json({ halls });
+}));
+app.post('/api/organizer/halls', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
+  const venueId = String(req.body.venueId || '');
+  const name = String(req.body.name || '').trim().slice(0,160);
+  const capacity = Number(req.body.capacity);
+  const cols = Number(req.body.cols);
+  if (!venueId || !name || !Number.isInteger(capacity) || capacity < 1 || capacity > 2000 ||
+      !Number.isInteger(cols) || cols < 1 || cols > 40) {
+    return res.status(400).json({ error: 'Укажите площадку, название зала, вместимость и число мест в ряду' });
+  }
+  const { data: venue } = await supabase.from('venues').select('id,owner_id').eq('id', venueId).maybeSingle();
+  if (!venue || (venue.owner_id && venue.owner_id !== req.user.id && req.user.role !== 'admin') ||
+      (!venue.owner_id && req.user.role !== 'admin')) {
+    return res.status(403).json({ error: 'Создать схему можно только для своей площадки' });
+  }
+  const rows = Math.ceil(capacity / cols);
+  const { data: hall, error } = await supabase.from('halls').insert({
+    venue_id: venue.id, name, total_capacity: capacity, layout_config: { rows, cols }
+  }).select('id,name,venue_id,total_capacity,layout_config').single();
+  if (error) return res.status(400).json({ error: 'Не удалось создать схему зала' });
+  const { error: seatError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: hall.id });
+  if (seatError) {
+    await supabase.from('halls').delete().eq('id', hall.id);
+    return res.status(500).json({ error: 'Схема зала создана не полностью. Попробуйте снова.' });
+  }
+  res.status(201).json({ hall });
 }));
 app.post('/api/organizer/events/:eventId/staff', requireUser, allowRoles('organizer','admin'), asyncRoute(async (req, res) => {
   const { data: event } = await supabase.from('events').select('id').eq('id', req.params.eventId).eq('organizer_id', req.user.id).maybeSingle();
