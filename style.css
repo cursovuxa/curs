@@ -856,3 +856,17 @@ body[data-theme] .toast[data-kind="info"]{border-left:4px solid var(--violet)}
  .messages-workspace.has-active-chat .chat-sidebar{display:none}
  .messages-workspace.has-active-chat .chat-panel{display:flex;min-height:62dvh}
 }
+
+
+/* Keep profile settings and social links in one aligned content column. */
+@media(min-width:761px){
+ .settings-layout{grid-template-columns:minmax(240px,.68fr) minmax(0,1.55fr);align-items:start}
+ .settings-intro{grid-column:1;grid-row:1 / span 2;position:sticky;top:96px}
+ .profile-links-card{grid-column:2!important}
+}
+@media(max-width:760px){
+ .settings-layout{grid-template-columns:minmax(0,1fr)}
+ .settings-intro,.profile-links-card{grid-column:1!important;grid-row:auto;position:static}
+ .profile-link-add{align-items:stretch;flex-direction:column}
+ .profile-link-add .button{width:100%}
+}
