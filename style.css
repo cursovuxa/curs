@@ -898,3 +898,18 @@ body[data-theme] .toast[data-kind="info"]{border-left:4px solid var(--violet)}
  .public-profile-event{align-items:flex-start;flex-direction:column}
  .event-full-profile-link{width:100%;justify-content:center}
 }
+
+/* Event details modal: keep it fully accessible above the sticky navigation. */
+#eventModal.overlay{z-index:1000;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#eventModal .event-dialog{width:min(100%,720px);max-height:calc(100dvh - 32px);min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+#eventModal .event-dialog-content{min-width:0}
+#eventModal .event-dialog-content p{color:var(--muted)}
+#eventModal .event-hero{flex:0 0 250px}
+@media(max-width:700px){
+  #eventModal.overlay{place-items:center;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
+  #eventModal .event-dialog{width:100%;max-height:calc(100dvh - 48px);margin:0 auto;border-radius:20px}
+  #eventModal .event-hero{height:clamp(150px,32vh,230px);flex-basis:clamp(150px,32vh,230px)}
+  #eventModal .event-dialog-content{padding:20px 18px}
+  #eventModal .event-dialog-content h2{font-size:clamp(22px,6vw,30px);line-height:1.15;overflow-wrap:anywhere}
+  #eventModal .event-dialog-content .inline-actions{position:sticky;bottom:0;padding:10px 0 2px;background:var(--surface);z-index:2}
+}
