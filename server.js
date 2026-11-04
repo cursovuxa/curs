@@ -148,6 +148,23 @@ const allowRoles = (...roles) => (req, res, next) => {
 const requireRootAdmin = (req, res, next) => req.user.is_root_admin === true
   ? next()
   : res.status(403).json({ error: 'Доступ только главному администратору' });
+async function createNotification(userId,title,message,type='account_activity'){
+  if(!supabase||!userId)return;
+  try{
+    const {error}=await supabase.from('notifications').insert({
+      user_id:userId,title:String(title||'Уведомление FlowTix').slice(0,200),
+      message:String(message||'').slice(0,2000),type,channel:'in_app'
+    });
+    if(error)console.error('[notifications] insert failed:',error.message);
+  }catch(error){console.error('[notifications] insert failed:',error.message)}
+}
+async function notifyRootAdmin(title,message,type='admin_activity'){
+  if(!rootAdminEmail)return;
+  const {data,error}=await supabase.from('users').select('id').eq('email',rootAdminEmail).maybeSingle();
+  if(error){console.error('[notifications] root admin lookup failed:',error.message);return}
+  if(data?.id)await createNotification(data.id,title,message,type);
+}
+
 app.get('/api/admin/access', requireUser, requireRootAdmin, (_req, res) => res.json({ allowed: true }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -623,6 +640,8 @@ app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
     action: 'REGISTER_FOR_EVENT', entity_type: 'ticket',
     entity_id: data.ticket.id, details: { event_id: eventId, payment_method: 'wallet', amount: data.ticket.price_paid }
   });
+  const {data:eventNotice}=await supabase.from('events').select('title,organizer_id').eq('id',eventId).maybeSingle();
+  if(eventNotice?.organizer_id&&eventNotice.organizer_id!==req.user.id)await createNotification(eventNotice.organizer_id,'Новый участник мероприятия',(req.user.full_name||'Пользователь')+' зарегистрировался на «'+(eventNotice.title||'ваше мероприятие')+'».','event_registration');
   res.status(201).json(data);
 }));
 app.get('/api/tickets/mine', requireUser, asyncRoute(async (req, res) => {
@@ -674,6 +693,8 @@ app.post('/api/reviews', requireUser, asyncRoute(async (req, res) => {
     overall_rating: rating, comment
   }).select('id,event_id,overall_rating,comment,created_at').single();
   if (error) return res.status(400).json({ error: 'Не удалось сохранить отзыв' });
+  const {data:eventNotice}=await supabase.from('events').select('title,organizer_id').eq('id',eventId).maybeSingle();
+  if(eventNotice?.organizer_id&&eventNotice.organizer_id!==req.user.id)await createNotification(eventNotice.organizer_id,'Новый отзыв',(req.user.full_name||'Участник')+' оставил отзыв на «'+(eventNotice.title||'мероприятие')+'».','event_review');
   res.status(201).json({ review: data });
 }));
 app.get('/api/organizer/registrations', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
@@ -1312,6 +1333,7 @@ app.post('/api/me/profile-links', requireUser, asyncRoute(async (req, res) => {
   }).select('id,url,platform,status,created_at').single();
   if (error) return res.status(400).json({ error:'Не удалось отправить ссылку на модерацию' });
   await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'PROFILE_LINK_SUBMITTED',entity_type:'profile_link',entity_id:data.id,details:{platform:value.platform}});
+  await notifyRootAdmin('Новая ссылка на модерацию',(req.user.full_name||'Пользователь')+' отправил ссылку на проверку.','profile_link_moderation');
   res.status(201).json({ link:data });
 }));
 app.delete('/api/me/profile-links/:id', requireUser, asyncRoute(async(req,res)=>{
@@ -1364,6 +1386,7 @@ app.post('/api/messages/requests', requireUser, asyncRoute(async(req,res)=>{
     conversation=created.data;error=created.error;
   }
   if(error)return res.status(400).json({error:'Не удалось отправить запрос на чат'});
+  await createNotification(otherId,'Запрос на личный чат',(req.user.full_name||'Пользователь')+' хочет начать с вами переписку.','chat_request');
   res.status(201).json({conversation});
 }));
 app.patch('/api/messages/conversations/:id', requireUser, asyncRoute(async(req,res)=>{
@@ -1379,6 +1402,7 @@ app.patch('/api/messages/conversations/:id', requireUser, asyncRoute(async(req,r
     const result=await supabase.from('direct_conversations').update({status:action==='accept'?'active':'declined',updated_at:new Date().toISOString()}).eq('id',c.id).select('*').single();
     if(result.error)return res.status(400).json({error:'Не удалось сохранить решение'});
     await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:action==='accept'?'CHAT_REQUEST_ACCEPTED':'CHAT_REQUEST_DECLINED',entity_type:'conversation',entity_id:c.id,details:{}});
+    await createNotification(c.request_by,action==='accept'?'Запрос на чат принят':'Запрос на чат отклонён',(req.user.full_name||'Пользователь')+(action==='accept'?' принял ваш запрос. Теперь можно переписываться.':' отклонил запрос на личную переписку.'),'chat_request_result');
     return res.json({conversation:result.data});
   }
   if(action==='clear'){
@@ -1419,6 +1443,8 @@ app.post('/api/messages/conversations/:id/messages', requireUser, asyncRoute(asy
   const {data,error:messageError}=await supabase.from('direct_messages').insert({conversation_id:c.id,sender_id:req.user.id,body}).select('*').single();
   if(messageError)return res.status(400).json({error:'Не удалось отправить сообщение'});
   await supabase.from('direct_conversations').update({updated_at:new Date().toISOString()}).eq('id',c.id);
+  const recipientId=c.participant_a===req.user.id?c.participant_b:c.participant_a;
+  await createNotification(recipientId,'Новое личное сообщение',(req.user.full_name||'Пользователь')+': '+body.slice(0,180),'direct_message');
   res.status(201).json({message:data});
 }));
 app.post('/api/me/blocks/:id', requireUser, asyncRoute(async(req,res)=>{
@@ -1457,6 +1483,7 @@ app.patch('/api/admin/profile-links/:id', requireUser, requireRootAdmin, asyncRo
   if(error)return res.status(400).json({error:'Не удалось сохранить решение'});
   if(!data)return res.status(404).json({error:'Запрос не найден'});
   await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:status==='approved'?'PROFILE_LINK_APPROVED':'PROFILE_LINK_REJECTED',entity_type:'profile_link',entity_id:data.id,details:{user_id:data.user_id}});
+  await createNotification(data.user_id,status==='approved'?'Ссылка опубликована':'Ссылка отклонена',status==='approved'?'Главный администратор одобрил ссылку — она появилась в вашем профиле.':'Главный администратор отклонил ссылку. Вы можете отправить другую.','profile_link_result');
   res.json({link:data});
 }));
 app.get('/api/admin/users/:id/profile', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
