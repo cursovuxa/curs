@@ -22,6 +22,12 @@ create table if not exists public.event_views (
 alter table public.event_views enable row level security;
 create index if not exists event_views_user_recent_idx on public.event_views(user_id,last_viewed_at desc);
 create index if not exists promo_codes_active_expiry_idx on public.promo_codes(is_active,expires_at);
+create index if not exists event_views_event_id_idx on public.event_views(event_id);
+create index if not exists promo_redemptions_promo_id_idx on public.promo_code_redemptions(promo_code_id);
+create index if not exists promo_redemptions_user_event_idx on public.promo_code_redemptions(user_id,event_id);
+create index if not exists promo_codes_category_id_idx on public.promo_codes(category_id);
+create index if not exists promo_codes_event_id_idx on public.promo_codes(event_id);
+create index if not exists promo_codes_organizer_id_idx on public.promo_codes(organizer_id);
 
 create or replace function public.set_event_dynamic_price()
 returns trigger language plpgsql set search_path to public,pg_temp as $$
