@@ -1653,6 +1653,72 @@ document.addEventListener('keydown',event=>{
  if(form?.id==='chatComposer'){event.preventDefault();if(!activeChatId)return;const textarea=form.elements.body,body=textarea.value.trim();if(!body||body.length>512)return;const button=form.querySelector('[type=submit]');button.disabled=true;try{const {message}=await api('/api/messages/conversations/'+encodeURIComponent(activeChatId)+'/messages',{method:'POST',body:JSON.stringify({body})});if(!activeChatMessages.some(x=>x.id===message.id)){activeChatMessages.push(message);$('#chatMessages').insertAdjacentHTML('beforeend',messageBubble(message))}textarea.value='';textarea.style.height='auto';$('#chatCharCount').textContent='0';const box=$('#chatMessages');box.scrollTop=box.scrollHeight;await refreshConversations()}catch(error){toast(error.message)}finally{button.disabled=false}return}
 });
 
+
+function setupFlowScrollbars(){
+ const bars={y:document.createElement('div'),x:document.createElement('div')};
+ const targets={y:null,x:null}, timers={y:0,x:0},drag=null;
+ bars.y.className='flow-scrollbar flow-scrollbar-y';bars.x.className='flow-scrollbar flow-scrollbar-x';
+ for(const axis of ['y','x']){
+  const thumb=document.createElement('div');thumb.className='flow-scrollbar-thumb';thumb.tabIndex=0;thumb.setAttribute('role','scrollbar');thumb.setAttribute('aria-orientation',axis==='y'?'vertical':'horizontal');thumb.setAttribute('aria-label','Прокрутка страницы');bars[axis].append(thumb);
+  document.body.append(bars[axis]);
+ }
+ const rootTarget=t=>t===window||t===document||t===document.documentElement||t===document.body;
+ function metrics(target,axis){
+  const root=rootTarget(target),el=root?document.scrollingElement:target;
+  if(!el)return null;
+  const vertical=axis==='y',size=vertical?el.clientHeight:el.clientWidth,scroll=vertical?el.scrollHeight:el.scrollWidth;
+  if(!size||scroll<=size+2)return null;
+  let start,extent,cross;
+  if(root){start=6;extent=(vertical?innerHeight:innerWidth)-12;cross=vertical?innerWidth-7:innerHeight-7}
+  else{
+   const r=target.getBoundingClientRect();
+   if(vertical){start=Math.max(0,r.top);extent=Math.max(0,Math.min(innerHeight,r.bottom)-start);cross=Math.min(innerWidth,r.right)-7}
+   else{start=Math.max(0,r.left);extent=Math.max(0,Math.min(innerWidth,r.right)-start);cross=Math.min(innerHeight,r.bottom)-7}
+  }
+  if(extent<20)return null;
+  const thumbExtent=Math.min(extent,Math.max(24,extent*size/scroll));
+  const position=vertical?el.scrollTop:el.scrollLeft,range=scroll-size;
+  return{el,root,vertical,start,extent,cross,thumbExtent,progress:Math.min(1,Math.max(0,position/range)),range};
+ }
+ function paint(axis,show){
+  const bar=bars[axis],target=targets[axis],m=target&&metrics(target,axis);
+  if(!m){bar.classList.remove('is-visible');return}
+  if(axis==='y'){
+   bar.style.left='';bar.style.right=Math.max(3,innerWidth-m.cross-7)+'px';bar.style.top=m.start+'px';bar.style.height=m.extent+'px';bar.style.width='7px';
+   const travel=m.extent-m.thumbExtent;bar.firstElementChild.style.height=m.thumbExtent+'px';bar.firstElementChild.style.width='100%';bar.firstElementChild.style.transform='translateY('+travel*m.progress+'px)';
+   bar.firstElementChild.setAttribute('aria-valuemin','0');bar.firstElementChild.setAttribute('aria-valuemax','100');bar.firstElementChild.setAttribute('aria-valuenow',String(Math.round(m.progress*100)));
+  }else{
+   bar.style.top='';bar.style.bottom=Math.max(3,innerHeight-m.cross-7)+'px';bar.style.left=m.start+'px';bar.style.width=m.extent+'px';bar.style.height='7px';
+   const travel=m.extent-m.thumbExtent;bar.firstElementChild.style.width=m.thumbExtent+'px';bar.firstElementChild.style.height='100%';bar.firstElementChild.style.transform='translateX('+travel*m.progress+'px)';
+   bar.firstElementChild.setAttribute('aria-valuemin','0');bar.firstElementChild.setAttribute('aria-valuemax','100');bar.firstElementChild.setAttribute('aria-valuenow',String(Math.round(m.progress*100)));
+  }
+  if(show)bar.classList.add('is-visible');
+ }
+ function showFor(target){
+  if(!target)return;
+  for(const axis of ['y','x']){
+   if(!metrics(target,axis))continue;
+   targets[axis]=target;paint(axis,true);clearTimeout(timers[axis]);
+   timers[axis]=setTimeout(()=>bars[axis].classList.remove('is-visible'),850);
+  }
+ }
+ function setProgress(axis,clientPosition,dragging=false){
+  const bar=bars[axis],target=dragging?drag?.target:targets[axis],m=target&&metrics(target,axis);if(!m)return;
+  const rect=bar.getBoundingClientRect(),coord=axis==='y'?clientPosition-rect.top:clientPosition-rect.left;
+  const travel=m.extent-m.thumbExtent,progress=Math.max(0,Math.min(1,(coord-m.thumbExtent/2)/Math.max(1,travel)));
+  if(m.vertical)m.el.scrollTop=progress*m.range;else m.el.scrollLeft=progress*m.range;
+  targets[axis]=target;paint(axis,true);clearTimeout(timers[axis]);timers[axis]=setTimeout(()=>bars[axis].classList.remove('is-visible'),850);
+ }
+ for(const axis of ['y','x']){
+  bars[axis].addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();drag={axis,target:targets[axis],pointerId:event.pointerId};bars[axis].setPointerCapture(event.pointerId);setProgress(axis,axis==='y'?event.clientY:event.clientX,true)});
+  bars[axis].addEventListener('pointermove',event=>{if(drag?.axis===axis&&drag.pointerId===event.pointerId)setProgress(axis,axis==='y'?event.clientY:event.clientX,true)});
+  bars[axis].addEventListener('pointerup',event=>{if(drag?.axis===axis){drag=null;clearTimeout(timers[axis]);timers[axis]=setTimeout(()=>bars[axis].classList.remove('is-visible'),850)}});
+  bars[axis].firstElementChild.addEventListener('keydown',event=>{const target=targets[axis],el=rootTarget(target)?document.scrollingElement:target;if(!el)return;const vertical=axis==='y';let delta=vertical?el.clientHeight*.12:el.clientWidth*.12;if(event.key==='PageDown')delta=vertical?el.clientHeight:el.clientWidth;if(event.key==='PageUp')delta=-(vertical?el.clientHeight:el.clientWidth);else if(event.key==='ArrowDown'||event.key==='ArrowRight'){}else if(event.key==='ArrowUp'||event.key==='ArrowLeft')delta=-delta;else if(event.key==='Home')delta=-Infinity;else if(event.key==='End')delta=Infinity;else return;event.preventDefault();if(vertical)el.scrollTop=delta===Infinity?el.scrollHeight:delta===-Infinity?0:el.scrollTop+delta;else el.scrollLeft=delta===Infinity?el.scrollWidth:delta===-Infinity?0:el.scrollLeft+delta;showFor(target)});
+ }
+ window.addEventListener('scroll',()=>showFor(window),{passive:true});
+ document.addEventListener('scroll',event=>{if(event.target&&event.target.nodeType===1)showFor(event.target)},{capture:true,passive:true});
+ window.addEventListener('resize',()=>{for(const axis of ['y','x'])if(bars[axis].classList.contains('is-visible'))paint(axis,true)},{passive:true});
+}
 async function init(){
   try {
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');
