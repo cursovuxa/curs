@@ -645,7 +645,7 @@ app.post('/api/payments/checkout', requireUser, asyncRoute(async (req,res) => {
   if(intent.checkout_url&&intent.provider_reference)return res.json({intentId:intent.id,checkoutUrl:intent.checkout_url,expiresAt:intent.expires_at});
   const merchantReference=String(intent.id);
   try{
-    const response=await fetch(paymentCreateUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+paymentApiKey,'Idempotency-Key':idempotencyKey},body:JSON.stringify({merchant_reference:merchantReference,amount:Number(intent.amount),currency:intent.currency||'KZT',description:'Билет FlowTix',return_url:publicSiteUrl+'/?paymentIntent='+encodeURIComponent(merchantReference),webhook_url:paymentWebhookUrl}),signal:AbortSignal.timeout(15000)});
+    const response=await fetch(paymentCreateUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+paymentApiKey,'Idempotency-Key':idempotencyKey},body:JSON.stringify({merchant_reference:merchantReference,amount:Number(intent.amount),currency:intent.currency||'KZT',description:'Билет FlowTix',expires_at:intent.expires_at,return_url:publicSiteUrl+'/?paymentIntent='+encodeURIComponent(merchantReference),webhook_url:paymentWebhookUrl}),signal:AbortSignal.timeout(15000)});
     const providerResult=await response.json().catch(()=>({}));
     const checkoutUrl=String(providerResult.checkout_url||providerResult.checkoutUrl||'');
     const providerReference=String(providerResult.provider_reference||providerResult.id||'');
