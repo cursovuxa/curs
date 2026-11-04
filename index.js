@@ -443,7 +443,7 @@ function renderQueueView(eventId,state){
  const ahead=Number(state.ahead||0);
  const readyAt=state.reservedUntil?new Date(state.reservedUntil).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'';
  $('#eventDialog').className='dialog event-dialog queue-dialog';
- $('#eventDialog').innerHTML='<div class="event-queue-card"><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button><p class="eyebrow dark-eyebrow">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</p><h2>'+esc(event.title||'Мероприятие')+'</h2>'+(state.joined?'<div class="queue-ticket"><span>Ваш номер в очереди</span><strong>№ '+esc(String(state.queueNumber||'—'))+'</strong><span>'+(ready?'Ваша очередь подошла':status==='payment'?'Ожидаем подтверждение оплаты':'Перед вами')+'</span><b>'+(ready?'Оформите билет до '+esc(readyAt):status==='payment'?'Оплата обрабатывается':esc(String(ahead))+' '+pluralizeRu(ahead,'человек','человека','человек'))+'</b></div>':'<div class="queue-ticket"><span>Очередь обновлена</span><strong>'+esc(String(state.activeCount||0))+'</strong><span>'+(state.available?'Место освободилось — можно продолжить оформление':'Места пока заняты')+'</span></div>')+'<p class="queue-live-note"><span class="queue-live-dot"></span>Позиция обновляется в реальном времени</p><div class="inline-actions">'+(ready?'<button class="button button-accent" data-queue-resume="'+esc(eventId)+'">Продолжить оформление</button>':state.joined&&status==='waiting'?'<button class="button button-light" data-queue-leave="'+esc(eventId)+'">Выйти из очереди</button>':state.available?'<button class="button button-accent" data-queue-resume="'+esc(eventId)+'">Продолжить оформление</button>':'')+'</div></div>';
+ $('#eventDialog').innerHTML='<div class="event-queue-card"><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button><p class="eyebrow dark-eyebrow">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</p><h2>'+esc(event.title||'Мероприятие')+'</h2>'+(state.joined?'<div class="queue-ticket"><span>Ваш номер в очереди</span><strong>№ '+esc(String(state.queueNumber||'—'))+'</strong><span>'+(ready?'Ваша очередь подошла':status==='payment'?'Ожидаем подтверждение оплаты':'Перед вами')+'</span><b>'+(ready?'Оформите билет до '+esc(readyAt):status==='payment'?'Оплата обрабатывается':esc(String(ahead))+' '+(ahead===1?'человек':ahead>1&&ahead<5?'человека':'человек'))+'</b></div>':'<div class="queue-ticket"><span>Очередь обновлена</span><strong>'+esc(String(state.activeCount||0))+'</strong><span>'+(state.available?'Место освободилось — можно продолжить оформление':'Места пока заняты')+'</span></div>')+'<p class="queue-live-note"><span class="queue-live-dot"></span>Позиция обновляется в реальном времени</p><div class="inline-actions">'+(ready?'<button class="button button-accent" data-queue-resume="'+esc(eventId)+'">Продолжить оформление</button>':state.joined&&status==='waiting'?'<button class="button button-light" data-queue-leave="'+esc(eventId)+'">Выйти из очереди</button>':state.available?'<button class="button button-accent" data-queue-resume="'+esc(eventId)+'">Продолжить оформление</button>':'')+'</div></div>';
 }
 async function refreshEventQueue(){
  if(!seatPickerEventId)return;
@@ -1590,6 +1590,12 @@ document.addEventListener('change',async(e)=>{
 });
 document.addEventListener('click',async(event)=>{
  const target=event.target instanceof Element?event.target:null;
+ const queueResume=target?.closest('[data-queue-resume]');
+ if(queueResume){event.preventDefault();await resumeQueueRegistration(queueResume.dataset.queueResume);return}
+ const queueJoin=target?.closest('[data-queue-join]');
+ if(queueJoin){event.preventDefault();await joinEventQueue(queueJoin.dataset.queueJoin);return}
+ const queueLeave=target?.closest('[data-queue-leave]');
+ if(queueLeave){event.preventDefault();try{await api('/api/events/'+encodeURIComponent(queueLeave.dataset.queueLeave)+'/queue',{method:'DELETE'});await stopEventQueueRealtime();activeQueueState=null;toast('Ты вышел из очереди');setEventModalOpen(false)}catch(error){toast(error.message)}return}
  const complaintAction=target?.closest('[data-complaint-action]');
  if(complaintAction){
   const id=complaintAction.dataset.complaintAction,status=complaintAction.dataset.complaintNext;
