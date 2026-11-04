@@ -843,3 +843,9 @@ body[data-theme] .toast[data-kind="info"]{border-left:4px solid var(--violet)}
  .chat-composer button{min-height:58px;max-width:38vw;padding:10px 14px;white-space:normal;line-height:1.2}
  .chat-list-main{padding-right:42px}
 }
+
+
+/* Keep chat identity and message preview on separate readable lines. */
+.chat-list-main>span:nth-child(2){min-width:0;flex:1;display:grid;gap:4px;text-align:left}
+.chat-list-main>span:nth-child(2)>b{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
+.chat-list-main>span:nth-child(2)>small{display:block;width:100%;max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;margin:0}
