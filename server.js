@@ -537,12 +537,9 @@ app.get('/api/events/:id/seats', requireUser, asyncRoute(async (req, res) => {
     .eq('id', req.params.id).eq('status', 'published').maybeSingle();
   if (eventError) return res.status(500).json({ error: 'Не удалось загрузить схему мест' });
   if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
-  let hallId = event.hall_id;
-  if (!hallId) {
-    const { data, error } = await supabase.rpc('ensure_event_seat_hall', { p_event_id: event.id });
-    if (error) return res.status(500).json({ error: 'Не удалось создать схему мест' });
-    hallId = data;
-  }
+  const { data: ensuredHallId, error: hallError } = await supabase.rpc('ensure_event_seat_hall', { p_event_id: event.id });
+  if (hallError) return res.status(500).json({ error: 'Не удалось создать схему мест' });
+  const hallId = ensuredHallId || event.hall_id;
   if (!hallId) return res.json({ seatSelectionRequired: false, reason: 'capacity_limit', seats: [], event });
   const { error: ensureError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: hallId });
   if (ensureError) return res.status(500).json({ error: 'Не удалось подготовить схему мест' });
