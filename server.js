@@ -1456,6 +1456,15 @@ app.get('/api/messages/conversations/:id/messages', requireUser, asyncRoute(asyn
   if(messageError)return res.status(500).json({error:'Не удалось загрузить сообщения'});
   res.json({messages:(data||[]).reverse(),hasMore:(data||[]).length===15,clearCount:Number(Boolean(c.cleared_at_a))+Number(Boolean(c.cleared_at_b))});
 }));
+app.patch('/api/messages/conversations/:id/read', requireUser, asyncRoute(async(req,res)=>{
+  const {data:c,error}=await supabase.from('direct_conversations').select('id,participant_a,participant_b,status').eq('id',req.params.id).maybeSingle();
+  if(error)return res.status(500).json({error:'Не удалось обновить статус прочтения'});
+  if(!c||c.status!=='active'||![c.participant_a,c.participant_b].includes(req.user.id))return res.status(404).json({error:'Переписка не найдена'});
+  const field=c.participant_a===req.user.id?'last_read_at_a':'last_read_at_b';
+  const {error:updateError}=await supabase.from('direct_conversations').update({[field]:new Date().toISOString()}).eq('id',c.id);
+  if(updateError)return res.status(400).json({error:'Не удалось отметить сообщения прочитанными'});
+  res.json({success:true});
+}));
 app.post('/api/messages/conversations/:id/messages', requireUser, asyncRoute(async(req,res)=>{
   const body=String(req.body.body||'').trim();
   if(!body||body.length>512)return res.status(400).json({error:'Сообщение должно содержать от 1 до 512 символов'});
