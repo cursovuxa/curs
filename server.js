@@ -100,7 +100,6 @@ const requireUser = asyncRoute(async (req, res, next) => {
   const appMetadata = authData.user.app_metadata || {};
   const claimRole = validRoles.has(appMetadata.flowtix_role) ? appMetadata.flowtix_role : 'visitor';
   const claimBlocked = appMetadata.flowtix_blocked === true;
-  if (claimBlocked && !isRootAdmin) return res.status(403).json({ error: 'Аккаунт заблокирован' });
   let { data: profile, error } = await supabase.from('users').select('*').eq('id', authData.user.id).maybeSingle();
   if (error) return res.status(500).json({ error: 'Не удалось проверить профиль' });
   if (!profile) {
@@ -120,12 +119,16 @@ const requireUser = asyncRoute(async (req, res, next) => {
     }
   }
   if (error || !profile) return res.status(500).json({ error: 'Не удалось создать профиль' });
-  profile = { ...profile, role: isRootAdmin ? 'admin' : claimRole, is_blocked: !isRootAdmin && claimBlocked, is_root_admin: isRootAdmin };
+  const profileBlocked = !isRootAdmin && profile.is_blocked === true;
   if (!profile.username) {
     const base = String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user';
     const { data: namedProfile, error: usernameError } = await supabase.from('users')
       .update({ username: base + '_' + authData.user.id.slice(0, 8) }).eq('id', profile.id).select('*').single();
     if (!usernameError && namedProfile) profile = namedProfile;
+  }
+  profile = { ...profile, role: isRootAdmin ? 'admin' : claimRole, is_blocked: profileBlocked, is_root_admin: isRootAdmin };
+  if (profileBlocked && !(req.method === 'GET' && req.path === '/api/me')) {
+    return res.status(403).json({ code: 'ACCOUNT_BLOCKED', error: 'Аккаунт заблокирован' });
   }
   req.user = profile;
   next();
@@ -174,14 +177,16 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const { data: profile, error: profileError } = await supabase.from('users')
     .select('id,email,full_name,role,is_blocked').eq('id', data.user.id).maybeSingle();
   if (profileError) return res.status(500).json({ error: 'Не удалось загрузить профиль' });
-  if (data.user.app_metadata?.flowtix_blocked === true && !isRootEmail(data.user.email)) return res.status(403).json({ error: 'Аккаунт заблокирован' });
   res.json({
     accessToken: data.session.access_token,
     refreshToken: data.session.refresh_token,
-    user: profile ? { ...profile, role: isRootEmail(data.user.email) ? 'admin' : (validRoles.has(data.user.app_metadata?.flowtix_role) ? data.user.app_metadata.flowtix_role : 'visitor'), is_root_admin: isRootEmail(data.user.email) } : null
+    user: profile ? { ...profile, role: isRootEmail(data.user.email) ? 'admin' : (validRoles.has(data.user.app_metadata?.flowtix_role) ? data.user.app_metadata.flowtix_role : 'visitor'), is_blocked: !isRootEmail(data.user.email) && profile.is_blocked === true, is_root_admin: isRootEmail(data.user.email) } : null
   });
 }));
 app.get('/api/me', requireUser, asyncRoute(async (req, res) => {
+  if (req.user.is_blocked) {
+    return res.json({ user: { id: req.user.id, email: req.user.email, full_name: req.user.full_name, username: req.user.username, role: req.user.role, is_blocked: true, is_root_admin: false, preferences: req.user.preferences || {} } });
+  }
   const profile = { ...req.user };
   delete profile.avatar_path;
   if (req.user.avatar_path) {
