@@ -633,7 +633,8 @@ app.get('/api/events/:id/seats', requireUser, asyncRoute(async (req, res) => {
 
 
 app.get('/api/payments/config', requireUser, asyncRoute(async (_req,res) => {
-  res.json({available:paymentProviderReady,provider:paymentProviderReady?paymentProviderName:null,currency:'KZT'});
+  const {data:setting}=await supabase.from('platform_settings').select('value').eq('key','visual_payments_enabled').maybeSingle();
+  res.json({available:paymentProviderReady,provider:paymentProviderReady?paymentProviderName:null,currency:'KZT',visualPaymentsEnabled:setting?.value===true});
 }));
 
 app.post('/api/payments/checkout', requireUser, asyncRoute(async (req,res) => {
@@ -1179,7 +1180,7 @@ app.get('/api/promos/validate', requireUser, asyncRoute(async (req,res)=>{
   const code=String(req.query.code||'').trim().toUpperCase().slice(0,32),eventId=String(req.query.eventId||''),seatId=String(req.query.seatId||'');
   if(!code||!eventId)return res.status(400).json({error:'Введите промокод'});
   const [{data:promo},{data:event}] = await Promise.all([
-    supabase.from('promo_codes').select('*').eq('code',code).eq('is_active',true).maybeSingle(),
+    supabase.from('promo_codes').select('*').eq('code',code).eq('is_active',true).is('deleted_at',null).maybeSingle(),
     supabase.from('events').select('id,title,organizer_id,category_id,current_price,base_price').eq('id',eventId).eq('status','published').maybeSingle()
   ]);
   if(!promo)return res.status(404).json({error:'Промокод не найден или отключён'});
@@ -1267,7 +1268,7 @@ const validatePromoPayload=(p)=>{
 };
 app.get('/api/organizer/promos',requireUser,allowRoles('organizer','admin'),asyncRoute(async(req,res)=>{
  const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0);
- const {data,count,error}=await supabase.from('promo_codes').select('id,code,discount_percent,min_amount,max_uses,current_uses,only_new_users,expires_at,is_active,category_id,seat_type,event_id,organizer_id,created_at',{count:'exact'}).eq('organizer_id',req.user.id).order('created_at',{ascending:false}).range(offset,offset+9);
+ const {data,count,error}=await supabase.from('promo_codes').select('id,code,discount_percent,min_amount,max_uses,current_uses,only_new_users,expires_at,is_active,category_id,seat_type,event_id,organizer_id,created_at',{count:'exact'}).eq('organizer_id',req.user.id).is('deleted_at',null).order('created_at',{ascending:false}).range(offset,offset+9);
  if(error)return res.status(500).json({error:'Не удалось загрузить промокоды'});
  res.json({promos:data||[],offset,hasMore:offset+(data||[]).length<(count||0)});
 }));
@@ -1281,7 +1282,7 @@ app.post('/api/organizer/promos',requireUser,allowRoles('organizer','admin'),asy
 }));
 app.get('/api/admin/promos',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
  const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0);
- const {data,count,error}=await supabase.from('promo_codes').select('id,code,discount_percent,min_amount,max_uses,current_uses,only_new_users,expires_at,is_active,category_id,seat_type,event_id,organizer_id,created_at',{count:'exact'}).order('created_at',{ascending:false}).range(offset,offset+9);
+ const {data,count,error}=await supabase.from('promo_codes').select('id,code,discount_percent,min_amount,max_uses,current_uses,only_new_users,expires_at,is_active,category_id,seat_type,event_id,organizer_id,created_at',{count:'exact'}).is('deleted_at',null).order('created_at',{ascending:false}).range(offset,offset+9);
  if(error)return res.status(500).json({error:'Не удалось загрузить промокоды'});
  res.json({promos:data||[],offset,hasMore:offset+(data||[]).length<(count||0)});
 }));
@@ -1302,11 +1303,34 @@ app.patch('/api/admin/promos/:id',requireUser,requireRootAdmin,asyncRoute(async(
  await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:active?'ADMIN_PROMO_ENABLED':'ADMIN_PROMO_DISABLED',entity_type:'promo_code',entity_id:data.id,details:{code:data.code}});
  res.json({promo:data});
 }));
+async function removePromo(id, organizerId=null) {
+ let query=supabase.from('promo_codes').select('id,code,current_uses,organizer_id').eq('id',id).is('deleted_at',null);
+ if(organizerId)query=query.eq('organizer_id',organizerId);
+ const {data:promo,error:lookupError}=await query.maybeSingle();
+ if(lookupError)return {error:lookupError};
+ if(!promo)return {missing:true};
+ const archive=async()=>supabase.from('promo_codes').update({is_active:false,deleted_at:new Date().toISOString()}).eq('id',promo.id).select('id').maybeSingle();
+ let archived=Number(promo.current_uses||0)>0;
+ if(archived){const result=await archive();if(result.error)return {error:result.error}}
+ else {
+   const {error}=await supabase.from('promo_codes').delete().eq('id',promo.id);
+   if(error&&error.code==='23503'){archived=true;const result=await archive();if(result.error)return {error:result.error}}
+   else if(error)return {error};
+ }
+ return {promo,archived};
+}
 app.delete('/api/admin/promos/:id',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
- const {data,error}=await supabase.from('promo_codes').update({is_active:false}).eq('id',req.params.id).select('id').maybeSingle();
- if(error)return res.status(400).json({error:'Не удалось отключить промокод'});
- if(!data)return res.status(404).json({error:'Промокод не найден'});
- res.json({deactivated:true});
+ const result=await removePromo(req.params.id);
+ if(result.error)return res.status(400).json({error:'Не удалось удалить промокод'});
+ if(result.missing)return res.status(404).json({error:'Промокод не найден'});
+ await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_PROMO_DELETED',entity_type:'promo_code',entity_id:result.promo.id,details:{code:result.promo.code,archived:result.archived}});
+ res.json({deleted:true,archived:result.archived});
+}));
+app.delete('/api/organizer/promos/:id',requireUser,allowRoles('organizer','admin'),asyncRoute(async(req,res)=>{
+ const result=await removePromo(req.params.id,req.user.id);
+ if(result.error)return res.status(400).json({error:'Не удалось удалить промокод'});
+ if(result.missing)return res.status(404).json({error:'Промокод не найден'});
+ res.json({deleted:true,archived:result.archived});
 }));
 app.get('/api/admin/users', requireUser, requireRootAdmin, asyncRoute(async (req, res) => {
   const offset = Math.max(0, Number.parseInt(String(req.query.offset || '0'), 10) || 0);
