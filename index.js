@@ -1486,7 +1486,7 @@ document.addEventListener('change',async(e)=>{
   if(e.target.matches('[data-category]')){activeCategory=e.target.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===e.target));renderEvents()}
 
 });
-document.addEventListener('click',(event)=>{
+document.addEventListener('click',async(event)=>{
  const target=event.target instanceof Element?event.target:null;
  const complaintAction=target?.closest('[data-complaint-action]');
  if(complaintAction){
