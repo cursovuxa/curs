@@ -1080,9 +1080,19 @@ async function staffView() {
 const complaintStatusLabel=(status)=>({new:'Новая',in_review:'В работе',resolved:'Принята',rejected:'Отклонена'}[status]||'Неизвестный статус');
 function complaintCardMarkup(c){
  const author=c.users?.full_name||c.users?.email||'Автор не указан';
- const target=({event:'мероприятие',user:'пользователь',review:'отзыв',ticket:'билет'})[c.target_type]||'объект';
+ const authorEmail=c.users?.email&&c.users?.full_name?' · '+c.users.email:'';
+ const authorHref='/profile/'+encodeURIComponent(c.users?.username||c.author_id||'');
+ const typeName=({event:'мероприятие',user:'пользователь',review:'отзыв',ticket:'билет'})[c.target_type]||'объект';
+ const target=c.target||{};
+ const targetTitle=target.title||target.full_name||target.ticket_number||(c.target_type==='review'?target.comment:'')||'Объект не найден';
+ const targetDate=target.start_date?[target.start_date,target.start_time].filter(Boolean).join(' · '):'';
+ const targetAddress=target.venues?[target.venues.city,target.venues.name,target.location_address||target.venues.address].filter(Boolean).join(' · '):'';
+ const targetExtra=c.target_type==='event'?[targetDate,targetAddress].filter(Boolean).join(' · '):c.target_type==='user'?[target.username?'@'+target.username:'',target.email].filter(Boolean).join(' · '):c.target_type==='review'?target.events?.title||target.comment||'':c.target_type==='ticket'?target.events?.title||'':'';
+ const relatedEventId=c.target_type==='event'?c.target_id:(target.event_id||target.events?.id||null);
+ const targetHref=relatedEventId?'/?eventId='+encodeURIComponent(relatedEventId)+'#events':c.target_type==='user'?'/profile/'+encodeURIComponent(target.username||c.target_id||''):'';
+ const targetAction=targetHref?'<a class="button button-light button-small" href="'+esc(targetHref)+'">'+(c.target_type==='user'?'Открыть профиль ↗':'Открыть мероприятие ↗')+'</a>':'<span class="complaint-no-target">Переход недоступен</span>';
  const created=c.created_at?new Date(c.created_at).toLocaleString('ru-RU'):'';
- return '<article class="complaint-review-card" data-complaint-card="'+esc(c.id)+'" data-complaint-current="'+esc(c.status||'new')+'"><div class="complaint-review-head"><div><span class="status-pill" data-complaint-status>'+esc(complaintStatusLabel(c.status))+'</span><h4>'+esc(c.reason||'Жалоба')+'</h4><small>'+esc(author)+' · Жалоба на: '+esc(target)+(created?' · '+esc(created):'')+'</small></div></div><p class="complaint-review-details">'+esc(c.details||'Подробности не указаны.')+'</p><label class="complaint-review-note">Комментарий к решению<textarea data-complaint-notes="'+esc(c.id)+'" maxlength="1000" rows="2" placeholder="Необязательно. Будет отправлен автору жалобы.">'+esc(c.moderator_notes||'')+'</textarea></label><div class="inline-actions complaint-review-actions"><button type="button" class="button button-light button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="in_review">Взять в работу</button><button type="button" class="button button-accent button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="resolved">Принять жалобу</button><button type="button" class="button button-danger button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="rejected">Отклонить</button></div></article>';
+ return '<article class="complaint-review-card" data-complaint-card="'+esc(c.id)+'" data-complaint-current="'+esc(c.status||'new')+'"><div class="complaint-review-head"><div><span class="status-pill" data-complaint-status>'+esc(complaintStatusLabel(c.status))+'</span><h4>'+esc(c.reason||'Жалоба')+'</h4><small>'+esc(created)+'</small></div></div><div class="complaint-review-target"><div><small>На что жалоба · '+esc(typeName)+'</small><b>'+esc(targetTitle)+'</b>'+(targetExtra?'<span>'+esc(targetExtra)+'</span>':'')+'</div>'+targetAction+'</div><div class="complaint-review-author"><span><small>Отправитель жалобы</small><b>'+esc(author)+'</b><span>'+esc(authorEmail||c.users?.email||'')+'</span></span><a class="button button-light button-small" href="'+esc(authorHref)+'">Открыть профиль автора ↗</a></div><p class="complaint-review-details">'+esc(c.details||'Подробности не указаны.')+'</p><label class="complaint-review-note">Комментарий к решению<textarea data-complaint-notes="'+esc(c.id)+'" maxlength="1000" rows="2" placeholder="Необязательно. Будет отправлен автору жалобы.">'+esc(c.moderator_notes||'')+'</textarea></label><div class="inline-actions complaint-review-actions"><button type="button" class="button button-light button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="in_review">Взять в работу</button><button type="button" class="button button-accent button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="resolved">Принять жалобу</button><button type="button" class="button button-danger button-small" data-complaint-action="'+esc(c.id)+'" data-complaint-next="rejected">Отклонить</button></div></article>';
 }
 async function moderatorView() {
   try {
@@ -1758,7 +1768,7 @@ async function init(){
     $('#authError').textContent='Не удалось загрузить Google-вход: '+(error.message||'попробуй снова');
   }
   const [hasSession]=await Promise.all([loadSession(),loadCategories()]);
-  if(!ACCOUNT_ROUTE)await loadEvents();
+  if(!ACCOUNT_ROUTE){await loadEvents();const eventId=new URLSearchParams(window.location.search).get('eventId');if(eventId){history.replaceState(null,'',window.location.pathname+window.location.hash);openEvent(eventId)}}
   if(ACCOUNT_ROUTE&&hasSession&&user?.is_blocked){sessionStorage.setItem('flowtix_blocked_route_notice','1');window.location.replace('/');return}
   if(!ACCOUNT_ROUTE&&user?.is_blocked&&sessionStorage.getItem('flowtix_blocked_route_notice')==='1'){sessionStorage.removeItem('flowtix_blocked_route_notice');showBlockedAccountModal()}
   if(ACCOUNT_ROUTE){if(hasSession||PUBLIC_PROFILE_ROUTE)renderAccountRoute();else authOpen('login')}
