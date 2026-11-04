@@ -227,6 +227,23 @@ async function notifyRootAdmin(title,message,type='admin_activity',actionUrl=nul
   if(error){console.error('[notifications] root admin lookup failed:',error.message);return}
   if(data?.id)await createNotification(data.id,title,message,type,actionUrl);
 }
+async function recordEventAnalyticsUpdate(eventId, organizerId=null){
+  if(!supabase||!eventId)return;
+  try{
+    let ownerId=organizerId;
+    if(!ownerId){
+      const {data,error}=await supabase.from('events').select('organizer_id').eq('id',eventId).maybeSingle();
+      if(error||!data?.organizer_id)return;
+      ownerId=data.organizer_id;
+    }
+    const since=new Date(Date.now()-5000).toISOString();
+    const {data:recent}=await supabase.from('event_analytics_updates').select('id')
+      .eq('event_id',eventId).eq('organizer_id',ownerId).gte('created_at',since).limit(1);
+    if(recent?.length)return;
+    const {error}=await supabase.from('event_analytics_updates').insert({event_id:eventId,organizer_id:ownerId});
+    if(error)console.error('[analytics] realtime signal failed:',error.message);
+  }catch(error){console.error('[analytics] realtime signal failed:',error.message)}
+}
 
 app.get('/api/admin/access', requireUser, requireRootAdmin, (_req, res) => res.json({ allowed: true }));
 
@@ -585,6 +602,7 @@ app.patch('/api/events/:id', requireUser, allowRoles('organizer', 'admin'), asyn
     .eq('id', req.params.id).eq('organizer_id', req.user.id).select('*').maybeSingle();
   if (error) return res.status(400).json({ error: 'Не удалось изменить мероприятие' });
   if (!data) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  await recordEventAnalyticsUpdate(data.id,data.organizer_id);
   res.json({ event: data });
 }));
 app.get('/api/moderation/events', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (_req, res) => {
@@ -815,12 +833,20 @@ app.post('/api/registrations', requireUser, asyncRoute(async (req, res) => {
       : reason.includes('sold_out') ? 'Свободных мест больше нет' : reason.includes('seat_required') ? 'Выберите место на схеме зала' : reason.includes('seat_unavailable') ? 'Выбранное место уже заняли. Выберите другое.' : reason.includes('reservation_expired') ? 'Время брони истекло. Выберите место ещё раз.' : 'Не удалось зарегистрироваться');
     return res.status(status).json({ error: message });
   }
+  const allowedSources=new Set(['catalog','search','recommendations','map','calendar','nearby','external']);
+  const registrationSource=allowedSources.has(String(req.body.source||''))?String(req.body.source):'catalog';
+  const registrationId=data.ticket?.registration_id;
+  let registrationQuery=supabase.from('registrations').update({source:registrationSource}).eq('event_id',eventId).eq('user_id',req.user.id);
+  if(registrationId)registrationQuery=registrationQuery.eq('id',registrationId);
+  const {error:sourceError}=await registrationQuery;
+  if(sourceError)console.warn('[analytics] registration source was not saved:',sourceError.message);
   await supabase.from('audit_logs').insert({
     actor_id: req.user.id, actor_name: req.user.full_name,
     action: 'REGISTER_FOR_EVENT', entity_type: 'ticket',
     entity_id: data.ticket.id, details: { event_id: eventId, payment_method: 'wallet', amount: data.ticket.price_paid }
   });
   const {data:eventNotice}=await supabase.from('events').select('title,organizer_id').eq('id',eventId).maybeSingle();
+  if(eventNotice?.organizer_id)await recordEventAnalyticsUpdate(eventId,eventNotice.organizer_id);
   if(eventNotice?.organizer_id&&eventNotice.organizer_id!==req.user.id)await createNotification(eventNotice.organizer_id,'Новый участник мероприятия',(req.user.full_name||'Пользователь')+' зарегистрировался на «'+(eventNotice.title||'ваше мероприятие')+'».','event_registration');
   res.status(201).json(data);
 }));
@@ -876,6 +902,17 @@ app.post('/api/reviews', requireUser, asyncRoute(async (req, res) => {
   const {data:eventNotice}=await supabase.from('events').select('title,organizer_id').eq('id',eventId).maybeSingle();
   if(eventNotice?.organizer_id&&eventNotice.organizer_id!==req.user.id)await createNotification(eventNotice.organizer_id,'Новый отзыв',(req.user.full_name||'Участник')+' оставил отзыв на «'+(eventNotice.title||'мероприятие')+'».','event_review');
   res.status(201).json({ review: data });
+}));
+app.get('/api/organizer/events/:eventId/analytics',requireUser,allowRoles('organizer','admin'),asyncRoute(async(req,res)=>{
+ const eventQuery=supabase.from('events').select('id,organizer_id').eq('id',req.params.eventId);
+ if(req.user.role!=='admin')eventQuery.eq('organizer_id',req.user.id);
+ const {data:event,error:eventError}=await eventQuery.maybeSingle();
+ if(eventError)return res.status(500).json({error:'Не удалось проверить мероприятие'});
+ if(!event)return res.status(404).json({error:'Мероприятие не найдено'});
+ const {data,error}=await supabase.rpc('get_organizer_event_analytics',{p_event_id:event.id,p_organizer_id:event.organizer_id});
+ if(error){console.error('[analytics] query failed:',error.message);return res.status(500).json({error:'Не удалось загрузить аналитику'})}
+ if(!data)return res.status(404).json({error:'Мероприятие не найдено'});
+ res.json({analytics:data});
 }));
 app.get('/api/organizer/registrations', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
   const { data: events, error: eventsError } = await supabase.from('events').select('id').eq('organizer_id', req.user.id);
@@ -953,6 +990,7 @@ app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('s
     actor_id: req.user.id, actor_name: req.user.full_name, action: 'STAFF_TICKET_CHECKED_IN',
     entity_type: 'ticket', entity_id: data.id, details: { ticket_number: data.ticket_number, event_id: data.event_id }
   });
+  await recordEventAnalyticsUpdate(data.event_id);
   res.json({ ticket: data });
 }));
 async function enrichComplaintTargets(complaints=[]){
@@ -1296,11 +1334,12 @@ app.get('/api/recommendations', requireUser, asyncRoute(async(req,res)=>{
 }));
 app.post('/api/events/:id/view', requireUser, asyncRoute(async(req,res)=>{
   const eventId=String(req.params.id||'');
-  const {data:event}=await supabase.from('events').select('id').eq('id',eventId).eq('status','published').maybeSingle();
+  const {data:event}=await supabase.from('events').select('id,organizer_id').eq('id',eventId).eq('status','published').maybeSingle();
   if(!event)return res.status(404).json({error:'Мероприятие не найдено'});
   const {data:existing}=await supabase.from('event_views').select('view_count').eq('user_id',req.user.id).eq('event_id',eventId).maybeSingle();
   const {error}=await supabase.from('event_views').upsert({user_id:req.user.id,event_id:eventId,view_count:Number(existing?.view_count||0)+1,last_viewed_at:new Date().toISOString()},{onConflict:'user_id,event_id'});
   if(error)return res.status(500).json({error:'Не удалось сохранить просмотр'});
+  await recordEventAnalyticsUpdate(eventId,event.organizer_id);
   res.status(204).end();
 }));
 const promoPayload=(body,organizerId=null)=>({
@@ -1482,15 +1521,18 @@ app.get('/api/admin/tickets', requireUser, requireRootAdmin, asyncRoute(async (r
  res.json({tickets,hasMore:(data||[]).length>10});
 }));
 app.patch('/api/admin/tickets/:id/cancel',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
- const {data:ticket}=await supabase.from('tickets').select('user_id,users!tickets_user_id_fkey(email)').eq('id',req.params.id).maybeSingle();
+ const {data:ticket}=await supabase.from('tickets').select('user_id,event_id,users!tickets_user_id_fkey(email)').eq('id',req.params.id).maybeSingle();
  if(req.body.block===true&&ticket&&isRootEmail(ticket.users?.email))return res.status(409).json({error:'Главный администратор не может быть заблокирован'});
  const {data,error}=await supabase.rpc('admin_cancel_ticket',{p_ticket_id:req.params.id,p_actor_id:req.user.id,p_refund:req.body.refund===true,p_block:req.body.block===true,p_notify:req.body.notify!==false,p_delete:req.body.deleteRecord===true});
  if(error)return res.status(400).json({error:'Не удалось аннулировать билет: '+error.message});
+ if(ticket?.event_id)await recordEventAnalyticsUpdate(ticket.event_id);
  res.json(data);
 }));
 app.delete('/api/admin/tickets/:id',requireUser,requireRootAdmin,asyncRoute(async(req,res)=>{
+ const {data:ticket}=await supabase.from('tickets').select('event_id').eq('id',req.params.id).maybeSingle();
  const {data,error}=await supabase.rpc('admin_delete_ticket_record',{p_ticket_id:req.params.id,p_actor_id:req.user.id});
  if(error)return res.status(400).json({error:'Сначала аннулируйте действующий билет'});
+ if(ticket?.event_id)await recordEventAnalyticsUpdate(ticket.event_id);
  res.json(data);
 }));
 app.get('/api/wallet',requireUser,asyncRoute(async(req,res)=>{
