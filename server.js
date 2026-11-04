@@ -537,12 +537,18 @@ app.get('/api/events/:id/seats', requireUser, asyncRoute(async (req, res) => {
     .eq('id', req.params.id).eq('status', 'published').maybeSingle();
   if (eventError) return res.status(500).json({ error: 'Не удалось загрузить схему мест' });
   if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
-  if (!event.hall_id) return res.json({ seatSelectionRequired: false, seats: [], event });
-  const { error: ensureError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: event.hall_id });
-  if (ensureError) return res.status(500).json({ error: 'Не удалось подготовить схему зала' });
+  let hallId = event.hall_id;
+  if (!hallId) {
+    const { data, error } = await supabase.rpc('ensure_event_seat_hall', { p_event_id: event.id });
+    if (error) return res.status(500).json({ error: 'Не удалось создать схему мест' });
+    hallId = data;
+  }
+  if (!hallId) return res.json({ seatSelectionRequired: false, reason: 'capacity_limit', seats: [], event });
+  const { error: ensureError } = await supabase.rpc('ensure_hall_seats', { p_hall_id: hallId });
+  if (ensureError) return res.status(500).json({ error: 'Не удалось подготовить схему мест' });
   const [seatResult, reservationResult, ticketResult] = await Promise.all([
     supabase.from('seats').select('id,row_label,seat_number,seat_type,price_multiplier')
-      .eq('hall_id', event.hall_id).order('row_label').order('seat_number').limit(2000),
+      .eq('hall_id', hallId).order('row_label').order('seat_number').limit(2000),
     supabase.from('seat_reservations').select('seat_id,user_id,reserved_until')
       .eq('event_id', event.id).eq('status', 'reserved').gt('reserved_until', new Date().toISOString()),
     supabase.from('tickets').select('seat_id').eq('event_id', event.id).in('status', ['valid', 'used']).not('seat_id', 'is', null)
@@ -622,24 +628,35 @@ app.get('/api/tickets/mine', requireUser, asyncRoute(async (req, res) => {
   if (error) { console.error('[admin/tickets] query failed:', error.message); return res.status(500).json({ error: 'Не удалось загрузить билеты' }); }
   res.json({ tickets: data });
 }));
+app.get('/api/reviews/mine', requireUser, asyncRoute(async (req, res) => {
+  const { data, error } = await supabase.from('reviews')
+    .select('id,event_id,overall_rating,comment,created_at,events(id,title,start_date)')
+    .eq('user_id', req.user.id)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить ваши отзывы' });
+  res.json({ reviews: data || [] });
+}));
 app.post('/api/reviews', requireUser, asyncRoute(async (req, res) => {
-  const { eventId, orgRating, venueRating, programRating, staffRating, comment } = req.body;
-  const ratings = [orgRating, venueRating, programRating, staffRating].map(Number);
-  if (!eventId || ratings.some((value) => !Number.isInteger(value) || value < 1 || value > 5)) {
-    return res.status(400).json({ error: 'Оцените организатора, площадку, программу и команду (1–5)' });
+  const eventId = String(req.body.eventId || '');
+  const rating = Number(req.body.rating);
+  const comment = String(req.body.comment || '').trim();
+  if (!eventId || !Number.isInteger(rating) || rating < 1 || rating > 5 || !comment || comment.length > 1000) {
+    return res.status(400).json({ error: 'Выберите оценку от 1 до 5 звёзд и напишите комментарий (до 1000 символов)' });
   }
-  const { count } = await supabase.from('tickets').select('id', { count: 'exact', head: true })
+  const { count, error: ticketError } = await supabase.from('tickets').select('id', { count: 'exact', head: true })
     .eq('event_id', eventId).eq('user_id', req.user.id).in('status', ['valid', 'used']);
-  if (!count) return res.status(403).json({ error: 'Оставлять отзыв могут участники с билетом' });
-  const { data: prior } = await supabase.from('reviews').select('id').eq('event_id', eventId).eq('user_id', req.user.id).maybeSingle();
+  if (ticketError) return res.status(500).json({ error: 'Не удалось проверить участие в мероприятии' });
+  if (!count) return res.status(403).json({ error: 'Оставлять отзыв могут только участники с билетом' });
+  const { data: prior, error: priorError } = await supabase.from('reviews').select('id')
+    .eq('event_id', eventId).eq('user_id', req.user.id).maybeSingle();
+  if (priorError) return res.status(500).json({ error: 'Не удалось проверить предыдущий отзыв' });
   if (prior) return res.status(409).json({ error: 'Вы уже оставили отзыв на это событие' });
   const { data, error } = await supabase.from('reviews').insert({
     event_id: eventId, user_id: req.user.id,
-    org_rating: ratings[0], venue_rating: ratings[1], program_rating: ratings[2],
-    staff_rating: ratings[3], overall_rating: ratings.reduce((a,b) => a+b, 0) / 4,
-    comment: String(comment || '').slice(0, 3000)
-  }).select('*').single();
-  if (error) return res.status(400).json({ error: 'Отзыв уже оставлен или данные некорректны' });
+    org_rating: rating, venue_rating: rating, program_rating: rating, staff_rating: rating,
+    overall_rating: rating, comment
+  }).select('id,event_id,overall_rating,comment,created_at').single();
+  if (error) return res.status(400).json({ error: 'Не удалось сохранить отзыв' });
   res.status(201).json({ review: data });
 }));
 app.get('/api/organizer/registrations', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
