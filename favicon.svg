@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><image href="/logo.png" x="-8" y="-8" width="116" height="116" preserveAspectRatio="xMidYMid slice"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="16" fill="#26172f"/>
+  <ellipse cx="32" cy="32" rx="25" ry="11" transform="rotate(-32 32 32)" fill="none" stroke="#b88cff" stroke-width="4"/>
+  <ellipse cx="32" cy="32" rx="21" ry="8" transform="rotate(-32 32 32)" fill="none" stroke="#ff9c65" stroke-width="2"/>
+  <path d="M24 47V17h21v7H32v6h11v7H32v10z" fill="#fff4e9"/>
+  <circle cx="48" cy="15" r="3" fill="#79f0d2"/>
+</svg>
