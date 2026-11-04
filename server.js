@@ -12,8 +12,9 @@ const paymentCreateUrl = String(process.env.PAYMENT_PROVIDER_CREATE_URL || '').t
 const paymentApiKey = String(process.env.PAYMENT_PROVIDER_API_KEY || '');
 const paymentWebhookSecret = String(process.env.PAYMENT_WEBHOOK_SECRET || '');
 const publicSiteUrl = String(process.env.PUBLIC_SITE_URL || 'https://flowtix.online').replace(/\/$/, '');
-const paymentWebhookUrl = String(process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '') + '/api/webhooks/payments';
-const paymentProviderReady = Boolean(paymentProviderName && paymentCreateUrl && paymentApiKey && paymentWebhookSecret);
+const renderPublicUrl = String(process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+const paymentWebhookUrl = String(process.env.PAYMENT_WEBHOOK_URL || (renderPublicUrl ? renderPublicUrl + '/api/webhooks/payments' : '')).trim();
+const paymentProviderReady = Boolean(paymentProviderName && paymentCreateUrl && paymentApiKey && paymentWebhookSecret && paymentWebhookUrl.startsWith('https://'));
 const isRootEmail = (email) => Boolean(rootAdminEmail) && String(email || '').trim().toLowerCase() === rootAdminEmail;
 const validRoles = new Set(['visitor', 'organizer', 'staff', 'moderator', 'admin']);
 const normalizeOrigin = (value) => {
@@ -681,6 +682,11 @@ app.post('/api/webhooks/payments', asyncRoute(async(req,res)=>{
   const providerReference=String(payload.provider_reference||'');
   if(!intentId)return res.status(400).json({error:'Не указан идентификатор платежа'});
   if(payload.status==='paid'||payload.status==='completed'){
+    const {data:previous}=await supabase.from('payment_intents').select('status,provider_reference,amount,currency,ticket_id').eq('id',intentId).maybeSingle();
+    if(previous?.status==='paid'){
+      const same=previous.provider_reference===providerReference&&Number(previous.amount)===Number(payload.amount)&&String(previous.currency).toUpperCase()===String(payload.currency||'').toUpperCase();
+      return same?res.json({received:true,duplicate:true}):res.status(409).json({error:'Платёж не прошёл проверку'});
+    }
     const {data,error}=await supabase.rpc('settle_payment_intent',{p_intent_id:intentId,p_provider_reference:providerReference,p_amount:Number(payload.amount),p_currency:String(payload.currency||'')});
     if(error)return res.status(409).json({error:'Платёж не прошёл проверку'});
     return res.json({received:true,ticket:data?.ticket?.ticket_number||null});
