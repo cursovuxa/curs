@@ -803,11 +803,31 @@ app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('s
   });
   res.json({ ticket: data });
 }));
+async function enrichComplaintTargets(complaints=[]){
+ const collect=type=>[...new Set(complaints.filter(c=>c.target_type===type&&c.target_id).map(c=>c.target_id))];
+ const [eventIds,userIds,reviewIds,ticketIds]=['event','user','review','ticket'].map(collect);
+ const tasks=[
+  eventIds.length?supabase.from('events').select('id,title,start_date,start_time,location_address,venues(name,city,address)').in('id',eventIds):Promise.resolve({data:[]}),
+  userIds.length?supabase.from('users').select('id,full_name,username,email').in('id',userIds):Promise.resolve({data:[]}),
+  reviewIds.length?supabase.from('reviews').select('id,event_id,comment,events(id,title,start_date,start_time)').in('id',reviewIds):Promise.resolve({data:[]}),
+  ticketIds.length?supabase.from('tickets').select('id,ticket_number,event_id,events(id,title,start_date,start_time)').in('id',ticketIds):Promise.resolve({data:[]})
+ ];
+ const results=await Promise.all(tasks);
+ const failed=results.find(result=>result.error);if(failed)throw failed.error;
+ const [events,users,reviews,tickets]=results.map(result=>new Map((result.data||[]).map(row=>[row.id,row])));
+ return complaints.map(complaint=>({...complaint,target:
+  complaint.target_type==='event'?events.get(complaint.target_id)||null:
+  complaint.target_type==='user'?users.get(complaint.target_id)||null:
+  complaint.target_type==='review'?reviews.get(complaint.target_id)||null:
+  complaint.target_type==='ticket'?tickets.get(complaint.target_id)||null:null
+ }));
+}
 app.get('/api/moderation/complaints', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (_req, res) => {
-  const { data, error } = await supabase.from('complaints').select('*,users!complaints_author_id_fkey(full_name,email)')
+  const { data, error } = await supabase.from('complaints').select('*,users!complaints_author_id_fkey(id,full_name,email,username)')
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
-  res.json({ complaints: data });
+  try{res.json({ complaints: await enrichComplaintTargets(data||[]) })}
+  catch(targetError){console.error('[moderation] complaint targets failed:',targetError.message);res.status(500).json({error:'Не удалось загрузить объект жалобы'})}
 }));
 app.patch('/api/moderation/complaints/:id', requireUser, allowRoles('moderator', 'admin'), asyncRoute(async (req, res) => {
   const nextStatus=String(req.body.status||'');
@@ -1183,10 +1203,11 @@ app.get('/api/admin/payments', requireUser, requireRootAdmin, asyncRoute(async (
 }));
 app.get('/api/admin/complaints', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('complaints')
-    .select('*,users!complaints_author_id_fkey(full_name,email)')
+    .select('*,users!complaints_author_id_fkey(id,full_name,email,username)')
     .order('created_at', { ascending: false }).limit(500);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить жалобы' });
-  res.json({ complaints: data });
+  try{res.json({ complaints: await enrichComplaintTargets(data||[]) })}
+  catch(targetError){console.error('[admin] complaint targets failed:',targetError.message);res.status(500).json({error:'Не удалось загрузить объект жалобы'})}
 }));
 app.get('/api/admin/reviews', requireUser, requireRootAdmin, asyncRoute(async (_req, res) => {
   const { data, error } = await supabase.from('reviews')
