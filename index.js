@@ -46,6 +46,27 @@ const api = async (path, options = {}) => {
   return data;
 };
 const esc = (value = '') => String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function autosizeTextarea(field){
+  if(!field||field.tagName!=='TEXTAREA')return;
+  if(!field.hasAttribute('maxlength')){
+    field.maxLength=field.name==='description'?10000:field.name==='rules'?5000:2000;
+  }
+  field.style.height='auto';
+  const max=360;
+  field.style.height=Math.min(field.scrollHeight,max)+'px';
+  field.style.overflowY=field.scrollHeight>max?'auto':'hidden';
+}
+function configureTextareas(root=document){root.querySelectorAll('textarea').forEach(autosizeTextarea)}
+document.addEventListener('input',event=>{if(event.target.matches('textarea'))autosizeTextarea(event.target)});
+const textareaObserver=new MutationObserver(records=>{
+  for(const record of records)for(const node of record.addedNodes){
+    if(node.nodeType!==1)continue;
+    if(node.matches('textarea'))autosizeTextarea(node);
+    configureTextareas(node);
+  }
+});
+textareaObserver.observe(document.body,{childList:true,subtree:true});
+configureTextareas();
 const money = (amount) => Number(amount || 0) === 0 ? 'Бесплатно' : new Intl.NumberFormat('ru-RU').format(Number(amount)) + ' ₸';
 const eventStatusLabel = (status) => ({
   draft:'Черновик', pending_moderation:'На модерации', published:'Опубликовано',
