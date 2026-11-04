@@ -1497,9 +1497,9 @@ app.patch('/api/admin/users/:id/profile', requireUser, requireRootAdmin, asyncRo
   res.json({profile:data});
 }));
 app.post('/api/admin/users/:id/balance-adjustments', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
-  const amount=Number(req.body.amount),note=String(req.body.note||'').trim().slice(0,240);
+  const amount=Number(req.body.amount),note=String(req.body.note||'').trim().slice(0,240)||'Корректировка баланса администратором';
   if(!Number.isFinite(amount)||amount===0||Math.abs(amount)>100000000)return res.status(400).json({error:'Укажите сумму изменения баланса'});
-  const {data,error}=await supabase.rpc('admin_adjust_wallet',{p_user_id:req.params.id,p_amount:amount,p_actor_id:req.user.id,p_note:note||null});
+  const {data,error}=await supabase.rpc('admin_adjust_wallet',{p_user_id:req.params.id,p_amount:amount,p_actor_id:req.user.id,p_note:note});
   if(error)return res.status(400).json({error:error.message.includes('insufficient_balance')?'Списание превышает баланс':'Не удалось изменить баланс'});
   await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_WALLET_ADJUSTED',entity_type:'user',entity_id:req.params.id,details:{amount,note}});
   res.json({balance:Number(data)});
