@@ -71,22 +71,28 @@ app.get('/api/events', async (req, res) => {
   const term = String(req.query.q || '').trim().slice(0, 100);
   const city = String(req.query.city || '').trim().slice(0, 100);
   let query = supabase.from('events')
-    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,rules,contact_email,contact_phone,dynamic_pricing_enabled,popularity_score,venue_id,category_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*)')
+    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,rules,contact_email,contact_phone,dynamic_pricing_enabled,popularity_score,venue_id,category_id,organizer_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*),users!events_organizer_id_fkey(id,full_name,username,avatar_url,avatar_path,role,city,preferences)')
     .eq('status', 'published').order('start_date', { ascending: true });
   if (term) query = query.ilike('title', '%' + term.replace(/[,%()]/g, '') + '%');
   if (city) query = query.ilike('venues.city', city);
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
-  res.json({ events: data });
+  let visibleEvents=data||[];
+  const token=req.get('authorization')?.replace(/^Bearer\\s+/i,'');
+  if(token){const auth=await supabase.auth.getUser(token);const viewer=auth.data?.user?.id;if(viewer){const organizerIds=[...new Set(visibleEvents.map(x=>x.organizer_id).filter(Boolean))];if(organizerIds.length){const blocks=await supabase.from('user_blocks').select('blocked_id').eq('blocker_id',viewer).in('blocked_id',organizerIds);const hidden=new Set((blocks.data||[]).map(x=>x.blocked_id));visibleEvents=visibleEvents.filter(x=>!hidden.has(x.organizer_id))}}}
+  visibleEvents=await Promise.all(visibleEvents.map(async e=>{e.users=await signedUserAvatar(e.users);return e}));
+  res.json({ events: visibleEvents });
 });
 
 app.get('/api/events/:id', async (req, res) => {
   if (!supabase) return res.status(503).json({ error: 'Database is not configured' });
   const { data, error } = await supabase.from('events')
-    .select('*,event_categories(name),venues(*),halls(*),event_program(*)')
+    .select('*,event_categories(name),venues(*),halls(*),event_program(*),users!events_organizer_id_fkey(id,full_name,username,avatar_url,avatar_path,role,city,preferences)')
     .eq('id', req.params.id).eq('status', 'published').maybeSingle();
   if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятие' });
   if (!data) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  data.users=await signedUserAvatar(data.users);
+  const token=req.get('authorization')?.replace(/^Bearer\\s+/i,'');if(token&&data.organizer_id){const auth=await supabase.auth.getUser(token);const viewer=auth.data?.user?.id;if(viewer&&viewer!==data.organizer_id){const block=await supabase.from('user_blocks').select('blocked_id').eq('blocker_id',viewer).eq('blocked_id',data.organizer_id).maybeSingle();if(block.data)return res.status(404).json({error:'Мероприятие не найдено'})}}
   res.json({ event: data });
 });
 
@@ -737,6 +743,7 @@ app.post('/api/staff/tickets/:ticketNumber/check-in', requireUser, allowRoles('s
       : message.includes('ticket_expired') ? 'Билет недействителен: время мероприятия истекло.'
       : message.includes('ticket_invalid') ? 'Билет недействителен.'
       : message.includes('staff_assignment_required') ? 'Сотрудник не назначен на это мероприятие.'
+      : message.includes('organizer_blocked_user') ? 'Этот участник заблокирован организатором и не может быть допущен на мероприятие.'
       : message.includes('ticket_not_found') ? 'Билет не найден.'
       : 'Не удалось проверить билет.';
     return res.status(status).json({ error: errorText });
@@ -1237,11 +1244,283 @@ app.post('/api/events/:eventId/program', requireUser, allowRoles('organizer','ad
   res.status(201).json({ item: data });
 }));
 
+
+function safePlatformFromUrl(raw) {
+  let parsed;
+  try { parsed = new URL(String(raw || '').trim()); } catch { return null; }
+  if (!['https:','http:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+  const host = parsed.hostname.toLowerCase().replace(/^www\\./, '');
+  const map = [['t.me','telegram'],['telegram.me','telegram'],['youtube.com','youtube'],['youtu.be','youtube'],['instagram.com','instagram'],['tiktok.com','tiktok'],['vk.com','vk'],['discord.gg','discord'],['discord.com','discord'],['x.com','x'],['twitter.com','x']];
+  const platform = map.find(([domain]) => host === domain || host.endsWith('.' + domain))?.[1] || 'website';
+  return { url: parsed.toString(), platform };
+}
+async function signedUserAvatar(profile) {
+  if (!profile) return profile;
+  const result = { ...profile };
+  delete result.avatar_path;
+  if (profile.avatar_path) {
+    const signed = await supabase.storage.from('avatars').createSignedUrl(profile.avatar_path, 3600);
+    if (!signed.error && signed.data?.signedUrl) result.avatar_url = signed.data.signedUrl;
+  }
+  return result;
+}
+async function conversationParty(conversation, userId) {
+  const otherId = conversation.participant_a === userId ? conversation.participant_b : conversation.participant_a;
+  const { data } = await supabase.from('users').select('id,full_name,username,avatar_url,avatar_path,role,city,preferences').eq('id', otherId).maybeSingle();
+  return { other: await signedUserAvatar(data), otherId };
+}
+
+app.get('/api/profiles/:id', asyncRoute(async (req, res) => {
+  let viewerId = null;
+  const token = req.get('authorization')?.replace(/^Bearer\\s+/i, '');
+  if (token) {
+    const { data } = await supabase.auth.getUser(token);
+    viewerId = data?.user?.id || null;
+  }
+  const { data: profile, error } = await supabase.from('users')
+    .select('id,full_name,username,avatar_url,avatar_path,role,city,preferences,is_blocked')
+    .eq('id', req.params.id).maybeSingle();
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить профиль' });
+  if (!profile || profile.is_blocked) return res.status(404).json({ error: 'Профиль не найден' });
+  let blocked = false;
+  if (viewerId && viewerId !== profile.id) {
+    const { data: blocks, error: blockError } = await supabase.from('user_blocks')
+      .select('blocker_id,blocked_id').or('and(blocker_id.eq.'+viewerId+',blocked_id.eq.'+profile.id+'),and(blocker_id.eq.'+profile.id+',blocked_id.eq.'+viewerId+')');
+    if (blockError) return res.status(500).json({ error: 'Не удалось проверить доступ к профилю' });
+    blocked = (blocks || []).length > 0;
+  }
+  if (blocked) return res.status(404).json({ error: 'Профиль недоступен' });
+  const { data: links, error: linksError } = await supabase.from('profile_links').select('id,url,platform')
+    .eq('user_id', profile.id).eq('status','approved').order('created_at');
+  if (linksError) return res.status(500).json({ error: 'Не удалось загрузить ссылки профиля' });
+  res.json({ profile: await signedUserAvatar({
+    id: profile.id, full_name: profile.full_name, username: profile.username, avatar_url: profile.avatar_url,
+    avatar_path: profile.avatar_path, role: profile.role, city: profile.city,
+    about: profile.preferences?.about || '', links: links || []
+  }) });
+}));
+
+app.post('/api/me/profile-links', requireUser, asyncRoute(async (req, res) => {
+  const value = safePlatformFromUrl(req.body.url);
+  if (!value) return res.status(400).json({ error: 'Добавьте корректную ссылку с http:// или https://' });
+  const { data: existing, error: lookupError } = await supabase.from('profile_links')
+    .select('id,status').eq('user_id',req.user.id).ilike('url',value.url).in('status',['pending','approved']).maybeSingle();
+  if (lookupError) return res.status(500).json({ error: 'Не удалось проверить ссылку' });
+  if (existing) return res.status(409).json({ error: existing.status === 'approved' ? 'Эта ссылка уже опубликована' : 'Эта ссылка уже ожидает проверки' });
+  const { data, error } = await supabase.from('profile_links').insert({
+    user_id:req.user.id,url:value.url,platform:value.platform,status:'pending'
+  }).select('id,url,platform,status,created_at').single();
+  if (error) return res.status(400).json({ error:'Не удалось отправить ссылку на модерацию' });
+  await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'PROFILE_LINK_SUBMITTED',entity_type:'profile_link',entity_id:data.id,details:{platform:value.platform}});
+  res.status(201).json({ link:data });
+}));
+app.delete('/api/me/profile-links/:id', requireUser, asyncRoute(async(req,res)=>{
+ const {data,error}=await supabase.from('profile_links').delete().eq('id',req.params.id).eq('user_id',req.user.id).select('id').maybeSingle();
+ if(error)return res.status(400).json({error:'Не удалось удалить ссылку'});
+ if(!data)return res.status(404).json({error:'Ссылка не найдена'});
+ res.json({deleted:true});
+}));
+app.get('/api/me/profile-links', requireUser, asyncRoute(async (req,res)=>{
+  const {data,error}=await supabase.from('profile_links').select('id,url,platform,status,created_at,moderated_at')
+    .eq('user_id',req.user.id).order('created_at',{ascending:false});
+  if(error)return res.status(500).json({error:'Не удалось загрузить ваши ссылки'});
+  res.json({links:data||[]});
+}));
+
+app.get('/api/messages/conversations', requireUser, asyncRoute(async (req,res)=>{
+  const {data,error}=await supabase.from('direct_conversations')
+    .select('id,participant_a,participant_b,request_by,status,cleared_at_a,cleared_at_b,created_at,updated_at')
+    .or('participant_a.eq.'+req.user.id+',participant_b.eq.'+req.user.id)
+    .order('updated_at',{ascending:false});
+  if(error)return res.status(500).json({error:'Не удалось загрузить переписки'});
+  const conversations=await Promise.all((data||[]).map(async c=>{
+    const party=await conversationParty(c,req.user.id);
+    const {data:last}=await supabase.from('direct_messages').select('body,created_at,sender_id')
+      .eq('conversation_id',c.id).order('created_at',{ascending:false}).limit(1).maybeSingle();
+    return {...c,other:party.other,lastMessage:last||null,
+      clearedAt:c.participant_a===req.user.id?c.cleared_at_a:c.cleared_at_b};
+  }));
+  res.json({conversations});
+}));
+app.post('/api/messages/requests', requireUser, asyncRoute(async(req,res)=>{
+  const otherId=String(req.body.userId||'');
+  if(!/^[0-9a-f-]{36}$/i.test(otherId)||otherId===req.user.id)return res.status(400).json({error:'Выберите пользователя'});
+  const {data:target,error:targetError}=await supabase.from('users').select('id,is_blocked').eq('id',otherId).maybeSingle();
+  if(targetError||!target||target.is_blocked)return res.status(404).json({error:'Пользователь не найден'});
+  const {data:blocks,error:blockError}=await supabase.from('user_blocks').select('blocker_id').or('and(blocker_id.eq.'+req.user.id+',blocked_id.eq.'+otherId+'),and(blocker_id.eq.'+otherId+',blocked_id.eq.'+req.user.id+')');
+  if(blockError)return res.status(500).json({error:'Не удалось проверить ограничения'});
+  if(blocks?.length)return res.status(403).json({error:'Нельзя отправить запрос: один из пользователей заблокировал другого'});
+  const [a,b]=[req.user.id,otherId].sort();
+  const {data:old,error:oldError}=await supabase.from('direct_conversations').select('*').eq('participant_a',a).eq('participant_b',b).maybeSingle();
+  if(oldError)return res.status(500).json({error:'Не удалось проверить запрос'});
+  if(old?.status==='active')return res.json({conversation:old,alreadyActive:true});
+  if(old?.status==='pending')return res.status(409).json({error:old.request_by===req.user.id?'Запрос уже отправлен':'У вас уже есть входящий запрос от этого пользователя',incoming:old.request_by!==req.user.id,conversationId:old.id});
+  let conversation,error;
+  if(old){
+    const updated=await supabase.from('direct_conversations').update({status:'pending',request_by:req.user.id,cleared_at_a:null,cleared_at_b:null,updated_at:new Date().toISOString()}).eq('id',old.id).select('*').single();
+    conversation=updated.data;error=updated.error;
+  }else{
+    const created=await supabase.from('direct_conversations').insert({participant_a:a,participant_b:b,request_by:req.user.id}).select('*').single();
+    conversation=created.data;error=created.error;
+  }
+  if(error)return res.status(400).json({error:'Не удалось отправить запрос на чат'});
+  res.status(201).json({conversation});
+}));
+app.patch('/api/messages/conversations/:id', requireUser, asyncRoute(async(req,res)=>{
+  const {data:c,error}=await supabase.from('direct_conversations').select('*').eq('id',req.params.id).maybeSingle();
+  if(error)return res.status(500).json({error:'Не удалось загрузить запрос'});
+  if(!c||![c.participant_a,c.participant_b].includes(req.user.id))return res.status(404).json({error:'Переписка не найдена'});
+  const action=String(req.body.action||'');
+  const ownSide=c.participant_a===req.user.id?'a':'b';
+  if(action==='accept'||action==='decline'){
+    if(c.status!=='pending'||c.request_by===req.user.id)return res.status(409).json({error:'Этот запрос нельзя обработать'});
+    const {data:blocks}=await supabase.from('user_blocks').select('blocker_id').or('and(blocker_id.eq.'+c.participant_a+',blocked_id.eq.'+c.participant_b+'),and(blocker_id.eq.'+c.participant_b+',blocked_id.eq.'+c.participant_a+')');
+    if(blocks?.length)return res.status(403).json({error:'Чат недоступен из-за блокировки'});
+    const result=await supabase.from('direct_conversations').update({status:action==='accept'?'active':'declined',updated_at:new Date().toISOString()}).eq('id',c.id).select('*').single();
+    if(result.error)return res.status(400).json({error:'Не удалось сохранить решение'});
+    await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:action==='accept'?'CHAT_REQUEST_ACCEPTED':'CHAT_REQUEST_DECLINED',entity_type:'conversation',entity_id:c.id,details:{}});
+    return res.json({conversation:result.data});
+  }
+  if(action==='clear'){
+    const field=ownSide==='a'?'cleared_at_a':'cleared_at_b';
+    const update=await supabase.from('direct_conversations').update({[field]:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',c.id).select('*').single();
+    if(update.error)return res.status(400).json({error:'Не удалось очистить историю'});
+    const {data:both}=await supabase.from('direct_conversations').select('cleared_at_a,cleared_at_b').eq('id',c.id).maybeSingle();
+    if(both?.cleared_at_a&&both?.cleared_at_b){
+      await supabase.from('direct_conversations').delete().eq('id',c.id);
+      return res.json({cleared:true,deleted:true,clearCount:2});
+    }
+    return res.json({cleared:true,deleted:false,clearCount:1});
+  }
+  return res.status(400).json({error:'Неизвестное действие'});
+}));
+app.get('/api/messages/conversations/:id/messages', requireUser, asyncRoute(async(req,res)=>{
+  const {data:c,error}=await supabase.from('direct_conversations').select('*').eq('id',req.params.id).maybeSingle();
+  if(error)return res.status(500).json({error:'Не удалось загрузить переписку'});
+  if(!c||c.status!=='active'||![c.participant_a,c.participant_b].includes(req.user.id))return res.status(404).json({error:'Переписка не найдена'});
+  const {data:blocks}=await supabase.from('user_blocks').select('blocker_id').or('and(blocker_id.eq.'+c.participant_a+',blocked_id.eq.'+c.participant_b+'),and(blocker_id.eq.'+c.participant_b+',blocked_id.eq.'+c.participant_a+')');
+  if(blocks?.length)return res.status(403).json({error:'Чат закрыт из-за блокировки'});
+  const ownClear=c.participant_a===req.user.id?c.cleared_at_a:c.cleared_at_b;
+  let query=supabase.from('direct_messages').select('id,conversation_id,sender_id,body,created_at').eq('conversation_id',c.id);
+  if(ownClear)query=query.gt('created_at',ownClear);
+  if(req.query.before)query=query.lt('created_at',String(req.query.before));
+  const {data,error:messageError}=await query.order('created_at',{ascending:false}).limit(15);
+  if(messageError)return res.status(500).json({error:'Не удалось загрузить сообщения'});
+  res.json({messages:(data||[]).reverse(),hasMore:(data||[]).length===15,clearCount:Number(Boolean(c.cleared_at_a))+Number(Boolean(c.cleared_at_b))});
+}));
+app.post('/api/messages/conversations/:id/messages', requireUser, asyncRoute(async(req,res)=>{
+  const body=String(req.body.body||'').trim();
+  if(!body||body.length>512)return res.status(400).json({error:'Сообщение должно содержать от 1 до 512 символов'});
+  const {data:c,error}=await supabase.from('direct_conversations').select('*').eq('id',req.params.id).maybeSingle();
+  if(error)return res.status(500).json({error:'Не удалось загрузить переписку'});
+  if(!c||c.status!=='active'||![c.participant_a,c.participant_b].includes(req.user.id))return res.status(403).json({error:'Сначала дождитесь подтверждения запроса'});
+  const {data:blocks}=await supabase.from('user_blocks').select('blocker_id').or('and(blocker_id.eq.'+c.participant_a+',blocked_id.eq.'+c.participant_b+'),and(blocker_id.eq.'+c.participant_b+',blocked_id.eq.'+c.participant_a+')');
+  if(blocks?.length)return res.status(403).json({error:'Сообщение не отправлено: пользователь заблокирован'});
+  const {data,error:messageError}=await supabase.from('direct_messages').insert({conversation_id:c.id,sender_id:req.user.id,body}).select('*').single();
+  if(messageError)return res.status(400).json({error:'Не удалось отправить сообщение'});
+  await supabase.from('direct_conversations').update({updated_at:new Date().toISOString()}).eq('id',c.id);
+  res.status(201).json({message:data});
+}));
+app.post('/api/me/blocks/:id', requireUser, asyncRoute(async(req,res)=>{
+  if(req.params.id===req.user.id)return res.status(400).json({error:'Нельзя заблокировать себя'});
+  const {data:target}=await supabase.from('users').select('id,is_blocked').eq('id',req.params.id).maybeSingle();
+  if(!target||target.is_blocked)return res.status(404).json({error:'Пользователь не найден'});
+  const {error}=await supabase.from('user_blocks').upsert({blocker_id:req.user.id,blocked_id:target.id},{onConflict:'blocker_id,blocked_id'});
+  if(error)return res.status(400).json({error:'Не удалось заблокировать пользователя'});
+  await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'USER_BLOCKED_BY_USER',entity_type:'user',entity_id:target.id,details:{}});
+  res.json({blocked:true});
+}));
+app.delete('/api/me/blocks/:id', requireUser, asyncRoute(async(req,res)=>{
+  const {error}=await supabase.from('user_blocks').delete().eq('blocker_id',req.user.id).eq('blocked_id',req.params.id);
+  if(error)return res.status(400).json({error:'Не удалось снять блокировку'});
+  res.json({blocked:false});
+}));
+app.get('/api/me/blocks', requireUser, asyncRoute(async(req,res)=>{
+  const {data,error}=await supabase.from('user_blocks').select('blocked_id,users!user_blocks_blocked_id_fkey(id,full_name,username,avatar_url,avatar_path)').eq('blocker_id',req.user.id);
+  if(error)return res.status(500).json({error:'Не удалось загрузить список блокировок'});
+  const users=await Promise.all((data||[]).map(x=>signedUserAvatar(x.users)));
+  res.json({blocks:(data||[]).map(x=>x.blocked_id),users});
+}));
+
+app.get('/api/admin/profile-links', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
+  const offset=Math.max(0,parseInt(req.query.offset||'0',10)||0),status=String(req.query.status||'pending');
+  if(!['pending','approved','rejected'].includes(status))return res.status(400).json({error:'Некорректный статус'});
+  const {data,error}=await supabase.from('profile_links').select('id,user_id,url,platform,status,created_at,users!profile_links_user_id_fkey(id,full_name,username,avatar_url,avatar_path,role)').eq('status',status).order('created_at',{ascending:true}).range(offset,offset+10);
+  if(error)return res.status(500).json({error:'Не удалось загрузить ссылки на модерацию'});
+  const items=await Promise.all((data||[]).slice(0,10).map(async item=>({...item,users:await signedUserAvatar(item.users)})));
+  res.json({links:items,hasMore:(data||[]).length>10,offset});
+}));
+app.patch('/api/admin/profile-links/:id', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
+  const status=String(req.body.status||'');
+  if(!['approved','rejected'].includes(status))return res.status(400).json({error:'Выберите решение модерации'});
+  const {data,error}=await supabase.from('profile_links').update({status,moderated_by:req.user.id,moderated_at:new Date().toISOString()}).eq('id',req.params.id).eq('status','pending').select('id,user_id,status').maybeSingle();
+  if(error)return res.status(400).json({error:'Не удалось сохранить решение'});
+  if(!data)return res.status(404).json({error:'Запрос не найден'});
+  await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:status==='approved'?'PROFILE_LINK_APPROVED':'PROFILE_LINK_REJECTED',entity_type:'profile_link',entity_id:data.id,details:{user_id:data.user_id}});
+  res.json({link:data});
+}));
+app.get('/api/admin/users/:id/profile', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
+  const [{data:authResult,error:authError},{data:profile,error},{data:wallet,error:walletError},{data:links,error:linksError}]=await Promise.all([
+    supabase.auth.admin.getUserById(req.params.id),
+    supabase.from('users').select('id,email,full_name,username,phone,city,avatar_url,avatar_path,role,is_blocked,preferences,created_at').eq('id',req.params.id).maybeSingle(),
+    supabase.from('wallet_accounts').select('balance').eq('user_id',req.params.id).maybeSingle(),
+    supabase.from('profile_links').select('id,url,platform,status,created_at,moderated_at').eq('user_id',req.params.id).order('created_at',{ascending:false})
+  ]);
+  if(authError||error||walletError||linksError)return res.status(500).json({error:'Не удалось загрузить данные аккаунта'});
+  if(!authResult?.user||!profile)return res.status(404).json({error:'Аккаунт не найден'});
+  const response=await signedUserAvatar({...profile,about:profile.preferences?.about||'',balance:Number(wallet?.balance||0),links:links||[],email:authResult.user.email,is_root_admin:isRootEmail(authResult.user.email)});
+  res.json({profile:response});
+}));
+app.patch('/api/admin/users/:id/profile', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
+  const fields={};
+  if(req.body.full_name!==undefined)fields.full_name=String(req.body.full_name).trim().slice(0,120);
+  if(req.body.username!==undefined){const username=String(req.body.username).trim().toLowerCase();if(!/^[a-z0-9_]{3,24}$/.test(username))return res.status(400).json({error:'Юзернейм: 3–24 символа, латинские буквы, цифры и _'});fields.username=username}
+  if(req.body.phone!==undefined)fields.phone=String(req.body.phone).trim().slice(0,40)||null;
+  if(req.body.city!==undefined)fields.city=String(req.body.city).trim().slice(0,100)||null;
+  if(req.body.avatar_url!==undefined)fields.avatar_url=String(req.body.avatar_url).trim().slice(0,1000)||null;
+  if(req.body.about!==undefined){const {data:old}=await supabase.from('users').select('preferences').eq('id',req.params.id).maybeSingle();fields.preferences={...(old?.preferences||{}),about:String(req.body.about).trim().slice(0,1000)}}
+  const {data,error}=await supabase.from('users').update(fields).eq('id',req.params.id).select('id,full_name,username,phone,city,avatar_url,preferences').maybeSingle();
+  if(error?.code==='23505')return res.status(409).json({error:'Этот юзернейм уже занят'});
+  if(error)return res.status(400).json({error:'Не удалось сохранить профиль'});
+  if(!data)return res.status(404).json({error:'Аккаунт не найден'});
+  if(req.body.avatarData){
+    const match=String(req.body.avatarData).match(/^data:(image\/(?:png|jpeg|webp));base64,([a-z0-9+/=]+)$/i);
+    if(!match)return res.status(400).json({error:'Аватар должен быть PNG, JPEG или WebP'});
+    const bytes=Buffer.from(match[2],'base64');if(bytes.length>2*1024*1024)return res.status(413).json({error:'Максимальный размер аватара — 2 МБ'});
+    const ext=match[1].split('/')[1].replace('jpeg','jpg'),path=req.params.id+'/admin-'+Date.now()+'.'+ext;
+    const upload=await supabase.storage.from('avatars').upload(path,bytes,{contentType:match[1],upsert:true});
+    if(upload.error)return res.status(400).json({error:'Не удалось загрузить аватар'});
+    const avatarUpdate=await supabase.from('users').update({avatar_path:path,avatar_url:null}).eq('id',req.params.id);
+    if(avatarUpdate.error)return res.status(400).json({error:'Аватар загружен, но профиль не обновлён'});
+  }
+  await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_PROFILE_UPDATED',entity_type:'user',entity_id:req.params.id,details:{fields:Object.keys(fields)}});
+  res.json({profile:data});
+}));
+app.post('/api/admin/users/:id/balance-adjustments', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
+  const amount=Number(req.body.amount),note=String(req.body.note||'').trim().slice(0,240);
+  if(!Number.isFinite(amount)||amount===0||Math.abs(amount)>100000000)return res.status(400).json({error:'Укажите сумму изменения баланса'});
+  const {data,error}=await supabase.rpc('admin_adjust_wallet',{p_user_id:req.params.id,p_amount:amount,p_actor_id:req.user.id,p_note:note||null});
+  if(error)return res.status(400).json({error:error.message.includes('insufficient_balance')?'Списание превышает баланс':'Не удалось изменить баланс'});
+  await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_WALLET_ADJUSTED',entity_type:'user',entity_id:req.params.id,details:{amount,note}});
+  res.json({balance:Number(data)});
+}));
+app.delete('/api/admin/profile-links/:id', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
+  const {data,error}=await supabase.from('profile_links').delete().eq('id',req.params.id).select('id').maybeSingle();
+  if(error)return res.status(400).json({error:'Не удалось удалить ссылку'});
+  if(!data)return res.status(404).json({error:'Ссылка не найдена'});
+  await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_PROFILE_LINK_DELETED',entity_type:'profile_link',entity_id:data.id,details:{}});
+  res.json({deleted:true});
+}));
+
 app.use((err, _req, res, _next) => {
   console.error('[api]', err.message);
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
+async function purgeDirectMessages() {
+  if (!supabase) return;
+  try { const { data, error } = await supabase.rpc('purge_direct_message_data'); if (error) throw error; if (data?.messages_deleted || data?.conversations_deleted) console.log('[message-retention] cleanup', data); } catch (error) { console.error('[message-retention] cleanup failed:', error.message); }
+}
 async function purgeExpiredUsedTickets() {
   if (!supabase) return;
   try {
@@ -1254,6 +1533,8 @@ async function purgeExpiredUsedTickets() {
 }
 app.listen(port, '0.0.0.0', () => console.log('FlowTix API listening on ' + port));
 void purgeExpiredUsedTickets();
+void purgeDirectMessages();
+setInterval(purgeDirectMessages, 60 * 60 * 1000).unref();
 setInterval(purgeExpiredUsedTickets, 60 * 60 * 1000).unref();
 const pingUrl = process.env.RENDER_EXTERNAL_URL;
 if (pingUrl) {
