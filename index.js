@@ -60,6 +60,7 @@ let seatPickerState=null;
 let selectedSeatId=null;
 let seatPickerCountdownTimer=null;
 let seatPickerPollTimer=null;
+let eventQueueChannel=null,queueRefreshTimer=null,activeQueueState=null;
 const currentAccessToken = async () => {
   if (supabaseAuth) {
     try {
@@ -429,6 +430,53 @@ async function loadEvents() {
     $('#connectionState').textContent='Не удалось загрузить каталог: '+error.message;
   }
 }
+async function stopEventQueueRealtime(){
+ clearInterval(queueRefreshTimer);queueRefreshTimer=null;
+ if(eventQueueChannel&&supabaseAuth){try{await supabaseAuth.removeChannel(eventQueueChannel)}catch{}}
+ eventQueueChannel=null;
+}
+function renderQueueView(eventId,state){
+ const event=events.find(item=>String(item.id)===String(eventId))||{};
+ activeQueueState=state;
+ const status=state.status||'waiting';
+ const ready=status==='ready';
+ const ahead=Number(state.ahead||0);
+ const readyAt=state.reservedUntil?new Date(state.reservedUntil).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'';
+ $('#eventDialog').className='dialog event-dialog queue-dialog';
+ $('#eventDialog').innerHTML='<div class="event-queue-card"><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button><p class="eyebrow dark-eyebrow">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</p><h2>'+esc(event.title||'Мероприятие')+'</h2>'+(state.joined?'<div class="queue-ticket"><span>Ваш номер в очереди</span><strong>№ '+esc(String(state.queueNumber||'—'))+'</strong><span>'+(ready?'Ваша очередь подошла':status==='payment'?'Ожидаем подтверждение оплаты':'Перед вами')+'</span><b>'+(ready?'Оформите билет до '+esc(readyAt):status==='payment'?'Оплата обрабатывается':esc(String(ahead))+' '+pluralizeRu(ahead,'человек','человека','человек'))+'</b></div>':'<div class="queue-ticket"><span>Очередь обновлена</span><strong>'+esc(String(state.activeCount||0))+'</strong><span>'+(state.available?'Место освободилось — можно продолжить оформление':'Места пока заняты')+'</span></div>')+'<p class="queue-live-note"><span class="queue-live-dot"></span>Позиция обновляется в реальном времени</p><div class="inline-actions">'+(ready?'<button class="button button-accent" data-queue-resume="'+esc(eventId)+'">Продолжить оформление</button>':state.joined&&status==='waiting'?'<button class="button button-light" data-queue-leave="'+esc(eventId)+'">Выйти из очереди</button>':state.available?'<button class="button button-accent" data-queue-resume="'+esc(eventId)+'">Продолжить оформление</button>':'')+'</div></div>';
+}
+async function refreshEventQueue(){
+ if(!seatPickerEventId)return;
+ try{
+  const state=await api('/api/events/'+encodeURIComponent(seatPickerEventId)+'/queue');
+  if(!state.joined){activeQueueState=null;if(state.available){await stopEventQueueRealtime();await resumeQueueRegistration(seatPickerEventId);return}}
+  renderQueueView(seatPickerEventId,state);
+ }catch(error){console.warn('Queue refresh failed:',error.message)}
+}
+async function subscribeToEventQueue(eventId){
+ await stopEventQueueRealtime();
+ if(!supabaseAuth)return;
+ eventQueueChannel=supabaseAuth.channel('flowtix-event-queue:'+eventId)
+  .on('postgres_changes',{event:'UPDATE',schema:'public',table:'event_queue_state',filter:'event_id=eq.'+eventId},()=>void refreshEventQueue())
+  .subscribe();
+ queueRefreshTimer=setInterval(()=>void refreshEventQueue(),20000);
+}
+async function joinEventQueue(eventId){
+ try{
+  const state=await api('/api/events/'+encodeURIComponent(eventId)+'/queue',{method:'POST'});
+  if(state.available){toast('Место освободилось — продолжай регистрацию');return resumeQueueRegistration(eventId)}
+  renderQueueView(eventId,state);setEventModalOpen(true);void subscribeToEventQueue(eventId);
+ }catch(error){toast(error.message)}
+}
+async function resumeQueueRegistration(eventId){
+ const state=await api('/api/events/'+encodeURIComponent(eventId)+'/queue');
+ if(state.joined&&state.status!=='ready'){renderQueueView(eventId,state);setEventModalOpen(true);void subscribeToEventQueue(eventId);return}
+ seatPickerEventId=String(eventId);selectedSeatId=null;
+ const seats=await api('/api/events/'+encodeURIComponent(eventId)+'/seats');
+ if(!seats.seatSelectionRequired)return completeRegistration(eventId);
+ seatPickerState=seats;renderSeatPicker();setEventModalOpen(true);
+ clearInterval(seatPickerPollTimer);seatPickerPollTimer=setInterval(()=>void refreshSeatPicker(),15000);
+}
 function setEventModalOpen(open) {
   const modal=$('#eventModal');
   if(!modal)return;
@@ -438,6 +486,7 @@ function setEventModalOpen(open) {
   if(!open){
     clearInterval(seatPickerCountdownTimer);clearInterval(seatPickerPollTimer);
     seatPickerCountdownTimer=null;seatPickerPollTimer=null;
+    void stopEventQueueRealtime();activeQueueState=null;
     seatPickerEventId=null;seatPickerState=null;selectedSeatId=null;
   }
 }
@@ -477,7 +526,7 @@ async function completeRegistration(id,seatId=null) {
     setEventModalOpen(false);
     toast((visualFree?'Билет без оплаты · ':'Билет оформлен · ')+result.ticket.ticket_number+seatLabel);
     await loadEvents();
-  }catch(error){toast(error.message)}
+  }catch(error){if(/Свободных мест больше нет|sold_out/i.test(error.message))return joinEventQueue(id);toast(error.message)}
 }
 const seatTypeLabels={standard:'Обычное',vip:'VIP',business:'Бизнес',free:'Бесплатное',accessible:'Доступное'};
 function seatButton(seat){
@@ -534,7 +583,10 @@ async function register(id) {
   if(!signedIn())return authOpen();
   seatPickerEventId=String(id);selectedSeatId=null;
   try{
+    const queue=await api('/api/events/'+encodeURIComponent(id)+'/queue');
+    if(queue.joined){if(queue.status==='ready')return resumeQueueRegistration(id);renderQueueView(id,queue);setEventModalOpen(true);void subscribeToEventQueue(id);return}
     const state=await api('/api/events/'+encodeURIComponent(id)+'/seats');
+    if(Number(state.event?.available_seats||0)<=0)return joinEventQueue(id);
     if(!state.seatSelectionRequired)return completeRegistration(id);
     seatPickerState=state;
     $('#eventDialog').scrollTop=0;
