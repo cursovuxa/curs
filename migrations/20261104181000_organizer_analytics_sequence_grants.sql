@@ -1,0 +1,1 @@
+grant usage, select on sequence public.event_analytics_updates_id_seq to service_role;
