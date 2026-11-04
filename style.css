@@ -692,3 +692,45 @@ body.blocked-modal-open{overflow:hidden}
 @media(max-width:600px){.money-overlay{padding:10px;align-items:end}.money-dialog{max-height:calc(92dvh - 10px);padding:24px 18px calc(20px + env(safe-area-inset-bottom));border-radius:24px 24px 16px 16px}.money-dialog h2{font-size:25px}.wallet-total{font-size:32px}.money-dialog .button{width:100%;white-space:normal}}
 
 .money-dialog [hidden],#adminTicketLoadMore[hidden]{display:none!important}
+
+/* Ticket QR check-in and compact wallet actions */
+.profile-dropdown button[role="menuitem"]::before{content:none!important}
+.account-menu-icon{width:18px;height:18px;flex:0 0 18px;color:var(--violet);stroke:currentColor}
+.account-menu-icon.icon-notifications{color:var(--mint,#43b99b)}
+.account-menu-icon.icon-admin{color:var(--orange,#ee7c38)}
+.account-menu-icon.icon-logout{color:#d34d60}
+.header-wallet-balance{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 13px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px;font-weight:800;white-space:nowrap;cursor:pointer;transition:transform .15s,border-color .15s,background .15s}
+.header-wallet-balance:hover{transform:translateY(-1px);border-color:var(--violet);background:color-mix(in srgb,var(--violet) 8%,var(--surface))}
+.header-wallet-balance[hidden]{display:none!important}
+.header-wallet-balance svg{width:17px;height:17px;flex:0 0 17px;color:var(--violet)}
+body[data-theme="halloween"] .header-wallet-balance{background:#211724;border-color:#553346;color:#fff2de}
+body[data-theme="halloween"] .header-wallet-balance svg{color:#ff8a42}
+.flow-ticket-category{margin-top:9px;color:var(--muted);font-size:11px;font-weight:650}
+.flow-ticket-qr{display:grid;place-items:center;width:112px;height:112px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.flow-ticket-qr canvas,.flow-ticket-qr img{display:block!important;width:96px!important;height:96px!important;max-width:96px}
+.flow-ticket-qr-hint{max-width:130px;color:var(--muted);font-size:9px;line-height:1.35;text-align:center}
+.flow-ticket-qr-error{color:#a4384d;font-size:10px;font-weight:700}
+.flow-ticket-status.status-expired{background:#ffeaeb;color:#a4384d}
+.staff-checkin-form{display:grid;gap:12px;max-width:620px}
+.staff-checkin-form>label{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700}
+.staff-checkin-form input,.staff-checkin-form select{width:100%;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit}
+.staff-checkin-actions{display:flex;flex-wrap:wrap;gap:9px}
+.ticket-scanner-video{width:min(100%,520px);max-height:62vh;object-fit:cover;border:1px solid var(--line);border-radius:16px;background:#09080b}
+.ticket-scanner-video[hidden]{display:none!important}
+.ticket-scan-result{min-height:1.4em;color:var(--muted);font-weight:700}
+.ticket-scan-result.is-success{color:#178353}
+body[data-theme="halloween"] .ticket-scan-result.is-success{color:#77e1b6}
+@media(max-width:700px){
+  .header-wallet-balance{min-height:38px;padding:0 10px;gap:6px;font-size:11px}
+  .flow-ticket{grid-template-columns:minmax(0,1fr)}
+  .flow-ticket-stub{display:flex;flex-wrap:wrap;justify-content:space-between;gap:9px 14px;border-left:0;border-top:1px dashed color-mix(in srgb,var(--violet,#765cf5) 34%,var(--line,#ececf3));padding:16px}
+  .flow-ticket-stub:before,.flow-ticket-stub:after{display:none}
+  .flow-ticket-qr{margin:4px auto}
+  .flow-ticket-qr-hint{width:100%;max-width:none}
+  .staff-checkin-actions>*{flex:1 1 100%}
+  .ticket-scanner-video{max-height:52vh}
+}
+
+@media(min-width:701px){.topbar .brand-logo{display:none!important}.topbar .brand-wordmarks{display:inline-flex!important}}
+@media(max-width:700px){.topbar .brand-wordmarks{display:none!important}.topbar .brand-logo{display:block!important;width:42px;height:42px;flex:0 0 42px;border-radius:13px;object-fit:contain}}
+.topbar .brand-wordmark,.topbar .brand-wordmark-halloween{max-width:min(240px,32vw);max-height:48px}

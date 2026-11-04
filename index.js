@@ -32,6 +32,11 @@ if (ACCOUNT_ROUTE) {
   $('#workspace').hidden = false;
 }
 let user = null;
+let headerWalletBalance = null;
+let headerWalletRequest = null;
+let ticketScannerStream = null;
+let ticketScannerFrame = 0;
+let ticketScannerBusy = false;
 let notificationsChannel = null;
 let notificationsChannelUserId = null;
 let notificationsConnection = 'CONNECTING';
@@ -99,8 +104,32 @@ const eventStatusLabel = (status) => ({
   rejected:'Отклонено', cancelled:'Отменено', completed:'Завершено'
 }[status] || status || 'Статус не указан');
 const ticketStatusLabel = (status) => ({
-  valid:'Действителен', used:'Использован', refunded:'Возврат оформлен', cancelled:'Аннулирован'
+  valid:'Действителен', used:'Использован', expired:'Недействителен', refunded:'Возврат оформлен', cancelled:'Аннулирован'
 }[status] || 'Статус уточняется');
+async function loadQrCodeLibrary(){
+  if(window.QRCode)return window.QRCode;
+  if(!window.flowtixQrCodePromise)window.flowtixQrCodePromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/vendor/qrcode.min.js';script.async=true;script.onload=()=>resolve(window.QRCode);script.onerror=()=>reject(new Error('Не удалось загрузить генератор QR-кода'));document.head.append(script)});
+  return window.flowtixQrCodePromise;
+}
+async function renderTicketQrCodes(){
+  const nodes=$$('[data-ticket-qr]');if(!nodes.length)return;
+  try{const QR=await loadQrCodeLibrary();nodes.forEach(node=>{node.replaceChildren();new QR(node,{text:node.dataset.ticketQr,width:96,height:96,colorDark:'#17121d',colorLight:'#ffffff',correctLevel:QR.CorrectLevel.M})})}
+  catch(error){nodes.forEach(node=>{node.textContent='QR недоступен';node.classList.add('ticket-qr-error')});console.error(error)}
+}
+function refreshHeaderWalletLabel(){const label=$('#headerWalletAmount');if(label)label.textContent=headerWalletBalance===null?'Баланс':walletMoney(headerWalletBalance)}
+async function refreshHeaderWalletBalance(){
+  if(!signedIn()||user?.is_blocked||headerWalletRequest)return headerWalletRequest;
+  headerWalletRequest=api('/api/wallet').then(data=>{headerWalletBalance=Number(data.balance||0);refreshHeaderWalletLabel()}).catch(error=>console.warn('Header wallet balance unavailable:',error.message)).finally(()=>{headerWalletRequest=null});
+  return headerWalletRequest;
+}
+function accountMenuIcon(kind){
+ const paths={profile:'<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>',workspace:'<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>',notifications:'<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/>',wallet:'<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 9h18M16 14h2"/><path d="M6 6V4.5A1.5 1.5 0 0 1 7.5 3H19"/>',admin:'<path d="M12 3 20 6v5.5c0 4.6-3 7.7-8 9.5-5-1.8-8-4.9-8-9.5V6l8-3Z"/><path d="m9 12 2 2 4-4"/>',logout:'<path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/>'};
+ return '<svg class="account-menu-icon icon-'+kind+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[kind]+'</svg>';
+}
+function decorateAccountMenu(){
+ const icons={profile:'profile',workspace:'workspace',notifications:'notifications',admin:'admin',logout:'logout'};
+ $$('#profileDropdown [role="menuitem"]').forEach(button=>{const action=button.dataset.accountAction;const kind=action==='wallet'?'wallet':icons[action];if(kind&&!button.querySelector('.account-menu-icon'))button.insertAdjacentHTML('afterbegin',accountMenuIcon(kind))});
+}
 async function eventCoverDataUrl(file) {
   if (!file || !/^image\/(?:jpeg|png|webp)$/.test(file.type)) throw new Error('Выберите изображение JPG, PNG или WebP');
   if (typeof createImageBitmap !== 'function') {
@@ -178,13 +207,18 @@ function renderAccountMenu(){
   const blocked=active&&user.is_blocked===true;
   $('#authOpen').hidden=active;
   $('#profileMenuWrap').hidden=!active;
+  if(!$('#headerWalletBalance'))$('.account-actions')?.insertAdjacentHTML('afterbegin','<button id="headerWalletBalance" class="header-wallet-balance" type="button" data-open-wallet aria-label="Открыть баланс"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 9h18M16 14h2M6 6V4.5A1.5 1.5 0 0 1 7.5 3H19"/></svg><span id="headerWalletAmount">Баланс</span></button>');
+  $('#headerWalletBalance').hidden=!active||blocked;
+  refreshHeaderWalletLabel();
   $('#workspaceNav').hidden=!active||blocked;
   const adminLink=$('#profileAdminLink');
   if(adminLink)adminLink.hidden=!active||blocked||user.is_root_admin!==true;
   const trigger=$('#profileMenuToggle');
   if(trigger){trigger.title=blocked?'Аккаунт заблокирован — нажмите, чтобы узнать подробности':'';trigger.setAttribute('aria-label',blocked?'Аккаунт заблокирован':'Открыть меню аккаунта');trigger.classList.toggle('is-account-blocked',blocked)}
   if(!active)return;
-  if(!$('#walletMenuButton'))$('#profileDropdown .profile-identity')?.insertAdjacentHTML('afterend','<button id="walletMenuButton" type="button" role="menuitem" data-open-wallet>Баланс</button>');
+  if(!$('#walletMenuButton'))$('#profileDropdown .profile-identity')?.insertAdjacentHTML('afterend','<button id="walletMenuButton" type="button" role="menuitem" data-account-action="wallet" data-open-wallet>Баланс</button>');
+  decorateAccountMenu();
+  if(headerWalletBalance===null)void refreshHeaderWalletBalance();
   const displayName=blocked?'Доступ ограничен':(user.full_name||user.email||'Участник FlowTix');
   const handle=blocked?'аккаунт заблокирован':(user.username||String(user.email||'user').split('@')[0]);
   ['#profileName','#profileMenuName'].forEach((selector)=>{const node=$(selector);if(node)node.textContent=displayName});
@@ -359,6 +393,7 @@ function previewNewEvent(form) {
 async function completeRegistration(id,seatId=null) {
   try {
     const result=await api('/api/registrations',{method:'POST',body:JSON.stringify({eventId:id,...(seatId?{seatId}:{})})});
+    if(result.balance!==undefined){headerWalletBalance=Number(result.balance||0);refreshHeaderWalletLabel()}
     const event=events.find(item=>String(item.id)===String(id));
     const visualFree=Number(event?.current_price??event?.base_price??0)>0&&Number(result.ticket?.price_paid||0)===0;
     const seatLabel=result.ticket?.seat_label&&result.ticket.seat_label!=='Без места'?' · место '+result.ticket.seat_label:'';
@@ -485,7 +520,7 @@ async function logoutAccount(){
     notificationsChannel=null;notificationsChannelUserId=null;
     if(supabaseAuth)await supabaseAuth.auth.signOut();
   }catch(error){console.warn('Sign-out cleanup failed:',error)}
-  user=null;
+  user=null;headerWalletBalance=null;refreshHeaderWalletLabel();
   renderAccountMenu();
   $('#workspace').hidden=true;
   $('#profileDropdown').hidden=true;
@@ -543,8 +578,9 @@ async function visitorView() {
     const eligible=[...new Map(tickets.filter(ticket=>['valid','used'].includes(ticket.status)).map(ticket=>[String(ticket.event_id),ticket])).values()];
     const pendingReviews=eligible.filter(ticket=>!reviewedEvents.has(String(ticket.event_id)));
     const ticketCards=tickets.length?'<div class="flow-ticket-list">'+tickets.map(ticket=>{
-      const event=ticket.events||{}, place=[event.venues?.name,event.venues?.city].filter(Boolean).join(' · '), status=ticket.status||'valid';
-      return '<article class="flow-ticket"><div class="flow-ticket-main"><div class="flow-ticket-kicker">FLOWTIX · БИЛЕТ</div><span class="flow-ticket-status status-'+esc(status)+'">'+esc(ticketStatusLabel(status))+'</span><h4>'+esc(event.title||'Мероприятие')+'</h4><div class="flow-ticket-meta">'+esc([event.start_date,event.start_time].filter(Boolean).join(' · ')||'Дата уточняется')+(place?' · '+esc(place):'')+'</div><div class="flow-ticket-number"><small>НОМЕР БИЛЕТА</small><strong>'+esc(ticket.ticket_number||'—')+'</strong></div></div><div class="flow-ticket-stub"><span class="flow-ticket-seat-label">ВАШЕ МЕСТО</span><strong>'+esc(ticket.seat_label&&ticket.seat_label!=='Без места'?ticket.seat_label:'Без места')+'</strong><span class="flow-ticket-perforation" aria-hidden="true"></span></div></article>';
+      const event=ticket.events||{}, place=[event.venues?.name,event.venues?.city].filter(Boolean).join(' · '), status=ticket.is_expired?'expired':(ticket.status||'valid');
+      const qr=esc(JSON.stringify({v:1,eventId:ticket.event_id,ticketNumber:ticket.ticket_number}));
+      return '<article class="flow-ticket"><div class="flow-ticket-main"><div class="flow-ticket-kicker">FLOWTIX · БИЛЕТ</div><span class="flow-ticket-status status-'+esc(status)+'">'+esc(ticketStatusLabel(status))+'</span><h4>'+esc(event.title||'Мероприятие')+'</h4><div class="flow-ticket-meta">'+esc([event.start_date,event.start_time].filter(Boolean).join(' · ')||'Дата уточняется')+(place?' · '+esc(place):'')+(event.location_address?' · '+esc(event.location_address):'')+'</div><div class="flow-ticket-category">'+esc(event.event_categories?.name||'Мероприятие')+' · '+esc(user?.full_name||user?.username||'Участник')+'</div><div class="flow-ticket-number"><small>НОМЕР БИЛЕТА</small><strong>'+esc(ticket.ticket_number||'—')+'</strong></div></div><div class="flow-ticket-stub"><span class="flow-ticket-seat-label">ВАШЕ МЕСТО</span><strong>'+esc(ticket.seat_label&&ticket.seat_label!=='Без места'?ticket.seat_label:'Без места')+'</strong><div class="flow-ticket-qr" data-ticket-qr="'+qr+'" aria-label="QR-код билета"></div><small class="flow-ticket-qr-hint">Покажите QR на входе</small><span class="flow-ticket-perforation" aria-hidden="true"></span></div></article>';
     }).join('')+'</div>':empty('Зарегистрируйся на мероприятие — билет появится здесь.');
     const reviewForm=pendingReviews.length
       ?'<form id="reviewForm" class="review-form"><label>Мероприятие<select name="eventId" required>'+pendingReviews.map(ticket=>'<option value="'+esc(ticket.event_id)+'">'+esc(ticket.events?.title||'Мероприятие')+'</option>').join('')+'</select></label><fieldset class="review-rating-field"><legend>Твоя оценка</legend><div class="review-star-options" role="radiogroup" aria-label="Оценка от 1 до 5 звёзд">'+[1,2,3,4,5].map(value=>'<label class="review-star-option" data-review-star="'+value+'"><input type="radio" name="rating" value="'+value+'" required><span aria-hidden="true">★</span><small class="visually-hidden">'+value+' из 5</small></label>').join('')+'</div></fieldset><label>Комментарий<textarea id="reviewComment" name="comment" rows="3" maxlength="1000" minlength="1" required placeholder="Поделись впечатлениями — до 1000 символов"></textarea></label><div class="review-form-footer"><span id="reviewCharCount">0 / 1000</span><button class="button button-dark">Опубликовать отзыв</button></div></form>'
@@ -554,6 +590,7 @@ async function visitorView() {
       return '<article class="review-history-card"><div><strong>'+esc(review.events?.title||'Мероприятие')+'</strong><span class="review-history-stars" aria-label="'+score+' из 5">'+('★'.repeat(score))+('☆'.repeat(5-score))+'</span></div><p>'+esc(review.comment||'')+'</p><small>'+esc(review.created_at?new Date(review.created_at).toLocaleDateString('ru-RU'):'')+'</small></article>';
     }).join('')+'</div>':empty('Опубликованные отзывы появятся здесь.');
     $('#workspaceContent').innerHTML='<div class="workspace-card"><h3>Мои билеты</h3>'+ticketCards+'</div><div class="workspace-card"><h3>Избранное ('+favorites.length+')</h3>'+(favorites.length?favorites.map(item=>'<p>'+esc(item.events?.title||'Мероприятие')+'</p>').join(''):empty('Отмечай сердцем мероприятия, чтобы не потерять.'))+'</div><div class="workspace-card"><h3>Оставить отзыв</h3>'+reviewForm+'</div><div class="workspace-card"><h3>Мои отзывы</h3>'+reviewHistory+'</div>';
+    void renderTicketQrCodes();
   }catch(error){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(error.message)+'</p>'}
 }
 async function notificationsView() {
@@ -679,6 +716,43 @@ async function organizerView() {
   const participantRows=(registrations.registrations||[]).map(r=>'<tr><td>'+esc(r.ticket_number||'—')+'</td><td>'+esc(r.users?.full_name||r.users?.email||'—')+'</td><td>'+esc(r.events?.title||'—')+'</td><td>'+esc(r.seat_label||'—')+'</td><td>'+esc(eventStatusLabel(r.status))+'</td></tr>').join('');
   $('#workspaceContent').innerHTML=warningHtml+'<div class="stats-grid"><div class="workspace-card"><small>Мои мероприятия</small><h3>'+myEvents.length+'</h3></div><div class="workspace-card"><small>Регистрации</small><h3>'+(registrations.registrations||[]).length+'</h3></div><div class="workspace-card"><small>Площадки</small><h3>'+venues.length+'</h3></div></div>'+venueForm+createHallForm+createForm+'<div class="workspace-card"><h3>Мои мероприятия ('+myEvents.length+')</h3>'+(eventRows||empty(ev.error?'Не удалось загрузить ваши мероприятия.': 'Создайте первое мероприятие с адресом и обложкой.'))+'</div><div class="workspace-card"><h3>Участники ('+(registrations.registrations||[]).length+')</h3>'+(participantRows?'<div class="scroll-table"><table class="data-table"><thead><tr><th>Билет</th><th>Участник</th><th>Мероприятие</th><th>Место</th><th>Статус</th></tr></thead><tbody>'+participantRows+'</tbody></table></div>':empty(registrations.error?'Не удалось загрузить участников.':'Регистраций пока нет.'))+'</div>';
 }
+function parseTicketQr(raw){
+ const text=String(raw||'').trim();
+ try{const value=JSON.parse(text);return {ticketNumber:String(value.ticketNumber||value.ticket_number||value.ticket||''),eventId:String(value.eventId||value.event_id||value.event||'')}}catch{}
+ try{const url=new URL(text);return {ticketNumber:url.searchParams.get('ticket')||url.searchParams.get('ticketNumber')||'',eventId:url.searchParams.get('event')||url.searchParams.get('eventId')||''}}catch{}
+ return {ticketNumber:text,eventId:''};
+}
+function stopTicketScanner(){
+ if(ticketScannerFrame)cancelAnimationFrame(ticketScannerFrame);ticketScannerFrame=0;
+ if(ticketScannerStream){ticketScannerStream.getTracks().forEach(track=>track.stop());ticketScannerStream=null}
+ const video=$('#ticketScannerVideo');if(video){video.pause();video.srcObject=null;video.hidden=true}
+ const button=$('[data-start-ticket-scan]');if(button)button.hidden=false;
+ const stop=$('[data-stop-ticket-scan]');if(stop)stop.hidden=true;
+}
+async function submitTicketCheckIn(form){
+ const fields=new FormData(form),raw=String(fields.get('ticket')||''),selectedEventId=String(fields.get('eventId')||'');
+ const qr=parseTicketQr(raw),result=$('#scanResult');
+ if(!selectedEventId){result.textContent='Сначала выберите мероприятие.';return}
+ if(!qr.ticketNumber){result.textContent='QR-код не содержит номера билета.';return}
+ result.classList.remove('is-success');result.textContent='Проверяем билет…';ticketScannerBusy=true;
+ try{
+  const response=await api('/api/staff/tickets/'+encodeURIComponent(qr.ticketNumber)+'/check-in',{method:'POST',body:JSON.stringify({eventId:selectedEventId})});
+  result.textContent='Вход отмечен · '+response.ticket.ticket_number;result.classList.add('is-success');toast('Билет проверен');stopTicketScanner();form.elements.ticket.value='';
+ }catch(error){result.textContent=error.message}
+ finally{ticketScannerBusy=false}
+}
+async function startTicketScanner(){
+ if(!window.BarcodeDetector){toast('В этом браузере сканер QR недоступен. Введите номер билета вручную.');return}
+ if(!navigator.mediaDevices?.getUserMedia){toast('Браузер не разрешил доступ к камере. Введите номер билета вручную.');return}
+ try{
+  const detector=new BarcodeDetector({formats:['qr_code']});
+  ticketScannerStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+  const video=$('#ticketScannerVideo');video.srcObject=ticketScannerStream;video.hidden=false;await video.play();
+  $('[data-start-ticket-scan]').hidden=true;$('[data-stop-ticket-scan]').hidden=false;
+  const scan=async()=>{if(!ticketScannerStream||ticketScannerBusy)return;try{const found=await detector.detect(video);if(found.length){const form=$('#scanForm');form.elements.ticket.value=found[0].rawValue;stopTicketScanner();await submitTicketCheckIn(form);return}}catch(error){console.warn('QR scan failed:',error)}ticketScannerFrame=requestAnimationFrame(scan)};
+  ticketScannerFrame=requestAnimationFrame(scan);
+ }catch(error){stopTicketScanner();toast(error.name==='NotAllowedError'?'Разрешите доступ к камере в браузере.':('Не удалось открыть камеру: '+error.message))}
+}
 async function staffView() {
   try {
     const {assignments=[]}=await api('/api/staff/assignments');
@@ -691,7 +765,9 @@ async function staffView() {
       const event=a.events||{};
       return '<details class="workspace-card" open><summary><b>'+esc(event.title||'Мероприятие')+'</b> · '+esc(event.start_date||'')+' · '+esc(event.venues?.name||'')+'</summary><h4>Участники ('+participants.length+')</h4>'+(error?'<p class="connection-state">'+esc(error)+'</p>':participants.length?'<div class="scroll-table"><table class="data-table"><thead><tr><th>Билет</th><th>Посетитель</th><th>Место</th><th>Статус</th></tr></thead><tbody>'+participants.map(p=>'<tr><td>'+esc(p.ticket_number)+'</td><td>'+esc(p.users?.full_name||p.users?.email||'')+'</td><td>'+esc(p.seat_label||'—')+'</td><td>'+esc(p.status)+'</td></tr>').join('')+'</tbody></table></div>':empty('Список участников пока пуст.'))+'</details>';
     }).join('');
-    $('#workspaceContent').innerHTML=(cards||'<div class="workspace-card">'+empty('Назначенных мероприятий пока нет.')+'</div>')+'<div class="workspace-card"><h3>Проверка билета</h3><form id="scanForm" class="inline-actions"><input name="ticket" placeholder="Номер билета FlowTix" required><button class="button button-dark">Проверить и отметить вход</button></form><p id="scanResult"></p></div>';
+    const assignedEvents=[...new Map(assignments.map(a=>a.events).filter(e=>e?.id).map(e=>[String(e.id),e])).values()];
+    const scanOptions=assignedEvents.map(e=>'<option value="'+esc(e.id)+'">'+esc(e.title||'Мероприятие')+' · '+esc(e.start_date||'')+'</option>').join('');
+    $('#workspaceContent').innerHTML=(cards||'<div class="workspace-card">'+empty('Назначенных мероприятий пока нет.')+'</div>')+'<div class="workspace-card staff-checkin-card"><h3>Проверка билета</h3><p>Выберите своё мероприятие и отсканируйте QR-код участника.</p><form id="scanForm" class="staff-checkin-form"><label>Мероприятие<select name="eventId" required><option value="">Выберите мероприятие</option>'+scanOptions+'</select></label><label>Номер билета или QR-данные<input name="ticket" placeholder="FT-…" autocomplete="off" required></label><div class="staff-checkin-actions"><button class="button button-light" type="button" data-start-ticket-scan>Сканировать QR</button><button class="button button-dark">Проверить и отметить вход</button><button class="button button-light" type="button" data-stop-ticket-scan hidden>Остановить камеру</button></div><video id="ticketScannerVideo" class="ticket-scanner-video" playsinline muted hidden></video></form><p id="scanResult" class="ticket-scan-result" role="status" aria-live="polite"></p></div>';
   }catch(e){$('#workspaceContent').innerHTML='<p class="connection-state">'+esc(e.message)+'</p>'}
 }
 async function moderatorView() {
@@ -1030,8 +1106,9 @@ document.addEventListener('change',async(e)=>{
   if(e.target.matches('[data-category]')){activeCategory=e.target.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===e.target));renderEvents()}
   if(e.target.matches('[data-complaint]')){try{await api('/api/moderation/complaints/'+e.target.dataset.complaint,{method:'PATCH',body:JSON.stringify({status:e.target.value})});toast('Статус жалобы обновлён')}catch(x){toast(x.message)}}
 });
+document.addEventListener('click',(event)=>{const target=event.target instanceof Element?event.target:null;if(target?.closest('[data-start-ticket-scan]')){event.preventDefault();void startTicketScanner()}if(target?.closest('[data-stop-ticket-scan]')){event.preventDefault();stopTicketScanner()}});
 document.addEventListener('submit',async(e)=>{
-  if(e.target.id==='walletTopupForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;if(form.dataset.attemptAmount&&form.dataset.attemptAmount!==form.elements.amount.value)form.dataset.key=crypto.randomUUID();form.dataset.attemptAmount=form.elements.amount.value;try{await api('/api/wallet/topups',{method:'POST',body:JSON.stringify({amount:Number(form.elements.amount.value),idempotencyKey:form.dataset.key})});toast('Баланс пополнен');await openWallet()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
+  if(e.target.id==='walletTopupForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;if(form.dataset.attemptAmount&&form.dataset.attemptAmount!==form.elements.amount.value)form.dataset.key=crypto.randomUUID();form.dataset.attemptAmount=form.elements.amount.value;try{const topped=await api('/api/wallet/topups',{method:'POST',body:JSON.stringify({amount:Number(form.elements.amount.value),idempotencyKey:form.dataset.key})});headerWalletBalance=Number(topped.balance||0);refreshHeaderWalletLabel();toast('Баланс пополнен');await openWallet()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
   if(e.target.id==='ticketActionForm'){e.preventDefault();const form=e.target,button=form.querySelector('[type="submit"]');button.disabled=true;try{const del=form.dataset.deleteOnly==='true';await api('/api/admin/tickets/'+encodeURIComponent(form.dataset.ticketId)+(del?'':'/cancel'),{method:del?'DELETE':'PATCH',...(del?{}:{body:JSON.stringify({refund:form.elements.refund.checked,block:form.elements.block.checked,notify:form.elements.notify.checked,deleteRecord:form.elements.deleteRecord.checked})})});closeMoneyDialog('ticketActionModal');adminSelectedTab='tickets';toast(del?'Запись билета удалена':'Билет аннулирован, место освобождено');await adminView()}catch(error){form.querySelector('[data-money-error]').textContent=error.message}finally{button.disabled=false}return}
 
   if(e.target.id==='searchForm'){e.preventDefault();loadEvents();$('#events').scrollIntoView({behavior:'smooth'});}
@@ -1049,7 +1126,7 @@ document.addEventListener('submit',async(e)=>{
   if(e.target.matches('.program-form')){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.max_attendees=Number(d.max_attendees);try{await api('/api/events/'+e.target.dataset.event+'/program',{method:'POST',body:JSON.stringify(d)});toast('Пункт программы добавлен');await organizerView()}catch(x){toast(x.message)}}
   if(e.target.matches('.assign-form')){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/organizer/events/'+e.target.dataset.event+'/staff',{method:'POST',body:JSON.stringify(d)});toast('Сотрудник назначен');}catch(x){toast(x.message)}}
   if(e.target.matches('.notify-form')){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{const r=await api('/api/organizer/events/'+e.target.dataset.event+'/notify',{method:'POST',body:JSON.stringify(d)});toast('Уведомление отправлено: '+r.sent)}catch(x){toast(x.message)}}
-  if(e.target.id==='scanForm'){e.preventDefault();try{const x=await api('/api/staff/tickets/'+encodeURIComponent(new FormData(e.target).get('ticket'))+'/check-in',{method:'POST'});$('#scanResult').textContent='Вход отмечен · '+x.ticket.ticket_number;toast('Билет проверен')}catch(x){$('#scanResult').textContent=x.message}}
+  if(e.target.id==='scanForm'){e.preventDefault();await submitTicketCheckIn(e.target)}
   if(e.target.id==='complaintForm'){e.preventDefault();if(!signedIn())return authOpen();const d=Object.fromEntries(new FormData(e.target));try{await api('/api/complaints',{method:'POST',body:JSON.stringify({targetType:'event',targetId:d.targetId,reason:d.reason,details:d.details})});setEventModalOpen(false);toast('Жалоба отправлена модератору')}catch(x){toast(x.message)}}
 });
 $('#authOpen').addEventListener('click',()=>authOpen());
