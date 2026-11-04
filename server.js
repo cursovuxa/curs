@@ -159,11 +159,11 @@ async function createNotification(userId,title,message,type='account_activity',a
     if(error)console.error('[notifications] insert failed:',error.message);
   }catch(error){console.error('[notifications] insert failed:',error.message)}
 }
-async function notifyRootAdmin(title,message,type='admin_activity'){
+async function notifyRootAdmin(title,message,type='admin_activity',actionUrl=null){
   if(!rootAdminEmail)return;
   const {data,error}=await supabase.from('users').select('id').eq('email',rootAdminEmail).maybeSingle();
   if(error){console.error('[notifications] root admin lookup failed:',error.message);return}
-  if(data?.id)await createNotification(data.id,title,message,type);
+  if(data?.id)await createNotification(data.id,title,message,type,actionUrl);
 }
 
 app.get('/api/admin/access', requireUser, requireRootAdmin, (_req, res) => res.json({ allowed: true }));
