@@ -471,18 +471,54 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   if (!email || password.length < 8 || !fullName) return res.status(400).json({ error: 'Укажите имя, email и пароль минимум из 8 символов' });
   const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
   if (error) return res.status(400).json({ error: error.message });
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    return res.status(202).json({
+      message: 'Если этот адрес новый, на него отправлено письмо для подтверждения. Если аккаунт уже есть, войдите по паролю или запросите ссылку для входа.'
+    });
+  }
   if (data.user) {
-    const { error: profileError } = await supabase.from('users').upsert({
+    let { error: profileError } = await supabase.from('users').upsert({
       id: data.user.id, email, full_name: fullName, role: 'visitor'
     }, { onConflict: 'id' });
-    if (profileError) return res.status(500).json({ error: 'Аккаунт создан, но профиль не записан' });
+    if (profileError?.code === '23505') {
+      const { data: orphanProfile, error: orphanLookupError } = await supabase.from('users')
+        .select('id').eq('email', email).neq('id', data.user.id).maybeSingle();
+      if (!orphanLookupError && orphanProfile) {
+        const { data: orphanAuth, error: orphanAuthError } = await supabase.auth.admin.getUserById(orphanProfile.id);
+        const orphanIsDeleted = !orphanAuth?.user && (orphanAuthError?.status === 404 || orphanAuthError?.code === 'user_not_found');
+        if (orphanIsDeleted) {
+          const archivedEmail = 'deleted+' + orphanProfile.id + '@orphaned.flowtix.invalid';
+          const { error: archiveError } = await supabase.from('users')
+            .update({ email: archivedEmail }).eq('id', orphanProfile.id).eq('email', email);
+          if (!archiveError) {
+            const retry = await supabase.from('users').upsert({
+              id: data.user.id, email, full_name: fullName, role: 'visitor'
+            }, { onConflict: 'id' });
+            profileError = retry.error;
+          } else {
+            console.error('[auth/register] stale profile email could not be released', { code: archiveError.code || 'unknown' });
+          }
+        }
+      }
+    }
+    if (profileError) {
+      console.error('[auth/register] profile save failed', { code: profileError.code || 'unknown' });
+      return res.status(202).json({
+        message: 'Аккаунт создан. Профиль не удалось сохранить сразу. После подтверждения почты войдите — сервер повторит создание профиля автоматически.'
+      });
+    }
     const { error: claimError } = await supabase.auth.admin.updateUserById(data.user.id, {
       app_metadata: { ...(data.user.app_metadata || {}), flowtix_role: isRootEmail(email) ? 'admin' : 'visitor', flowtix_blocked: false }
     });
-    if (claimError) return res.status(500).json({ error: 'Аккаунт создан, но защищённые права не записаны' });
+    if (claimError) {
+      console.error('[auth/register] role metadata save failed', { code: claimError.code || 'unknown' });
+      return res.status(202).json({
+        message: 'Аккаунт создан. Подтвердите почту и войдите: сервер завершит настройку профиля при первом входе.'
+      });
+    }
   }
   res.status(data.session ? 201 : 202).json({
-    message: data.session ? 'Аккаунт создан' : 'Проверьте почту и подтвердите адрес для входа',
+    message: data.session ? 'Аккаунт создан' : 'Аккаунт создан. Проверьте почту и подтвердите адрес для входа.',
     accessToken: data.session?.access_token || null,
     refreshToken: data.session?.refresh_token || null,
     user: data.user ? { id: data.user.id, email: data.user.email, fullName } : null
