@@ -1244,3 +1244,74 @@ body[data-theme="halloween"] .complaint-review-card{box-shadow:0 10px 28px #1c11
  .calendar-grid{gap:2px}
  .calendar-day{min-height:38px}
 }
+
+/* Compact accordion calendar */
+.calendar-collapse-toggle{
+  display:flex;
+  width:100%;
+  min-height:76px;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  padding:17px 20px;
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--surface);
+  color:var(--ink);
+  text-align:left;
+  cursor:pointer;
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.calendar-collapse-toggle:hover{
+  border-color:color-mix(in srgb,var(--violet) 55%,var(--line));
+  box-shadow:0 8px 24px color-mix(in srgb,var(--ink) 7%,transparent);
+}
+.calendar-collapse-copy{display:grid;gap:5px;min-width:0}
+.calendar-collapse-copy .eyebrow{margin:0;color:var(--violet);font-size:10px;letter-spacing:.14em}
+.calendar-collapse-copy strong{font:750 clamp(20px,2.4vw,27px)/1.15 "DM Sans",sans-serif;letter-spacing:-.035em}
+.calendar-collapse-copy small{color:var(--muted);font-size:12px}
+.calendar-collapse-toggle>svg{
+  width:22px;height:22px;flex:0 0 auto;
+  fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
+  transition:transform .2s ease,color .2s ease;
+}
+.calendar-collapse-toggle[aria-expanded="true"]>svg{transform:rotate(180deg);color:var(--violet)}
+.calendar-content[hidden]{display:none!important}
+.calendar-content{width:min(100%,980px);margin:14px auto 0}
+.calendar-content .calendar-panel{max-width:none;padding:18px 20px;border-radius:20px}
+.calendar-content .calendar-toolbar{gap:16px;margin-bottom:14px}
+.calendar-content .calendar-toolbar .calendar-heading{grid-template-columns:40px minmax(130px,1fr) 40px;max-width:410px}
+.calendar-content .calendar-nav{width:40px;min-width:40px;height:40px;border-radius:13px}
+.calendar-content .calendar-nav svg{width:17px;height:17px}
+.calendar-content .calendar-heading h4{font-size:16px}
+.calendar-content .calendar-view-switch{min-width:230px;grid-template-columns:repeat(3,minmax(66px,1fr));border-radius:13px}
+.calendar-content .calendar-view-switch button{min-height:36px;padding:7px 9px;font-size:12px;border-radius:10px}
+.calendar-content .calendar-weekdays,.calendar-content .calendar-grid{max-width:760px}
+.calendar-content .calendar-weekdays span{padding:7px 0 8px;font-size:10px}
+.calendar-content .calendar-grid{gap:5px}
+.calendar-content .calendar-day{min-height:48px;border-radius:11px;font-size:13px}
+.calendar-content .calendar-day small{min-width:16px;min-height:16px;font-size:9px}
+.calendar-content .calendar-events{max-width:760px;margin:16px auto 0}
+.calendar-content .schedule-event{padding:13px 15px}
+@media(max-width:760px){
+ .calendar-collapse-toggle{min-height:68px;padding:14px 15px;border-radius:16px}
+ .calendar-collapse-copy strong{font-size:20px}
+ .calendar-collapse-copy small{font-size:11px}
+ .calendar-content{width:100%;margin-top:10px}
+ .calendar-content .calendar-panel{padding:13px;border-radius:16px}
+ .calendar-content .calendar-toolbar{grid-template-columns:1fr;gap:11px}
+ .calendar-content .calendar-toolbar .calendar-heading{width:100%;max-width:none;grid-template-columns:40px minmax(0,1fr) 40px}
+ .calendar-content .calendar-controls{width:100%;justify-content:stretch}
+ .calendar-content .calendar-view-switch{width:100%;min-width:0;grid-template-columns:repeat(3,minmax(0,1fr))}
+ .calendar-content .calendar-view-switch button{min-height:38px;padding:7px 4px;font-size:11px}
+ .calendar-content .calendar-weekdays,.calendar-content .calendar-grid{max-width:none;gap:3px}
+ .calendar-content .calendar-weekdays span{font-size:9px;letter-spacing:0}
+ .calendar-content .calendar-day{min-height:40px;border-radius:9px;font-size:12px}
+ .calendar-content .calendar-day small{min-width:14px;min-height:14px;font-size:8px}
+ .calendar-content .calendar-events{margin-top:13px}
+}
+@media(max-width:380px){
+ .calendar-content .calendar-panel{padding:10px}
+ .calendar-content .calendar-day{min-height:36px}
+ .calendar-collapse-copy strong{font-size:18px}
+}
