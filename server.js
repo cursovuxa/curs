@@ -7,6 +7,11 @@ const port = Number(process.env.PORT || 10000);
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const rootAdminEmail = String(process.env.FLOWTIX_ROOT_ADMIN_EMAIL || '').trim().toLowerCase();
+const telegramBotToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const telegramAdminId = String(process.env.TELEGRAM_ADMIN_ID || '').trim();
+const telegramWebhookSecret = telegramBotToken ? createHmac('sha256', telegramBotToken).update('flowtix-support-webhook-v1').digest('hex') : '';
+const supabasePublishableKey = String(process.env.SUPABASE_PUBLISHABLE_KEY || '');
+
 const paymentProviderName = String(process.env.PAYMENT_PROVIDER_NAME || '').trim();
 const paymentCreateUrl = String(process.env.PAYMENT_PROVIDER_CREATE_URL || '').trim();
 const paymentApiKey = String(process.env.PAYMENT_PROVIDER_API_KEY || '');
@@ -53,7 +58,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '4mb', verify: (req, _res, buffer) => { req.rawBody = Buffer.from(buffer); } }));
 app.use('/api', async (req, res, next) => {
-  if (['/health','/auth/login','/auth/register','/webhooks/payments'].includes(req.path) || req.path.startsWith('/admin')) return next();
+  if (['/health','/public-config','/auth/login','/auth/register','/webhooks/payments','/webhooks/telegram'].includes(req.path) || req.path.startsWith('/admin')) return next();
   try {
     const { data } = await supabase.from('platform_settings').select('value').eq('key', 'maintenance_mode').maybeSingle();
     if (data?.value !== true) return next();
@@ -74,7 +79,132 @@ app.get('/api/health', async (_req, res) => {
   res.status(error ? 503 : 200).json({ status: error ? 'database_error' : 'ok', database: !error });
 });
 
-app.get('/api/events', async (req, res) => {
+
+app.get('/api/public-config', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({ supabaseUrl: supabaseUrl || '', supabasePublishableKey });
+});
+function safeTelegramText(value) {
+  return String(value || '').replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
+}
+async function sendSupportMessageToTelegram(message, conversation, profile) {
+  if (!telegramBotToken || !telegramAdminId) throw new Error('Поддержка временно недоступна');
+  const label = profile.full_name || profile.username || 'Пользователь';
+  const username = profile.username ? ' (@' + profile.username + ')' : '';
+  const text = 'Сообщение в поддержку FlowTix\n' +
+    'Пользователь: ' + label + username + '\n' +
+    'Чат: ' + conversation.id + '\n\n' + message;
+  const response = await fetch('https://api.telegram.org/bot' + telegramBotToken + '/sendMessage', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: telegramAdminId, text })
+  });
+  let payload = null;
+  try { payload = await response.json(); } catch {}
+  if (!response.ok || !payload?.ok || !payload.result?.message_id) {
+    console.error('[support] Telegram delivery failed with status ' + response.status);
+    throw new Error('Не удалось отправить сообщение в поддержку. Попробуйте ещё раз.');
+  }
+  return Number(payload.result.message_id);
+}
+async function configureTelegramWebhook() {
+  if (!telegramBotToken || !telegramAdminId || !renderPublicUrl) return;
+  try {
+    const response = await fetch('https://api.telegram.org/bot' + telegramBotToken + '/setWebhook', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: renderPublicUrl + '/api/webhooks/telegram',
+        secret_token: telegramWebhookSecret,
+        allowed_updates: ['message']
+      })
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.ok) console.error('[support] Telegram webhook setup failed with status ' + response.status);
+    else console.log('[support] Telegram webhook ready');
+  } catch (error) {
+    console.error('[support] Telegram webhook setup failed:', error.message);
+  }
+}
+function telegramWebhookIsValid(req) {
+  const supplied = String(req.get('x-telegram-bot-api-secret-token') || '');
+  if (!telegramWebhookSecret || supplied.length !== telegramWebhookSecret.length) return false;
+  return timingSafeEqual(Buffer.from(supplied), Buffer.from(telegramWebhookSecret));
+}
+app.post('/api/webhooks/telegram', asyncRoute(async (req, res) => {
+  if (!telegramWebhookIsValid(req)) return res.sendStatus(403);
+  const update = req.body || {};
+  const message = update.message;
+  if (!message || String(message.chat?.id || '') !== telegramAdminId) return res.sendStatus(200);
+  const body = String(message.text || '').trim().slice(0, 2000);
+  const replyId = Number(message.reply_to_message?.message_id || 0);
+  if (!body || !replyId) return res.sendStatus(200);
+  const { data: source, error: sourceError } = await supabase.from('support_messages')
+    .select('conversation_id').eq('telegram_message_id', replyId).maybeSingle();
+  if (sourceError) return res.status(500).json({ error: 'Не удалось найти переписку поддержки' });
+  if (!source) return res.sendStatus(200);
+  const { data: chat, error: chatError } = await supabase.from('support_conversations')
+    .select('id,user_id').eq('id', source.conversation_id).maybeSingle();
+  if (chatError || !chat) return res.sendStatus(200);
+  const { data: sent, error: insertError } = await supabase.from('support_messages').insert({
+    conversation_id: chat.id, sender_type: 'admin', body, telegram_update_id: Number(update.update_id)
+  }).select('id,conversation_id,sender_type,sender_id,body,created_at').single();
+  if (insertError) {
+    if (insertError.code === '23505') return res.sendStatus(200);
+    return res.status(500).json({ error: 'Не удалось сохранить ответ поддержки' });
+  }
+  await supabase.from('support_conversations').update({ last_message_at: sent.created_at, updated_at: sent.created_at }).eq('id', chat.id);
+  res.sendStatus(200);
+}));
+async function getOrCreateSupportConversation(userId) {
+  const { data: existing, error: lookupError } = await supabase.from('support_conversations')
+    .select('id,user_id,status,created_at,updated_at,last_message_at').eq('user_id', userId).maybeSingle();
+  if (lookupError) throw lookupError;
+  if (existing) {
+    if (existing.status !== 'open') {
+      const reopened = await supabase.from('support_conversations').update({ status: 'open', updated_at: new Date().toISOString() })
+        .eq('id', existing.id).select('*').single();
+      if (reopened.error) throw reopened.error;
+      return reopened.data;
+    }
+    return existing;
+  }
+  const { data: created, error } = await supabase.from('support_conversations').insert({ user_id: userId })
+    .select('id,user_id,status,created_at,updated_at,last_message_at').single();
+  if (!error) return created;
+  if (error.code === '23505') {
+    const retry = await supabase.from('support_conversations').select('*').eq('user_id', userId).single();
+    if (!retry.error) return retry.data;
+  }
+  throw error;
+}
+app.get('/api/support/conversation', requireUser, asyncRoute(async (req, res) => {
+  const conversation = await getOrCreateSupportConversation(req.user.id);
+  const { data, error } = await supabase.from('support_messages')
+    .select('id,conversation_id,sender_type,sender_id,body,created_at')
+    .eq('conversation_id', conversation.id).order('created_at', { ascending: false }).limit(40);
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить чат поддержки' });
+  res.json({ conversation, messages: (data || []).reverse() });
+}));
+app.post('/api/support/conversation/messages', requireUser, asyncRoute(async (req, res) => {
+  const body = String(req.body.body || '').trim();
+  if (!body || body.length > 2000) return res.status(400).json({ error: 'Сообщение должно содержать от 1 до 2000 символов' });
+  const conversation = await getOrCreateSupportConversation(req.user.id);
+  const { data: message, error } = await supabase.from('support_messages').insert({
+    conversation_id: conversation.id, sender_type: 'user', sender_id: req.user.id, body
+  }).select('id,conversation_id,sender_type,sender_id,body,created_at').single();
+  if (error) return res.status(500).json({ error: 'Не удалось сохранить сообщение' });
+  try {
+    const telegramMessageId = await sendSupportMessageToTelegram(body, conversation, req.user);
+    const { error: updateError } = await supabase.from('support_messages').update({ telegram_message_id: telegramMessageId }).eq('id', message.id);
+    if (updateError) console.error('[support] could not store Telegram reply reference');
+  } catch (deliveryError) {
+    await supabase.from('support_messages').delete().eq('id', message.id);
+    throw deliveryError;
+  }
+  await supabase.from('support_conversations').update({ last_message_at: message.created_at, updated_at: message.created_at }).eq('id', conversation.id);
+  res.status(201).json({ message });
+}));
+
+\napp.get('/api/events', async (req, res) => {
   if (!supabase) return res.status(503).json({ error: 'Database is not configured' });
   const term = String(req.query.q || '').trim().slice(0, 100).replace(/[,*()\\"']/g, '');
   const city = String(req.query.city || '').trim().slice(0, 100);
@@ -2017,7 +2147,7 @@ async function purgeExpiredUsedTickets() {
     console.error('[ticket-retention] cleanup failed:', error.message);
   }
 }
-app.listen(port, '0.0.0.0', () => console.log('FlowTix API listening on ' + port));
+app.listen(port, '0.0.0.0', () => { console.log('FlowTix API listening on ' + port); void configureTelegramWebhook(); });
 void purgeExpiredUsedTickets();
 void purgeExpiredPaymentIntents();
 void purgeDirectMessages();
