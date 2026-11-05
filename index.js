@@ -2164,7 +2164,7 @@ async function openSupportChat(){
   if(!signedIn()){toast('Войди в аккаунт, чтобы написать в поддержку');authOpen('login');return}
   const overlay=$('#supportOverlay'),list=$('#supportMessages');
   if(!overlay||!list)return;
-  overlay.hidden=false;document.body.classList.add('support-chat-open');
+  overlay.hidden=false;
   $('.support-dialog')?.classList.add('is-empty');
   supportSetStatus('Загружаем переписку');
   supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();
@@ -2186,7 +2186,7 @@ async function openSupportChat(){
 }
 async function closeSupportChat(){
   const overlay=$('#supportOverlay');if(overlay)overlay.hidden=true;
-  document.body.classList.remove('support-chat-open');
+  /* Floating support window leaves the page interactive. */
   if(supportChannel&&supabaseAuth){try{await supabaseAuth.removeChannel(supportChannel)}catch{}supportChannel=null}
   supportConversationId=null;supportSetStatus('Не в чате');supportClearImageUrls();
 }
