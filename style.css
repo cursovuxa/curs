@@ -1702,3 +1702,13 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
  .seat-picker-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-width:0;width:100%}
  .seat-picker-actions .button{min-width:0;padding:11px 12px}
 }
+
+/* Compact, clickable ticket-owner profile link in the admin ticket table. */
+.admin-ticket-owner{display:inline-flex;align-items:center;gap:9px;max-width:100%;margin-top:8px;padding:6px 10px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface,#fff) 72%,transparent);transition:border-color .18s ease,background .18s ease}
+.admin-ticket-owner:hover{border-color:color-mix(in srgb,var(--violet) 48%,var(--line));background:color-mix(in srgb,var(--violet) 9%,var(--surface,#fff))}
+.admin-ticket-owner-avatar{display:block;flex:0 0 30px;width:30px;height:30px;border-radius:50%;object-fit:cover;background:linear-gradient(135deg,var(--violet),var(--coral));color:#fff}
+.admin-ticket-owner-fallback{display:grid;place-items:center;font-size:13px;font-weight:800}
+.admin-ticket-owner-copy{display:grid;min-width:0;gap:2px}
+.admin-ticket-owner-copy strong{overflow:hidden;color:var(--ink);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.admin-ticket-owner-copy small{overflow:hidden;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.admin-ticket-owner-arrow{margin-left:2px;color:var(--violet);font-size:13px;font-weight:800}

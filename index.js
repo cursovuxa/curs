@@ -696,11 +696,11 @@ function renderSeatPicker(){
   const selected=seats.find(seat=>seat.id===selectedSeatId);
   const heldSeat=seats.find(seat=>seat.status==='mine');
   const isHeld=selected?.status==='mine';
-  const expiry=selected?.reserved_until||null;
+  const expiry=selected?.reserved_until||heldSeat?.reserved_until||null;
   const basePrice=Number(event.current_price??event.base_price??0);
   const selectedMultiplier=selected?Number(selected.price_multiplier||1):null;
   const selectedPrice=selected?Math.round((basePrice*selectedMultiplier+Number.EPSILON)*100)/100:null;
-  const statusText=selected?(expiry?'Место забронировано за вами.':'Место выбрано.'):'Выбери свободное место на схеме зала.';
+  const statusText=selected?.status==='mine'?'Место забронировано за вами.':heldSeat?'У вас есть бронь на место '+heldSeat.row_label+heldSeat.seat_number+'.':selected?'Место выбрано.':'Выбери свободное место на схеме зала.';
   root.className='dialog event-dialog seat-map-dialog';
   root.innerHTML='<div class="seat-picker-head"><div><p class="eyebrow dark-eyebrow">ВЫБОР МЕСТА</p><h2>'+esc(event.title||'Мероприятие')+'</h2><p>'+esc([event.start_date,event.start_time,event.venues?.name,event.venues?.city].filter(Boolean).join(' · '))+'</p></div><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="seat-picker-content"><div class="seat-picker-summary"><div><span class="seat-summary-dot available"></span>Свободно</div><div><span class="seat-summary-dot reserved"></span>На удержании</div><div><span class="seat-summary-dot occupied"></span>Занято</div></div><div class="seat-map-scroll"><div class="seat-stage">СЦЕНА</div><div class="seat-type-legend">'+['standard','vip','business','free','accessible'].filter(type=>seats.some(seat=>seat.seat_type===type)).map(type=>'<span><i class="seat-type-swatch seat-type-'+type+'"></i>'+seatTypeLabels[type]+'</span>').join('')+'</div><div class="seat-rows">'+(rows||'<p class="seat-empty">Схема этого зала пока не настроена.</p>')+'</div></div><div class="seat-picker-footer"><div class="seat-selection-copy"><b>'+(selected?esc(selected.row_label+selected.seat_number)+' · '+esc(seatTypeLabels[selected.seat_type]||'Место'):'Место не выбрано')+'</b><strong class="seat-price-total">'+(selected?(selectedPrice>0?money(selectedPrice):'Бесплатно'):'Базовая цена: '+(basePrice>0?money(basePrice):'Бесплатно'))+(selected&&selectedMultiplier!==1?' · × '+esc(String(selectedMultiplier).replace('.',',')):'')+'</strong><span id="seatHoldStatus">'+esc(statusText)+'</span><span id="seatHoldCountdown" aria-live="polite"></span></div><div class="seat-picker-actions">'+(heldSeat?'<button class="button button-light" type="button" data-release-seat="'+esc(heldSeat.id)+'">Отменить бронь</button>':'')+'<button class="button button-accent" data-confirm-seat '+(selected?'':'disabled')+'>'+(isHeld?'Купить билет':heldSeat?'Заменить бронь':'Забронировать')+'</button></div></div></div>';
   clearInterval(seatPickerCountdownTimer);
@@ -738,6 +738,8 @@ async function register(id) {
   if(!signedIn())return authOpen();
   seatPickerEventId=String(id);selectedSeatId=null;
   try{
+    const registration=await api('/api/events/'+encodeURIComponent(id)+'/registration-status');
+    if(registration.registered){toast('У вас уже есть билет на это мероприятие.');return}
     const queue=await api('/api/events/'+encodeURIComponent(id)+'/queue');
     if(queue.joined){if(queue.status==='ready')return resumeQueueRegistration(id);renderQueueView(id,queue);setEventModalOpen(true);void subscribeToEventQueue(id);return}
     const state=await api('/api/events/'+encodeURIComponent(id)+'/seats');
@@ -1489,7 +1491,14 @@ async function adminView() {
     const eventRows=(events.events||[]).map(renderAdminEvent).join('');
     const venueRows=(venues.venues||[]).map(v=>'<details class="workspace-row"><summary><b>'+esc(v.name)+'</b> · '+esc(v.city)+'</summary><form data-admin-venue="'+esc(v.id)+'" class="form-grid"><label>Название<input name="name" value="'+esc(v.name)+'" required></label><label>Город<input name="city" value="'+esc(v.city)+'" required></label><label class="wide">Адрес<input name="address" value="'+esc(v.address)+'" required></label><label class="wide">Описание<textarea name="description">'+esc(v.description||'')+'</textarea></label><button class="button button-light button-small">Сохранить</button></form></details>').join('');
     (tickets.tickets||[]).forEach(t=>adminTicketCache.set(t.id,t));
-    const renderAdminTicket=t=>'<tr><td>'+esc(t.ticket_number)+'</td><td>'+esc(t.events?.title||'—')+'<br><small>'+esc(t.users?.full_name||t.users?.email||'')+'</small></td><td>'+esc(ticketStatusLabel(t.status))+'</td><td>'+esc(money(t.price_paid))+'</td><td><div class="inline-actions"><button class="button button-danger button-small" '+(['valid','used'].includes(t.status)?'data-cancel-ticket':'data-delete-ticket')+'="'+esc(t.id)+'">'+(['valid','used'].includes(t.status)?'Аннулировать':'Удалить')+'</button>'+(t.status==='used'?'<button class="button button-light button-small" data-delete-ticket="'+esc(t.id)+'">Удалить</button>':'')+'</div></td></tr>';
+    const renderAdminTicket=t=>{
+      const owner=t.users||{}, ownerName=owner.full_name||owner.username||owner.email||'Пользователь';
+      const ownerKey=owner.username||t.user_id||'';
+      const ownerHandle=owner.username?'@'+owner.username:'';
+      const avatar=owner.avatar_url?'<img class="admin-ticket-owner-avatar" src="'+esc(owner.avatar_url)+'" alt="">':'<span class="admin-ticket-owner-avatar admin-ticket-owner-fallback">'+esc(ownerName.trim().charAt(0).toUpperCase())+'</span>';
+      const ownerLink=ownerKey?'<a class="admin-ticket-owner" href="/profile/'+esc(encodeURIComponent(ownerKey))+'">'+avatar+'<span class="admin-ticket-owner-copy"><strong>'+esc(ownerName)+'</strong><small>'+esc(ownerHandle||owner.email||'Профиль владельца')+'</small></span><span class="admin-ticket-owner-arrow" aria-hidden="true">↗</span></a>':'<span class="admin-ticket-owner-copy"><strong>'+esc(ownerName)+'</strong><small>'+esc(owner.email||'')+'</small></span>';
+      return '<tr><td>'+esc(t.ticket_number)+'</td><td><strong>'+esc(t.events?.title||'—')+'</strong>'+ownerLink+'</td><td>'+esc(ticketStatusLabel(t.status))+'</td><td>'+esc(money(t.price_paid))+'</td><td><div class="inline-actions"><button class="button button-danger button-small" '+(['valid','used'].includes(t.status)?'data-cancel-ticket':'data-delete-ticket')+'="'+esc(t.id)+'">'+(['valid','used'].includes(t.status)?'Аннулировать':'Удалить')+'</button>'+(t.status==='used'?'<button class="button button-light button-small" data-delete-ticket="'+esc(t.id)+'">Удалить</button>':'')+'</div></td></tr>';
+    };
     let loadedAdminTickets=[...(tickets.tickets||[])];
     const ticketRows=loadedAdminTickets.map(renderAdminTicket).join('');
     const paymentRows=(payments.payments||[]).map(p=>'<tr><td>'+esc(new Date(p.created_at).toLocaleString('ru'))+'</td><td>'+esc(p.users?.email||'—')+'</td><td>'+esc(p.tickets?.events?.title||p.tickets?.ticket_number||'—')+'</td><td>'+esc(money(p.amount))+'</td><td>'+esc(p.status)+' · '+esc(p.payment_method||'—')+'</td></tr>').join('');
