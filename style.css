@@ -1589,3 +1589,46 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
  .support-dialog.is-empty{height:auto;max-height:calc(100dvh - env(safe-area-inset-top))}
  .support-dialog.is-empty .support-messages{min-height:54px;max-height:110px}
 }
+
+/* Support window floats above the page without blocking or blurring it. */
+.support-overlay[hidden]{display:none!important}
+.support-overlay{
+ position:fixed;inset:auto 18px 18px auto;width:auto;height:auto;padding:0;
+ display:block;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;
+ pointer-events:none;overflow:visible;z-index:1450
+}
+.support-dialog{
+ width:min(420px,calc(100vw - 28px));height:560px;
+ max-height:min(560px,calc(100dvh - 24px));min-height:0;
+ pointer-events:auto;box-sizing:border-box
+}
+.support-dialog.is-empty{height:560px}
+.support-connection{
+ position:relative;z-index:1;flex:0 0 35px;min-height:35px;
+ box-sizing:border-box;padding:0 20px;gap:9px;
+ border-bottom:1px solid var(--line);
+ background:color-mix(in srgb,var(--surface) 94%,var(--violet) 6%)
+}
+.support-connection-dot{flex:0 0 7px}
+.support-messages{flex:1 1 auto;min-height:0!important;max-height:none;padding:13px 15px 16px}
+.support-message{
+ align-self:flex-start;width:fit-content;max-width:min(82%,340px);
+ box-sizing:border-box;flex:0 0 auto
+}
+.support-message.is-mine{align-self:flex-end}
+.support-message p{max-width:100%;overflow-wrap:anywhere;word-break:normal;hyphens:auto}
+.support-heading h2{
+ letter-spacing:.035em!important;word-spacing:.06em!important;
+ font-stretch:normal;font-weight:700!important
+}
+@media(max-width:700px){
+ .support-overlay{inset:auto 10px 10px auto;width:auto;height:auto;padding:0;display:block}
+ .support-dialog{
+   width:min(420px,calc(100vw - 20px));height:min(560px,calc(100dvh - 20px));
+   max-height:calc(100dvh - 20px);border-radius:20px;border:1px solid var(--line)
+ }
+ .support-dialog.is-empty{height:min(560px,calc(100dvh - 20px))}
+ .support-header{padding:16px 15px 13px}
+ .support-connection{padding-inline:16px}
+ .support-message{max-width:88%}
+}
