@@ -1459,3 +1459,11 @@ body[data-theme="halloween"] .hero{
   outline:0!important;
   box-shadow:0 24px 90px rgba(0,0,0,.18)!important;
 }
+
+/* Smooth, compositor-friendly floating motion for the Halloween pumpkin */
+.halloween-pumpkin{will-change:transform}
+@keyframes halloween-float{
+  0%,100%{transform:translate3d(0,0,0) rotate(-8deg)}
+  50%{transform:translate3d(0,-8px,0) rotate(-3deg)}
+}
+@media(prefers-reduced-motion:reduce){.halloween-pumpkin{will-change:auto}}
