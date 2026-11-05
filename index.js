@@ -1959,7 +1959,7 @@ async function setupGoogleButton(){
   try{await googleButtonSetupPromise}
   finally{googleButtonSetupPromise=null}
 }
-$('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){const selected=b.dataset.category;activeCategory=activeCategory===selected?'':selected;$('#categoryBar [data-category]').forEach(x=>x.classList.toggle('active',x.dataset.category===activeCategory));renderEvents()}});
+$('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){const selected=b.dataset.category;activeCategory=activeCategory===selected?'':selected;document.querySelectorAll('#categoryBar [data-category]').forEach(x=>x.classList.toggle('active',x.dataset.category===activeCategory));renderEvents()}});
 $('#eventModeBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-event-mode]');if(b){discoveryMode=b.dataset.eventMode;renderEvents()}});
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
 $('#cityInput').addEventListener('change',loadEvents);
