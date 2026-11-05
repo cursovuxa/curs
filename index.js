@@ -2124,7 +2124,7 @@ function supportRenderCachedHistory(messages){
   const list=$('#supportMessages');if(!list)return;
   supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();supportHistoryMessages=[];
   const sorted=[...messages].filter(message=>message?.id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id)));
-  sorted.forEach(message=>supportAppendMessage(message,{fromCache:true}));
+  sorted.forEach(message=>supportAppendMessage(message));
   if(!sorted.length){
     const welcome=document.createElement('div');welcome.className='support-welcome';
     welcome.innerHTML='<span class="support-welcome-icon" aria-hidden="true">✦</span><strong>Мы на связи</strong><p>Напиши, чем помочь. Ответ появится здесь же.</p>';
