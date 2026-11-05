@@ -1315,3 +1315,89 @@ body[data-theme="halloween"] .complaint-review-card{box-shadow:0 10px 28px #1c11
  .calendar-content .calendar-day{min-height:36px}
  .calendar-collapse-copy strong{font-size:18px}
 }
+
+/* Collapsible map catalog, styled consistently with the calendar accordion */
+.map-collapse-toggle{
+  display:flex;width:100%;min-height:76px;align-items:center;justify-content:space-between;gap:18px;
+  padding:17px 20px;border:1px solid var(--line);border-radius:18px;background:var(--surface);
+  color:var(--ink);text-align:left;cursor:pointer;
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.map-collapse-toggle:hover{border-color:color-mix(in srgb,var(--violet) 55%,var(--line));box-shadow:0 8px 24px color-mix(in srgb,var(--ink) 7%,transparent)}
+.discovery-collapse-copy{display:grid;gap:5px;min-width:0}
+.discovery-collapse-copy .eyebrow{margin:0;color:var(--violet);font-size:10px;letter-spacing:.14em}
+.discovery-collapse-copy strong{font:750 clamp(20px,2.4vw,27px)/1.15 "DM Sans",sans-serif;letter-spacing:-.035em}
+.discovery-collapse-copy small{color:var(--muted);font-size:12px}
+.map-collapse-toggle>svg{width:22px;height:22px;flex:0 0 auto;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s ease,color .2s ease}
+.map-collapse-toggle[aria-expanded="true"]>svg{transform:rotate(180deg);color:var(--violet)}
+.map-content[hidden]{display:none!important}
+.map-content{width:min(100%,1200px);margin:14px auto 0}
+@media(max-width:760px){
+ .map-collapse-toggle{min-height:68px;padding:14px 15px;border-radius:16px}
+ .discovery-collapse-copy strong{font-size:20px}
+ .discovery-collapse-copy small{font-size:11px}
+ .map-content{width:100%;margin-top:10px}
+}
+
+/* A warmer haunted atmosphere with a bright Halloween wordmark */
+body[data-theme="halloween"]{
+  background-image:radial-gradient(ellipse at 0% 16%,rgba(130,45,80,.16),transparent 43%),radial-gradient(ellipse at 100% 72%,rgba(255,112,39,.1),transparent 38%);
+  background-attachment:fixed;
+}
+body[data-theme="halloween"] .brand-wordmarks{
+  position:relative;padding:5px 10px;border:1px solid rgba(255,159,82,.25);border-radius:999px;
+  background:linear-gradient(110deg,rgba(255,123,52,.11),rgba(129,48,80,.12));
+  box-shadow:0 0 18px rgba(255,116,48,.2),inset 0 0 12px rgba(255,180,89,.08);
+}
+body[data-theme="halloween"] .brand-wordmark-halloween{
+  filter:drop-shadow(0 0 4px rgba(255,182,91,.95)) drop-shadow(0 0 11px rgba(255,92,43,.78)) drop-shadow(0 0 22px rgba(173,54,91,.55));
+  animation:halloween-wordmark-glow 2.8s ease-in-out infinite alternate;
+}
+@keyframes halloween-wordmark-glow{
+  from{filter:drop-shadow(0 0 3px rgba(255,182,91,.8)) drop-shadow(0 0 8px rgba(255,92,43,.6))}
+  to{filter:drop-shadow(0 0 6px rgba(255,218,130,1)) drop-shadow(0 0 15px rgba(255,92,43,.9)) drop-shadow(0 0 25px rgba(173,54,91,.65))}
+}
+body[data-theme="halloween"] .hero{
+  border:1px solid rgba(255,142,67,.24);
+  box-shadow:0 24px 90px rgba(0,0,0,.22),0 0 54px rgba(255,101,42,.08);
+}
+body[data-theme="halloween"] .hero::after{
+  content:"☾  ✦  ✧";right:7%;top:7%;color:#ffd18a;font-size:22px;letter-spacing:13px;
+  text-shadow:0 0 15px rgba(255,165,82,.8);opacity:.95;
+}
+.halloween-scene{display:none}
+body[data-theme="halloween"] .halloween-scene{
+  display:block;position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;color:#ffe0a3;
+}
+body[data-theme="halloween"] .hero-copy,
+body[data-theme="halloween"] .hero-art{position:relative;z-index:1}
+.halloween-pumpkin,.halloween-bat,.halloween-spark{position:absolute;display:block}
+.halloween-pumpkin{width:clamp(48px,5.4vw,78px);height:auto;color:#ffb64f;filter:drop-shadow(0 0 12px rgba(255,115,43,.72));animation:halloween-float 5s ease-in-out infinite}
+.halloween-pumpkin-one{right:42%;bottom:7%;transform:rotate(-8deg)}
+.halloween-bat{width:clamp(30px,3.4vw,48px);height:auto;color:#e9b3cc;filter:drop-shadow(0 0 9px rgba(220,117,159,.7));opacity:.8;animation:halloween-flit 7s ease-in-out infinite}
+.halloween-bat-one{top:14%;left:53%}
+.halloween-bat-two{right:4%;bottom:18%;width:31px;animation-delay:-3s}
+.halloween-spark{color:#ffd681;text-shadow:0 0 14px rgba(255,170,61,.9);font-size:22px;animation:halloween-twinkle 2s ease-in-out infinite alternate}
+.halloween-spark-one{top:28%;right:28%}
+.halloween-spark-two{left:48%;bottom:14%;font-size:17px;animation-delay:-1s}
+@keyframes halloween-float{0%,100%{margin-bottom:0}50%{margin-bottom:9px}}
+@keyframes halloween-flit{0%,100%{translate:0 0;rotate:-4deg}50%{translate:12px -7px;rotate:6deg}}
+@keyframes halloween-twinkle{from{opacity:.4;scale:.8}to{opacity:1;scale:1.12}}
+body[data-theme="halloween"] .events-section>.section-head,
+body[data-theme="halloween"] .discovery-block>.section-head{filter:drop-shadow(0 4px 18px rgba(255,116,48,.12))}
+body[data-theme="halloween"] .event-card:hover{box-shadow:0 18px 48px rgba(255,105,44,.14)}
+body[data-theme="halloween"] .calendar-collapse-toggle,
+body[data-theme="halloween"] .map-collapse-toggle{background-image:linear-gradient(110deg,rgba(255,132,49,.035),transparent 60%)}
+@media(max-width:700px){
+ body[data-theme="halloween"] .brand-wordmarks{padding:4px 7px}
+ body[data-theme="halloween"] .brand-wordmark-halloween{max-width:min(145px,37vw)}
+ .halloween-pumpkin{width:48px}
+ .halloween-pumpkin-one{right:7%;bottom:9%}
+ .halloween-bat-one{top:46%;left:auto;right:25%;width:32px}
+ .halloween-bat-two{right:5%;bottom:8%;width:25px}
+ .halloween-spark-one{top:34%;right:16%}
+ .halloween-spark-two{left:12%;bottom:8%}
+}
+@media(prefers-reduced-motion:reduce){
+ body[data-theme="halloween"] .brand-wordmark-halloween,.halloween-pumpkin,.halloween-bat,.halloween-spark{animation:none!important}
+}
