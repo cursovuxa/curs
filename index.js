@@ -50,8 +50,6 @@ let events = [],catalogEvents=[];
 let organizerEvents = [];
 let categories = [];
 let activeCategory = '';
-let discoveryMode='random',personalizedRecommendationEvents=[];
-let randomEventSignature='',randomEventIds=[];
 let selectedCalendarDate = localDateKey(new Date());
 let calendarMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let currentFilteredEvents = [];
@@ -240,7 +238,7 @@ function hideBlockedAccountModal(){
   document.body.classList.remove('blocked-modal-open');
 }
 function isAllowedBlockedRead(target){
-  return Boolean(target.closest('#searchForm,#searchInput,#cityInput,#categoryBar,[data-category],#eventModeBar,[data-event-mode],[data-map-locate],[data-details],[data-period],[data-calendar-view],[data-calendar-owner],[data-calendar-date],[data-calendar-shift],#calendarToggle,#mapToggle,[data-map-picker-toggle],[data-map-event-option],[data-map-event],[data-close="eventModal"],#eventModal,a[href="#"],a[href="#events"],a[href^="https://"],a[href^="http://"],a[href^="mailto:"],a[href^="tel:"]'));
+  return Boolean(target.closest('#searchForm,#searchInput,#cityInput,#categoryBar,[data-category],[data-map-locate],[data-details],[data-period],[data-calendar-view],[data-calendar-owner],[data-calendar-date],[data-calendar-shift],#calendarToggle,#mapToggle,[data-map-picker-toggle],[data-map-event-option],[data-map-event],[data-close="eventModal"],#eventModal,a[href="#"],a[href="#events"],a[href^="https://"],a[href^="http://"],a[href^="mailto:"],a[href^="tel:"]'));
 }
 document.addEventListener('click',(event)=>{
   if(!signedIn()||user?.is_blocked!==true)return;
@@ -413,46 +411,27 @@ function renderEvents() {
   $('#todayCount').textContent=filtered.filter(e=>eventDateKey(e)===today).length;
   $('#tomorrowCount').textContent=filtered.filter(e=>eventDateKey(e)===tomorrow).length;
   $('#weekCount').textContent=filtered.filter(e=>eventDateKey(e)>=today&&eventDateKey(e)<=weekEnd).length;
-  const popular=[...filtered].sort((a,b)=>Number(b.popularity_score||0)-Number(a.popularity_score||0)||eventDateKey(a).localeCompare(eventDateKey(b)));
-  const newest=[...filtered].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
-  const preferences=(user?.preferences?.categories||[]).map(value=>String(value).toLocaleLowerCase('ru'));
-  const favoriteIds=new Set((user?.favorites||[]).map(String));
-  const favoriteCategories=new Set(filtered.filter(e=>favoriteIds.has(String(e.id))).map(e=>String(e.category_id)));
-  const personalized=filtered.filter(e=>preferences.includes(String(e.category_id).toLocaleLowerCase('ru'))||preferences.includes(String(e.event_categories?.name||'').toLocaleLowerCase('ru'))||favoriteCategories.has(String(e.category_id)));
-  const filteredById=new Map(filtered.map(e=>[String(e.id),e]));
-  const apiPersonalized=personalizedRecommendationEvents.map(e=>filteredById.get(String(e.id))).filter(Boolean);
-  const recommendations=apiPersonalized.length?apiPersonalized:(personalized.length?personalized:popular);
-  const randomSignature=JSON.stringify([query,city,activeCategory,parsed.from,parsed.to,filtered.map(e=>String(e.id)).sort()]);
-  if(randomEventSignature!==randomSignature){
-    randomEventSignature=randomSignature;
-    const shuffled=[...filtered];
-    for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]}
-    randomEventIds=shuffled.slice(0,5).map(e=>String(e.id));
-  }
-  const randomSet=new Set(randomEventIds),randomEvents=filtered.filter(e=>randomSet.has(String(e.id)));
-  let visibleEvents=filtered,title='Ближайшие события',hint='';
-  if(discoveryMode==='random'){visibleEvents=randomEvents;title='Случайные события';hint='Пять мероприятий из афиши'}
-  else if(discoveryMode==='popular'){visibleEvents=popular;title='Популярные мероприятия';hint='Сначала события с наибольшей популярностью'}
-  else if(discoveryMode==='new'){visibleEvents=newest;title='Новые мероприятия';hint='Сначала недавно опубликованные'}
-  else if(discoveryMode==='recommended'){
-    visibleEvents=recommendations;title='Может понравиться';
-    hint=apiPersonalized.length?'Подобрано по интересам и активности':personalized.length?'Подобрано по категориям и избранному':signedIn()?'Пока нет данных об интересах — показываем популярные события':'Войди, чтобы получать персональные рекомендации';
-  }
-  $('#eventListTitle').textContent=title;
-  $('#eventModeHint').textContent=hint;
-  $$('[data-event-mode]').forEach(button=>{
-    const active=button.dataset.eventMode===discoveryMode;
-    button.classList.toggle('active',active);
-    button.setAttribute('aria-pressed',String(active));
-  });
-  $('#eventCount').textContent=visibleEvents.length+' '+plural(visibleEvents.length,['событие','события','событий']);
-  const hasSearchFilters=Boolean(parsed.q||city||parsed.from||parsed.to||activeCategory);
-  $('#eventsGrid').innerHTML=visibleEvents.length?visibleEvents.map(e=>eventCard(e,discoveryMode==='random'?'catalog':discoveryMode==='recommended'?'recommendations':discoveryMode)).join(''):empty(events.length?(hasSearchFilters?'По этим фильтрам предстоящих событий нет.':'Подходящих мероприятий пока нет.'):'Опубликованных мероприятий пока нет.');
+  $('#eventCount').textContent=filtered.length+' '+plural(filtered.length,['событие','события','событий']);
+  $('#eventsGrid').innerHTML=filtered.length?filtered.map(e=>eventCard(e,parsed.q||city||parsed.from||parsed.to||activeCategory?'search':'catalog')).join(''):empty(events.length?'По этим фильтрам предстоящих событий нет.':'Опубликованных мероприятий пока нет.');
 
   const location=(city||user?.city||'').trim();
   const nearby=location?filtered.filter(e=>(e.venues?.city||'').toLocaleLowerCase('ru').includes(location.toLocaleLowerCase('ru'))):[];
   $('#nearbyCaption').textContent=location?'Город: '+location:'Выбери город в поиске';
-  $('#nearbyEventsGrid').innerHTML=nearby.length?nearby.slice(0,3).map(e=>eventCard(e,'nearby')).join(''):empty(location?'В этом городе ближайших мероприятий пока нет.':'Укажи город в поиске, чтобы увидеть события рядом.');
+  $('#nearbyEventsGrid').innerHTML=nearby.length?nearby.slice(0,3).map(e=>eventCard(e,'nearby')).join(''):empty(location?'В этом городе ближайших мероприятий пока нет.':'Укажи город в поле поиска, чтобы увидеть события рядом.');
+  $('#popularSection').hidden=!filtered.length;
+  const popular=[...filtered].sort((a,b)=>Number(b.popularity_score||0)-Number(a.popularity_score||0)||(eventDateKey(a)).localeCompare(eventDateKey(b))).slice(0,3);
+  $('#popularEventsGrid').innerHTML=popular.map(eventCard).join();
+  $('#newSection').hidden=!filtered.length;
+  const newest=[...filtered].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).slice(0,3);
+  $('#newEventsGrid').innerHTML=newest.map(eventCard).join();
+  const preferences=(user?.preferences?.categories||[]).map(value=>String(value).toLocaleLowerCase('ru'));
+  const favoriteIds=new Set((user?.favorites||[]).map(String));
+  const favoriteCategories=new Set(filtered.filter(e=>favoriteIds.has(String(e.id))).map(e=>String(e.category_id)));
+  const personalized=filtered.filter(e=>preferences.includes(String(e.category_id).toLocaleLowerCase('ru'))||preferences.includes(String(e.event_categories?.name||'').toLocaleLowerCase('ru'))||favoriteCategories.has(String(e.category_id)));
+  const recommendations=(personalized.length?personalized:popular).slice(0,3);
+  $('#recommendedSection').hidden=!recommendations.length;
+  $('#recommendationCaption').textContent=personalized.length?'Подобрано для вас':'Популярное сейчас';
+  $('#recommendedEventsGrid').innerHTML=recommendations.map(eventCard).join();
 
   if(!selectedCalendarDate)selectedCalendarDate=today;
   const publicUpcoming=(catalogEvents.length?catalogEvents:events).filter(event=>eventDateKey(event)>=today);
@@ -462,14 +441,10 @@ function renderEvents() {
 function plural(n,forms){const x=n%100,y=x%10;return forms[(x>10&&x<20)?2:y>1&&y<5?1:y===1?0:2]}
 async function loadPersonalizedRecommendations(){
  if(!signedIn())return;
- try{
-  const data=await api('/api/recommendations');
-  personalizedRecommendationEvents=Array.isArray(data.events)?data.events:[];
-  if(discoveryMode==='recommended')renderEvents();
- }catch(error){console.info('Recommendations unavailable:',error.message)}
+ try{const data=await api('/api/recommendations');const list=data.events||[];if(!list.length)return;$('#recommendedSection').hidden=false;$('#recommendationCaption').textContent='По просмотрам, билетам и интересам';$('#recommendedEventsGrid').innerHTML=list.slice(0,3).map(e=>eventCard(e,'recommendations')).join('')}catch(error){console.info('Recommendations unavailable:',error.message)}
 }
 async function loadCategories() {
-  try { const r=await api('/api/categories'); categories=r.categories||[]; $('#categoryBar').innerHTML=categories.map(c=>'<button class="category" data-category="'+esc(c.id)+'">'+esc(c.name)+'</button>').join(''); }
+  try { const r=await api('/api/categories'); categories=r.categories||[]; $('#categoryBar').innerHTML='<button class="category active" data-category="">Все события</button>'+categories.map(c=>'<button class="category" data-category="'+esc(c.id)+'">'+esc(c.name)+'</button>').join(''); }
   catch { /* category filters are optional; the event list remains live */ }
 }
 function normalizedSearchWord(value){return String(value||'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[^а-яa-z0-9-]/g,'').replace(/(ами|ями|ого|ему|ому|ыми|ими|ая|яя|ое|ее|ые|ие|ой|ый|ий|ом|ем|ам|ям|ах|ях|ов|ев|ей|у|ю|а|я|ы|и|е)$/,'')}
@@ -1769,6 +1744,8 @@ document.addEventListener('change',async(e)=>{
       preview.innerHTML='<img src="'+URL.createObjectURL(file)+'" alt="Предпросмотр обложки"><span>'+esc(file.name)+'</span>';
     }else toast('Обложка выбрана. Она загрузится при сохранении мероприятия.');
   }
+  if(e.target.matches('[data-category]')){activeCategory=e.target.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===e.target));renderEvents()}
+
 });
 document.addEventListener('click',async(event)=>{
  const target=event.target instanceof Element?event.target:null;
@@ -1959,8 +1936,7 @@ async function setupGoogleButton(){
   try{await googleButtonSetupPromise}
   finally{googleButtonSetupPromise=null}
 }
-$('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){const selected=b.dataset.category;activeCategory=activeCategory===selected?'':selected;$('#categoryBar [data-category]').forEach(x=>x.classList.toggle('active',x.dataset.category===activeCategory));renderEvents()}});
-$('#eventModeBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-event-mode]');if(b){discoveryMode=b.dataset.eventMode;renderEvents()}});
+$('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){activeCategory=b.dataset.category;$$('[data-category]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()}});
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
 $('#cityInput').addEventListener('change',loadEvents);
 $('#footerYear').textContent=new Date().getFullYear();
