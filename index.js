@@ -18,6 +18,10 @@ let SUPABASE_PUBLISHABLE_KEY = '';
 let supabaseAuth = null;
 let supportChannel = null;
 let supportConversationId = null;
+let supportHistoryCursor = null;
+let supportHasMore = false;
+let supportLoadingOlder = false;
+let supportHistoryRetryAt = 0;
 let supportSelectedFile = null;
 let supportSelectedPreviewUrl = null;
 const supportImageObjectUrls = new Set();
@@ -2098,7 +2102,7 @@ function setupFlowScrollbars(){
 function supportFormatTime(value){
   try{return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date(value))}catch{return ''}
 }
-function supportAppendMessage(message){
+function supportAppendMessage(message,options={}){
   const list=$('#supportMessages');
   if(!list||!message?.id||supportRenderedMessageIds.has(message.id))return;
   list.querySelector('.support-welcome')?.remove();
@@ -2106,20 +2110,53 @@ function supportAppendMessage(message){
   supportRenderedMessageIds.add(message.id);
   const item=document.createElement('article');
   item.className='support-message '+(message.sender_type==='user'?'is-mine':'is-support');
-  if(message.telegram_file_id||message.has_photo)void supportLoadImage(message.id,item);
+  if(message.telegram_file_id||message.has_photo)void supportLoadImage(message.id,item,Boolean(options.preserveScroll));
   if(message.body){const body=document.createElement('p');body.textContent=message.body;item.append(body)}
   const time=document.createElement('time');time.dateTime=message.created_at||'';time.textContent=supportFormatTime(message.created_at);
-  item.append(time);list.append(item);list.scrollTop=list.scrollHeight;
+  item.append(time);
+  if(options.prepend){
+    const first=list.querySelector('.support-message');
+    list.insertBefore(item,first||list.firstChild);
+  }else{
+    list.append(item);list.scrollTop=list.scrollHeight;
+  }
 }
-async function supportLoadImage(messageId,item){
+async function supportLoadImage(messageId,item,preserveScroll=false){
+  const list=$('#supportMessages');
   try{
     const blob=await apiBlob('/api/support/conversation/messages/'+encodeURIComponent(messageId)+'/photo');
     const url=URL.createObjectURL(blob);supportImageObjectUrls.add(url);
     const image=document.createElement('img');image.src=url;image.alt='Фото в переписке';image.loading='lazy';
+    if(preserveScroll)image.addEventListener('load',()=>{if(list)list.scrollTop+=image.getBoundingClientRect().height},{once:true});
     item.insertBefore(image,item.firstChild);
   }catch{
-    const notice=document.createElement('span');notice.className='support-image-error';notice.textContent='Фото временно недоступно';item.insertBefore(notice,item.firstChild);
+    const notice=document.createElement('span');notice.className='support-image-error';notice.textContent='Фото временно недоступно';
+    if(preserveScroll&&list)list.scrollTop+=notice.getBoundingClientRect().height;
+    item.insertBefore(notice,item.firstChild);
   }
+}
+async function supportLoadOlder(){
+  const list=$('#supportMessages');
+  if(!list||!supportHasMore||supportLoadingOlder||!supportHistoryCursor||Date.now()<supportHistoryRetryAt)return;
+  supportLoadingOlder=true;
+  const previousHeight=list.scrollHeight,previousTop=list.scrollTop;
+  let hint=list.querySelector('.support-history-hint');
+  if(!hint){hint=document.createElement('div');hint.className='support-history-hint';list.insertBefore(hint,list.firstChild)}
+  hint.textContent='Загружаем предыдущие сообщения…';
+  try{
+    const cursor=supportHistoryCursor;
+    const query='?beforeCreatedAt='+encodeURIComponent(cursor.createdAt)+'&beforeId='+encodeURIComponent(cursor.id);
+    const result=await api('/api/support/conversation'+query);
+    const page=result.messages||[];
+    for(let i=page.length-1;i>=0;i--)supportAppendMessage(page[i],{prepend:true,preserveScroll:true});
+    supportHistoryCursor=result.nextCursor||null;
+    supportHasMore=Boolean(result.hasMore&&supportHistoryCursor);
+    hint.textContent=supportHasMore?'Прокрути вверх, чтобы загрузить более ранние сообщения':'Начало переписки';
+    list.scrollTop=previousTop+(list.scrollHeight-previousHeight);
+  }catch(error){
+    hint.textContent='Не удалось загрузить историю. Прокрути вверх, чтобы повторить.';
+    supportHistoryRetryAt=Date.now()+1200;
+  }finally{supportLoadingOlder=false}
 }
 function supportClearImageUrls(){for(const url of supportImageObjectUrls)URL.revokeObjectURL(url);supportImageObjectUrls.clear()}
 function supportResetAttachment(){
@@ -2168,10 +2205,16 @@ async function openSupportChat(){
   $('.support-dialog')?.classList.add('is-empty');
   supportSetStatus('Загружаем переписку');
   supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();
+  supportHistoryCursor=null;supportHasMore=false;supportLoadingOlder=false;supportHistoryRetryAt=0;
   try{
     const result=await api('/api/support/conversation');
     supportConversationId=result.conversation.id;
+    supportHistoryCursor=result.nextCursor||null;supportHasMore=Boolean(result.hasMore&&supportHistoryCursor);
     (result.messages||[]).forEach(supportAppendMessage);
+    if(supportHasMore){
+      const hint=document.createElement('div');hint.className='support-history-hint';hint.textContent='Прокрути вверх, чтобы загрузить более ранние сообщения';
+      list.insertBefore(hint,list.firstChild);list.scrollTop=list.scrollHeight;
+    }
     if(!(result.messages||[]).length){
       const welcome=document.createElement('div');welcome.className='support-welcome';
       welcome.innerHTML='<span class="support-welcome-icon" aria-hidden="true">✦</span><strong>Мы на связи</strong><p>Напиши, чем помочь. Ответ появится здесь же.</p>';
@@ -2207,10 +2250,15 @@ async function submitSupportMessage(form){
 document.addEventListener('click',event=>{
   const element=event.target instanceof Element?event.target:null;if(!element)return;
   if(element.closest('[data-support-open]')){event.preventDefault();void openSupportChat();return}
+  const overlay=$('#supportOverlay'),panel=$('.support-dialog');
+  if(overlay&&!overlay.hidden&&panel&&!panel.contains(element)){void closeSupportChat();return}
   if(element.closest('[data-support-attach]')){$('#supportFile')?.click();return}
   if(element.closest('[data-support-remove-file]')){supportResetAttachment();return}
   if(element.closest('[data-support-close]')||element.id==='supportOverlay'){void closeSupportChat()}
 });
+document.addEventListener('scroll',event=>{
+  if(event.target?.id==='supportMessages'&&event.target.scrollTop<=40)void supportLoadOlder();
+},true);
 document.addEventListener('change',event=>{if(event.target?.id==='supportFile')supportSelectAttachment(event.target.files?.[0]||null)});
 document.addEventListener('keydown',event=>{
   if(event.target?.id==='supportInput'&&event.key==='Enter'&&!event.shiftKey){
