@@ -1691,3 +1691,14 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
  .support-dialog.is-empty{height:min(560px,calc(100dvh - 20px));max-height:calc(100dvh - 20px)}
  .support-dialog.is-empty .support-messages{flex:1 1 auto;min-height:0;max-height:none}
 }
+
+/* Clear seat selection actions and support panel loading layout. */
+.seat-picker-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:10px;min-width:min(280px,100%)}
+.seat-picker-actions .button{min-height:48px}
+.seat-picker-actions [data-release-seat]{border-color:var(--line);color:var(--muted);background:transparent}
+.seat-picker-actions [data-release-seat]:hover{color:#bd4058;border-color:color-mix(in srgb,#bd4058 45%,var(--line));background:color-mix(in srgb,#bd4058 8%,var(--surface,var(--paper)))}
+@media(max-width:620px){
+ .seat-picker-footer{align-items:stretch;flex-direction:column}
+ .seat-picker-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-width:0;width:100%}
+ .seat-picker-actions .button{min-width:0;padding:11px 12px}
+}
