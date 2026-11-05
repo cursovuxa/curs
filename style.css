@@ -1769,3 +1769,9 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
  .flow-ticket-stub{padding:14px}
  .flow-ticket-number strong{font-size:12px}
 }
+
+/* Auth brand follows the same compact responsive rule as the site header. */
+@media(min-width:651px){.auth-brand .brand-logo{display:none!important}.auth-brand .brand-wordmarks{display:inline-flex!important}}
+@media(max-width:650px){.auth-brand .brand-logo{display:block!important;width:42px;height:42px;flex:0 0 42px;object-fit:contain;border-radius:13px}.auth-brand .brand-wordmarks{display:none!important}}
+/* Keep Google's embedded button within the available auth panel width. */
+.google-button-container,#googleSdkButton{width:100%;min-width:0;max-width:100%;box-sizing:border-box}.google-button-container{overflow:hidden}.google-button-container iframe{max-width:100%!important}
