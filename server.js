@@ -2267,6 +2267,37 @@ app.patch('/api/admin/users/:id/profile', requireUser, requireRootAdmin, asyncRo
   await supabase.from('audit_logs').insert({actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_PROFILE_UPDATED',entity_type:'user',entity_id:req.params.id,details:{fields:Object.keys(fields)}});
   res.json({profile:data});
 }));
+app.post('/api/admin/users/:id/profile-links', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
+  const value=safePlatformFromUrl(req.body.url);
+  if(!value)return res.status(400).json({error:'Добавьте корректную ссылку с http:// или https://'});
+  const userId=req.params.id;
+  const {data:target,error:targetError}=await supabase.from('users').select('id').eq('id',userId).maybeSingle();
+  if(targetError)return res.status(500).json({error:'Не удалось найти профиль пользователя'});
+  if(!target)return res.status(404).json({error:'Пользователь не найден'});
+  const {data:existing,error:lookupError}=await supabase.from('profile_links')
+    .select('id,status').eq('user_id',userId).ilike('url',value.url).in('status',['pending','approved']).maybeSingle();
+  if(lookupError)return res.status(500).json({error:'Не удалось проверить существующие ссылки'});
+  if(existing?.status==='approved')return res.status(409).json({error:'Эта ссылка уже опубликована в профиле'});
+  const moderatedAt=new Date().toISOString();
+  let result;
+  if(existing?.status==='pending'){
+    result=await supabase.from('profile_links').update({
+      platform:value.platform,status:'approved',moderated_by:req.user.id,moderated_at:moderatedAt
+    }).eq('id',existing.id).select('id,user_id,url,platform,status,created_at,moderated_at').single();
+  }else{
+    result=await supabase.from('profile_links').insert({
+      user_id:userId,url:value.url,platform:value.platform,status:'approved',
+      moderated_by:req.user.id,moderated_at:moderatedAt
+    }).select('id,user_id,url,platform,status,created_at,moderated_at').single();
+  }
+  if(result.error)return res.status(400).json({error:'Не удалось добавить ссылку в профиль'});
+  await supabase.from('audit_logs').insert({
+    actor_id:req.user.id,actor_name:req.user.full_name,action:'ADMIN_PROFILE_LINK_ADDED',
+    entity_type:'profile_link',entity_id:result.data.id,details:{user_id:userId,platform:value.platform}
+  });
+  await createNotification(userId,'Ссылка добавлена в профиль','Главный администратор добавил и опубликовал ссылку в вашем профиле.','profile_link_result');
+  res.status(existing?200:201).json({link:result.data});
+}));
 app.post('/api/admin/users/:id/balance-adjustments', requireUser, requireRootAdmin, asyncRoute(async(req,res)=>{
   const amount=Number(req.body.amount),note=String(req.body.note||'').trim().slice(0,240)||'Корректировка баланса администратором';
   if(!Number.isFinite(amount)||amount===0||Math.abs(amount)>100000000)return res.status(400).json({error:'Укажите сумму изменения баланса'});
