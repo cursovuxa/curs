@@ -1467,3 +1467,17 @@ body[data-theme="halloween"] .hero{
   50%{transform:translate3d(0,-8px,0) rotate(-3deg)}
 }
 @media(prefers-reduced-motion:reduce){.halloween-pumpkin{will-change:auto}}
+
+/* Shared heading rhythm for calendar, map and event list */
+.compact-head h3,
+.calendar-collapse-copy strong,
+.discovery-collapse-copy strong{
+  margin:0;
+  font:750 clamp(22px,3vw,30px)/1.15 "DM Sans",sans-serif;
+  letter-spacing:-.045em;
+}
+@media(max-width:700px){
+  .compact-head h3,
+  .calendar-collapse-copy strong,
+  .discovery-collapse-copy strong{font-size:22px}
+}
