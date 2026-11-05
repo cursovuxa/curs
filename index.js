@@ -338,11 +338,11 @@ function renderAccountMenu(){
   putAvatar($('#profileAvatar'),user.avatar_url,displayName);
   putAvatar($('#profileMenuAvatar'),user.avatar_url,displayName);
 }
-function authOpen(mode='login') { $('#authModal').hidden=false; setAuthMode(mode); }
+function authOpen(mode='login') { $('#authModal').hidden=false; setAuthMode(mode); requestAnimationFrame(()=>void setupGoogleButton().catch(error=>{console.error('Google button unavailable:',error);$('#authError').textContent='Вход через Google временно недоступен.'})); }
 function authClose() { $('#authModal').hidden=true; }
 function setAuthMode(mode) {
   const register=mode==='register';
-  $('[data-auth]').forEach((tab)=>tab.classList.toggle('active',tab.dataset.auth===mode));
+  $('[data-auth]').forEach((tab)=>{const selected=tab.dataset.auth===mode;tab.classList.toggle('active',selected);tab.setAttribute('aria-pressed',String(selected))});
   $('#nameWrap').hidden=!register;
   $('#name').required=register;
   $('#password').autocomplete=register?'new-password':'current-password';
@@ -2125,7 +2125,7 @@ async function setupGoogleButton(){
   google.accounts.id.renderButton(container,{
     type:'standard',theme:'outline',size:'large',text:'continue_with',
     shape:'pill',logo_alignment:'left',locale:'ru',
-    width:Math.min(container.clientWidth||360,400)
+    width:Math.min(Math.floor(container.getBoundingClientRect().width),400)
   });
   })();
   try{await googleButtonSetupPromise}
@@ -2490,7 +2490,7 @@ async function init(){
         const list=$('#supportMessages');if(list){list.replaceChildren();delete list.dataset.conversationId}
       }
     });
-    void setupGoogleButton().catch(error=>{console.error('Google button unavailable:',error);$('#authError').textContent='Вход через Google временно недоступен.'});
+    
     const {data:{session}}=await supabaseAuth.auth.getSession();
     if(session?.access_token)sessionStorage.setItem(tokenKey,session.access_token);
   } catch(error) {
