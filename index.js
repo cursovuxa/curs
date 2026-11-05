@@ -13,9 +13,12 @@ document.addEventListener("error",(event)=>{if(event.target.matches?.("img.brand
 new MutationObserver(syncBrandWordmarks).observe(document.body,{attributes:true,attributeFilter:["data-theme"]});
 syncBrandWordmarks();
 const API_BASE = 'https://cursa-guk5.onrender.com';
-const SUPABASE_URL = 'https://rpsvuygarxlnqpxtwuzq.supabase.co';
-const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hIAivAUZ0fCx9KlHsj4YVg_kc2TkPzB';
+let SUPABASE_URL = '';
+let SUPABASE_PUBLISHABLE_KEY = '';
 let supabaseAuth = null;
+let supportChannel = null;
+let supportConversationId = null;
+const supportRenderedMessageIds = new Set();
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const tokenKey = 'flowtix_access_token';
@@ -32,7 +35,6 @@ if (ACCOUNT_ROUTE) {
   document.body.classList.add('account-page');
   $('.hero').hidden = true;
   $('#events').hidden = true;
-  $('.footer').hidden = true;
   $('#workspace').hidden = false;
 }
 let user = null;
@@ -2070,9 +2072,104 @@ function setupFlowScrollbars(){
  document.addEventListener('scroll',event=>{if(event.target&&event.target.nodeType===1)showFor(event.target)},{capture:true,passive:true});
  window.addEventListener('resize',()=>{for(const axis of ['y','x'])if(bars[axis].classList.contains('is-visible'))paint(axis,true)},{passive:true});
 }
+
+function supportFormatTime(value){
+  try{return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date(value))}catch{return ''}
+}
+function supportAppendMessage(message){
+  const list=$('#supportMessages');
+  if(!list||!message?.id||supportRenderedMessageIds.has(message.id))return;
+  supportRenderedMessageIds.add(message.id);
+  const item=document.createElement('article');
+  item.className='support-message '+(message.sender_type==='user'?'is-mine':'is-support');
+  const body=document.createElement('p');body.textContent=message.body||'';
+  const time=document.createElement('time');time.dateTime=message.created_at||'';time.textContent=supportFormatTime(message.created_at);
+  item.append(body,time);list.append(item);list.scrollTop=list.scrollHeight;
+}
+function supportSetStatus(label,live=false){
+  const status=$('#supportConnection');
+  if(!status)return;
+  status.classList.toggle('is-live',live);
+  const copy=status.querySelector('[data-support-connection-label]');
+  if(copy)copy.textContent=label;
+}
+async function startSupportRealtime(conversationId){
+  if(!supabaseAuth||!signedIn()||!conversationId)return;
+  if(supportChannel&&supportConversationId===conversationId)return;
+  if(supportChannel){try{await supabaseAuth.removeChannel(supportChannel)}catch{}supportChannel=null}
+  supportConversationId=conversationId;
+  supportChannel=supabaseAuth.channel('flowtix-support-'+conversationId)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'support_messages',filter:'conversation_id=eq.'+conversationId},payload=>{
+      if(payload.new?.conversation_id!==supportConversationId)return;
+      supportAppendMessage(payload.new);
+    })
+    .subscribe(status=>supportSetStatus(status==='SUBSCRIBED'?'На связи':'Подключаемся…',status==='SUBSCRIBED'));
+}
+async function openSupportChat(){
+  if(!signedIn()){toast('Войди в аккаунт, чтобы написать в поддержку');authOpen('login');return}
+  const overlay=$('#supportOverlay'),list=$('#supportMessages');
+  if(!overlay||!list)return;
+  overlay.hidden=false;document.body.classList.add('support-chat-open');
+  supportSetStatus('Загружаем переписку');
+  list.replaceChildren();supportRenderedMessageIds.clear();
+  try{
+    const result=await api('/api/support/conversation');
+    supportConversationId=result.conversation.id;
+    (result.messages||[]).forEach(supportAppendMessage);
+    if(!(result.messages||[]).length){
+      const welcome=document.createElement('div');welcome.className='support-welcome';
+      welcome.innerHTML='<span class="support-welcome-icon" aria-hidden="true">✦</span><strong>Мы на связи</strong><p>Напиши, чем помочь. Ответ появится здесь же.</p>';
+      list.append(welcome);
+    }
+    await startSupportRealtime(supportConversationId);
+    $('#supportInput')?.focus();
+  }catch(error){
+    supportSetStatus('Не удалось подключиться');
+    list.innerHTML='<div class="support-error">Не удалось загрузить чат. '+esc(error.message||'Попробуй ещё раз.')+'</div>';
+  }
+}
+async function closeSupportChat(){
+  const overlay=$('#supportOverlay');if(overlay)overlay.hidden=true;
+  document.body.classList.remove('support-chat-open');
+  if(supportChannel&&supabaseAuth){try{await supabaseAuth.removeChannel(supportChannel)}catch{}supportChannel=null}
+  supportConversationId=null;supportSetStatus('Не в чате');
+}
+async function submitSupportMessage(form){
+  const input=$('#supportInput'),button=form.querySelector('[type="submit"]');
+  const body=String(input?.value||'').trim();
+  if(!body)return;
+  setBusy(button,true,'Отправляем…');
+  try{
+    const result=await api('/api/support/conversation/messages',{method:'POST',body:JSON.stringify({body})});
+    supportAppendMessage(result.message);input.value='';input.style.height='';$('#supportCharCount').textContent='0 / 2000';
+    await startSupportRealtime(result.message.conversation_id);
+  }catch(error){toast(error.message||'Не удалось отправить сообщение')}
+  finally{setBusy(button,false)}
+}
+document.addEventListener('click',event=>{
+  const element=event.target instanceof Element?event.target:null;if(!element)return;
+  if(element.closest('[data-support-open]')){event.preventDefault();void openSupportChat();return}
+  if(element.closest('[data-support-close]')||element.id==='supportOverlay'){void closeSupportChat()}
+});
+document.addEventListener('submit',event=>{
+  if(event.target?.id!=='supportForm')return;
+  event.preventDefault();void submitSupportMessage(event.target);
+});
+document.addEventListener('input',event=>{
+  if(event.target?.id!=='supportInput')return;
+  const input=event.target;input.style.height='auto';input.style.height=Math.min(input.scrollHeight,150)+'px';
+  const counter=$('#supportCharCount');if(counter)counter.textContent=input.value.length+' / 2000';
+});
+
 async function init(){
   if(!ACCOUNT_ROUTE){renderCalendar([]);renderMap([])}
   try {
+    const configResponse=await fetch(API_BASE+'/api/public-config',{headers:{Accept:'application/json'}});
+    if(!configResponse.ok)throw new Error('Не удалось загрузить настройки подключения');
+    const publicConfig=await configResponse.json();
+    SUPABASE_URL=String(publicConfig.supabaseUrl||'');
+    SUPABASE_PUBLISHABLE_KEY=String(publicConfig.supabasePublishableKey||'');
+    if(!SUPABASE_URL||!SUPABASE_PUBLISHABLE_KEY)throw new Error('Публичная конфигурация Supabase не настроена');
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');
     supabaseAuth=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',detectSessionInUrl:true}});
     supabaseAuth.auth.onAuthStateChange((event,session)=>{
