@@ -1103,3 +1103,13 @@ body[data-theme="halloween"] .complaint-review-card{box-shadow:0 10px 28px #1c11
 .map-selected-event span,.map-selected-event small{color:var(--muted);font-size:11px;line-height:1.45}
 .map-selected-event .map-selected-distance{flex:none;color:var(--violet);font-weight:700}
 @media(max-width:600px){.map-event-picker-toggle{min-height:64px;padding:12px}.map-event-picker-copy b{font-size:13px}.map-selected-event{align-items:flex-start;flex-direction:column}.map-selected-event .map-selected-distance{flex:none}.map-frame{min-height:300px}}
+
+/* Calendar visibility and custom map picker states */
+.calendar-day.outside-month{color:var(--muted);opacity:.58}
+.calendar-day.outside-month.has-events{opacity:.82}
+.calendar-day:focus-visible,.calendar-view-switch button:focus-visible,.map-event-picker-toggle:focus-visible,.map-event-picker-menu>button:focus-visible{outline:3px solid color-mix(in srgb,var(--violet) 46%,transparent);outline-offset:2px}
+.map-event-picker-toggle:disabled{cursor:default;opacity:1}
+.map-event-picker-toggle:disabled>svg{opacity:.45}
+.map-event-picker-empty{margin:0;padding:14px;color:var(--muted);font-size:12px;line-height:1.5}
+.map-selection-layout{position:relative;overflow:visible}
+.map-event-picker{z-index:20}
