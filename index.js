@@ -2102,6 +2102,7 @@ function supportAppendMessage(message){
   const list=$('#supportMessages');
   if(!list||!message?.id||supportRenderedMessageIds.has(message.id))return;
   list.querySelector('.support-welcome')?.remove();
+  $('.support-dialog')?.classList.remove('is-empty');
   supportRenderedMessageIds.add(message.id);
   const item=document.createElement('article');
   item.className='support-message '+(message.sender_type==='user'?'is-mine':'is-support');
@@ -2164,6 +2165,7 @@ async function openSupportChat(){
   const overlay=$('#supportOverlay'),list=$('#supportMessages');
   if(!overlay||!list)return;
   overlay.hidden=false;document.body.classList.add('support-chat-open');
+  $('.support-dialog')?.classList.add('is-empty');
   supportSetStatus('Загружаем переписку');
   supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();
   try{
