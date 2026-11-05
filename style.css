@@ -1481,3 +1481,14 @@ body[data-theme="halloween"] .hero{
   .calendar-collapse-copy strong,
   .discovery-collapse-copy strong{font-size:22px}
 }
+
+/* One event catalogue with category filters and a selectable discovery mode */
+.event-mode-wrap{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin:-5px 0 24px}
+.event-mode-label{flex:0 0 auto;color:var(--muted);font-size:11px;font-weight:800}
+.event-mode-bar{display:flex;align-items:center;gap:7px;max-width:100%;overflow:auto;padding:2px 1px 5px;scrollbar-width:none}
+.event-mode-bar::-webkit-scrollbar{display:none}
+.event-mode{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);padding:9px 13px;font-size:11px;font-weight:750;white-space:nowrap;cursor:pointer;transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease}
+.event-mode:hover{border-color:var(--violet);transform:translateY(-1px)}
+.event-mode.active,.event-mode[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--ink)}
+.event-mode-hint{flex:1 1 100%;min-height:14px;color:var(--muted);font-size:10px;padding-left:1px}
+@media(max-width:700px){.event-mode-wrap{gap:7px;margin:-7px 0 20px}.event-mode-bar{width:100%;gap:6px}.event-mode{padding:8px 11px;font-size:10px}.event-mode-hint{padding-left:0}}
