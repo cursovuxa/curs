@@ -700,7 +700,7 @@ function renderSeatPicker(){
   const basePrice=Number(event.current_price??event.base_price??0);
   const selectedMultiplier=selected?Number(selected.price_multiplier||1):null;
   const selectedPrice=selected?Math.round((basePrice*selectedMultiplier+Number.EPSILON)*100)/100:null;
-  const statusText=selected?(expiry?'Место удерживается за вами 10 минут.':'Место выбрано.'):'Выбери свободное место на схеме зала.';
+  const statusText=selected?(expiry?'Место забронировано за вами.':'Место выбрано.'):'Выбери свободное место на схеме зала.';
   root.className='dialog event-dialog seat-map-dialog';
   root.innerHTML='<div class="seat-picker-head"><div><p class="eyebrow dark-eyebrow">ВЫБОР МЕСТА</p><h2>'+esc(event.title||'Мероприятие')+'</h2><p>'+esc([event.start_date,event.start_time,event.venues?.name,event.venues?.city].filter(Boolean).join(' · '))+'</p></div><button class="dialog-close" data-close="eventModal" aria-label="Закрыть">×</button></div><div class="seat-picker-content"><div class="seat-picker-summary"><div><span class="seat-summary-dot available"></span>Свободно</div><div><span class="seat-summary-dot reserved"></span>На удержании</div><div><span class="seat-summary-dot occupied"></span>Занято</div></div><div class="seat-map-scroll"><div class="seat-stage">СЦЕНА</div><div class="seat-type-legend">'+['standard','vip','business','free','accessible'].filter(type=>seats.some(seat=>seat.seat_type===type)).map(type=>'<span><i class="seat-type-swatch seat-type-'+type+'"></i>'+seatTypeLabels[type]+'</span>').join('')+'</div><div class="seat-rows">'+(rows||'<p class="seat-empty">Схема этого зала пока не настроена.</p>')+'</div></div><div class="seat-picker-footer"><div class="seat-selection-copy"><b>'+(selected?esc(selected.row_label+selected.seat_number)+' · '+esc(seatTypeLabels[selected.seat_type]||'Место'):'Место не выбрано')+'</b><strong class="seat-price-total">'+(selected?(selectedPrice>0?money(selectedPrice):'Бесплатно'):'Базовая цена: '+(basePrice>0?money(basePrice):'Бесплатно'))+(selected&&selectedMultiplier!==1?' · × '+esc(String(selectedMultiplier).replace('.',',')):'')+'</strong><span id="seatHoldStatus">'+esc(statusText)+'</span><span id="seatHoldCountdown" aria-live="polite"></span></div><div class="seat-picker-actions">'+(heldSeat?'<button class="button button-light" type="button" data-release-seat="'+esc(heldSeat.id)+'">Отменить бронь</button>':'')+'<button class="button button-accent" data-confirm-seat '+(selected?'':'disabled')+'>'+(isHeld?'Купить билет':heldSeat?'Заменить бронь':'Забронировать')+'</button></div></div></div>';
   clearInterval(seatPickerCountdownTimer);
@@ -741,9 +741,10 @@ async function register(id) {
     const queue=await api('/api/events/'+encodeURIComponent(id)+'/queue');
     if(queue.joined){if(queue.status==='ready')return resumeQueueRegistration(id);renderQueueView(id,queue);setEventModalOpen(true);void subscribeToEventQueue(id);return}
     const state=await api('/api/events/'+encodeURIComponent(id)+'/seats');
-    if(Number(state.event?.available_seats||0)<=0)return joinEventQueue(id);
     if(!state.seatSelectionRequired)return chooseRegistrationPayment(id);
-    seatPickerState=state;
+    const ownReservation=(state.seats||[]).find(seat=>seat.status==='mine');
+    if(Number(state.event?.available_seats||0)<=0&&!ownReservation)return joinEventQueue(id);
+    seatPickerState=state;selectedSeatId=ownReservation?.id||null;
     $('#eventDialog').scrollTop=0;
     renderSeatPicker();setEventModalOpen(true);
     clearInterval(seatPickerPollTimer);
