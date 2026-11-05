@@ -723,8 +723,14 @@ app.post('/api/uploads/event-cover', requireUser, allowRoles('organizer','admin'
 app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRoute(async (req, res) => {
   const { title, description, category_id, venue_id, hall_id, start_date, start_time, end_time, age_limit, total_seats, base_price, cover_image, location_address, rules, contact_email, contact_phone } = req.body;
   const rawProgram = Array.isArray(req.body.program) ? req.body.program : [];
-  if (!title || !start_date || !start_time || !end_time || !Number.isInteger(Number(total_seats)) || Number(total_seats) < 1) {
-    return res.status(400).json({ error: 'Заполните название, даты, время и вместимость' });
+  const missingEventFields = [];
+  if (!String(title || '').trim()) missingEventFields.push('Название мероприятия');
+  if (!String(start_date || '').trim()) missingEventFields.push('Дата проведения');
+  if (!String(start_time || '').trim()) missingEventFields.push('Время начала мероприятия');
+  if (!String(end_time || '').trim()) missingEventFields.push('Время окончания мероприятия');
+  if (!Number.isInteger(Number(total_seats)) || Number(total_seats) < 1) missingEventFields.push('Вместимость мероприятия');
+  if (missingEventFields.length) {
+    return res.status(400).json({ error: 'Заполните обязательные поля: ' + missingEventFields.join(', ') + '.' });
   }
   if (rawProgram.length > 100) return res.status(400).json({ error: 'В программу можно добавить не более 100 пунктов' });
   const program = rawProgram.map((item) => ({
@@ -742,18 +748,39 @@ app.post('/api/events', requireUser, allowRoles('organizer', 'admin'), asyncRout
   }));
   const completeProgram = program.filter((item) => item.title || item.start_time || item.end_time);
   const programKeys = new Set();
+  const sectionNumbers = new Map();
+  const childNumbers = new Map();
+  let sectionNumber = 0;
+  let rootElementNumber = 0;
   for (const item of completeProgram) {
     if (!item.client_key || programKeys.has(item.client_key)) return res.status(400).json({ error: 'В программе обнаружены повторяющиеся или пустые ключи элементов' });
     programKeys.add(item.client_key);
-    if (!item.title || !/^\d{2}:\d{2}$/.test(item.start_time) || !/^\d{2}:\d{2}$/.test(item.end_time) ||
-        !Number.isInteger(item.duration_minutes) || item.duration_minutes < 1 || item.duration_minutes > 1440 ||
-        !Number.isInteger(item.max_attendees) || item.max_attendees < 1) {
-      return res.status(400).json({ error: 'Каждому пункту нужны название, время, длительность и положительный лимит участников' });
+    let contextLabel;
+    if (item.item_type === 'section') {
+      sectionNumber += 1;
+      sectionNumbers.set(item.client_key, sectionNumber);
+      childNumbers.set(item.client_key, 0);
+      contextLabel = 'Секция №' + sectionNumber;
+    } else if (item.parent_key) {
+      const parentNumber = sectionNumbers.get(item.parent_key) || 1;
+      const nextChild = (childNumbers.get(item.parent_key) || 0) + 1;
+      childNumbers.set(item.parent_key, nextChild);
+      contextLabel = 'Элемент №' + nextChild + ' в секции №' + parentNumber;
+    } else {
+      rootElementNumber += 1;
+      contextLabel = 'Элемент №' + rootElementNumber;
     }
+    const missing = [];
+    if (!item.title) missing.push('Название');
+    if (!/^\d{2}:\d{2}$/.test(item.start_time)) missing.push('Время начала');
+    if (!Number.isInteger(item.duration_minutes) || item.duration_minutes < 1 || item.duration_minutes > 1440) missing.push('Длительность, минут');
+    if (!Number.isInteger(item.max_attendees) || item.max_attendees < 1) missing.push('Максимум участников');
+    if (!/^\d{2}:\d{2}$/.test(item.end_time)) missing.push('Время окончания');
+    if (missing.length) return res.status(400).json({ error: contextLabel + ' — заполните: ' + missing.join(', ') + '.' });
     const startMinutes = Number(item.start_time.slice(0, 2)) * 60 + Number(item.start_time.slice(3, 5));
     const endMinutes = (startMinutes + item.duration_minutes) % 1440;
     const expectedEnd = String(Math.floor(endMinutes / 60)).padStart(2, '0') + ':' + String(endMinutes % 60).padStart(2, '0');
-    if (expectedEnd !== item.end_time) return res.status(400).json({ error: 'Время окончания должно соответствовать длительности пункта' });
+    if (expectedEnd !== item.end_time) return res.status(400).json({ error: contextLabel + ' — время окончания не соответствует длительности.' });
   }
   let eventAddress = String(location_address || '').trim().slice(0, 500);
   if (venue_id) {
