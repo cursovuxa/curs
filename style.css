@@ -1428,3 +1428,21 @@ body[data-theme="halloween"] .brand-wordmark-halloween{
   filter:brightness(1.18) saturate(1.06) drop-shadow(0 1px 2px rgba(174,137,255,.18));
  }
 }
+
+/* Keep search fields transparent over the dark hero in dark seasonal themes */
+body[data-theme="dark"] .search-bar input,
+body[data-theme="halloween"] .search-bar input{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  color:#fff7ef!important;
+  caret-color:var(--coral);
+  -webkit-appearance:none;
+  appearance:none;
+}
+body[data-theme="dark"] .search-bar input::placeholder{color:#aaa9b9;opacity:1}
+body[data-theme="halloween"] .search-bar input::placeholder{color:#c7b3a3;opacity:1}
+body[data-theme="dark"] .search-field,
+body[data-theme="dark"] .search-city{color:#c1bfd0}
+body[data-theme="halloween"] .search-field,
+body[data-theme="halloween"] .search-city{color:#d9c3ae}
