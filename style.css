@@ -1498,5 +1498,5 @@ body[data-theme="halloween"] .hero{
 .calendar-collapse-copy strong,
 .discovery-collapse-copy strong{
   font:750 clamp(22px,3vw,30px)/1.15 "DM Sans",sans-serif;
-  letter-spacing:-.045em;
+  letter-spacing:.01em;
 }
