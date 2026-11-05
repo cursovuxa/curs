@@ -1632,3 +1632,5 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
  .support-connection{padding-inline:16px}
  .support-message{max-width:88%}
 }
+
+.support-history-hint{align-self:center;flex:0 0 auto;max-width:92%;margin:0 auto 4px;padding:6px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:10px;line-height:1.35;text-align:center}
