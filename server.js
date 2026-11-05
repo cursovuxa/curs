@@ -80,6 +80,97 @@ app.get('/api/health', async (_req, res) => {
 });
 
 
+app.get('/api/events', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Database is not configured' });
+  const term = String(req.query.q || '').trim().slice(0, 100).replace(/[,*()\\"']/g, '');
+  const city = String(req.query.city || '').trim().slice(0, 100);
+  const categoryId=String(req.query.categoryId||'').trim();
+  const from=String(req.query.from||'').match(/^\d{4}-\d{2}-\d{2}$/)?.[0]||'';
+  const to=String(req.query.to||'').match(/^\d{4}-\d{2}-\d{2}$/)?.[0]||'';
+  let venueIds=null;
+  if(city){const {data:venues,error:venueError}=await supabase.from('venues').select('id').ilike('city','%'+city.replace(/[,*()\\"']/g,'')+'%');if(venueError)return res.status(500).json({error:'Не удалось отфильтровать мероприятия по городу'});venueIds=(venues||[]).map(v=>v.id);if(!venueIds.length)return res.json({events:[]})}
+  let query = supabase.from('events')
+    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,rules,contact_email,contact_phone,dynamic_pricing_enabled,popularity_score,venue_id,category_id,organizer_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*),users!events_organizer_id_fkey(id,full_name,username,avatar_url,avatar_path,role,city,preferences)')
+    .eq('status', 'published').order('start_date', { ascending: true });
+  if (term) query = query.or('title.ilike.%'+term+'%,description.ilike.%'+term+'%,location_address.ilike.%'+term+'%');
+  if (venueIds) query = query.in('venue_id',venueIds);
+  if (/^[0-9a-f-]{36}$/i.test(categoryId)) query=query.eq('category_id',categoryId);
+  if (from) query=query.gte('start_date',from);
+  if (to) query=query.lte('start_date',to);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
+  let visibleEvents=data||[];
+  const token=req.get('authorization')?.replace(/^Bearer\\s+/i,'');
+  if(token){const auth=await supabase.auth.getUser(token);const viewer=auth.data?.user?.id;if(viewer){const organizerIds=[...new Set(visibleEvents.map(x=>x.organizer_id).filter(Boolean))];if(organizerIds.length){const blocks=await supabase.from('user_blocks').select('blocked_id').eq('blocker_id',viewer).in('blocked_id',organizerIds);const hidden=new Set((blocks.data||[]).map(x=>x.blocked_id));visibleEvents=visibleEvents.filter(x=>!hidden.has(x.organizer_id))}}}
+  visibleEvents=await Promise.all(visibleEvents.map(async e=>{e.users=await signedUserAvatar(e.users);return e}));
+  res.json({ events: visibleEvents });
+});
+
+app.get('/api/events/:id', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Database is not configured' });
+  const { data, error } = await supabase.from('events')
+    .select('*,event_categories(name),venues(*),halls(*),event_program(*),users!events_organizer_id_fkey(id,full_name,username,avatar_url,avatar_path,role,city,preferences)')
+    .eq('id', req.params.id).eq('status', 'published').maybeSingle();
+  if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятие' });
+  if (!data) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  data.users=await signedUserAvatar(data.users);
+  const token=req.get('authorization')?.replace(/^Bearer\\s+/i,'');if(token&&data.organizer_id){const auth=await supabase.auth.getUser(token);const viewer=auth.data?.user?.id;if(viewer&&viewer!==data.organizer_id){const block=await supabase.from('user_blocks').select('blocked_id').eq('blocker_id',viewer).eq('blocked_id',data.organizer_id).maybeSingle();if(block.data)return res.status(404).json({error:'Мероприятие не найдено'})}}
+  res.json({ event: data });
+});
+
+const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+const requireUser = asyncRoute(async (req, res, next) => {
+  const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+  if (!token || !supabase) return res.status(401).json({ error: 'Требуется вход в аккаунт' });
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData.user) return res.status(401).json({ error: 'Сессия недействительна' });
+  const isRootAdmin = isRootEmail(authData.user.email);
+  const appMetadata = authData.user.app_metadata || {};
+  const claimRole = validRoles.has(appMetadata.flowtix_role) ? appMetadata.flowtix_role : 'visitor';
+  const claimBlocked = appMetadata.flowtix_blocked === true;
+  let { data: profile, error } = await supabase.from('users').select('*').eq('id', authData.user.id).maybeSingle();
+  if (error) return res.status(500).json({ error: 'Не удалось проверить профиль' });
+  if (!profile) {
+    const created = await supabase.from('users').insert({
+      id: authData.user.id, email: authData.user.email,
+      full_name: authData.user.user_metadata?.full_name || '',
+      username: (String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user') + '_' + authData.user.id.slice(0, 8),
+      role: 'visitor'
+    }).select('*').single();
+    profile = created.data;
+    error = created.error;
+    if (!error && profile) {
+      const claim = await supabase.auth.admin.updateUserById(authData.user.id, {
+        app_metadata: { ...appMetadata, flowtix_role: isRootAdmin ? 'admin' : claimRole, flowtix_blocked: false }
+      });
+      if (claim.error) return res.status(500).json({ error: 'Не удалось создать защищённые права аккаунта' });
+    }
+  }
+  if (error || !profile) return res.status(500).json({ error: 'Не удалось создать профиль' });
+  const profileBlocked = !isRootAdmin && profile.is_blocked === true;
+  if (!profile.username) {
+    const base = String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user';
+    const { data: namedProfile, error: usernameError } = await supabase.from('users')
+      .update({ username: base + '_' + authData.user.id.slice(0, 8) }).eq('id', profile.id).select('*').single();
+    if (!usernameError && namedProfile) profile = namedProfile;
+  }
+  profile = { ...profile, role: isRootAdmin ? 'admin' : claimRole, is_blocked: profileBlocked, is_root_admin: isRootAdmin };
+  if (profileBlocked && !(req.method === 'GET' && req.path === '/api/me')) {
+    return res.status(403).json({ code: 'ACCOUNT_BLOCKED', error: 'Аккаунт заблокирован' });
+  }
+  req.user = profile;
+  next();
+});
+const allowRoles = (...roles) => (req, res, next) => {
+  const allowed = roles.some((role) => role === 'admin'
+    ? req.user.is_root_admin === true
+    : req.user.role === role);
+  return allowed ? next() : res.status(403).json({ error: 'Недостаточно прав' });
+};
+const requireRootAdmin = (req, res, next) => req.user.is_root_admin === true
+  ? next()
+  : res.status(403).json({ error: 'Доступ только главному администратору' });
+
 app.get('/api/public-config', (_req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=300');
   res.json({ supabaseUrl: supabaseUrl || '', supabasePublishableKey });
@@ -204,97 +295,7 @@ app.post('/api/support/conversation/messages', requireUser, asyncRoute(async (re
   res.status(201).json({ message });
 }));
 
-\napp.get('/api/events', async (req, res) => {
-  if (!supabase) return res.status(503).json({ error: 'Database is not configured' });
-  const term = String(req.query.q || '').trim().slice(0, 100).replace(/[,*()\\"']/g, '');
-  const city = String(req.query.city || '').trim().slice(0, 100);
-  const categoryId=String(req.query.categoryId||'').trim();
-  const from=String(req.query.from||'').match(/^\d{4}-\d{2}-\d{2}$/)?.[0]||'';
-  const to=String(req.query.to||'').match(/^\d{4}-\d{2}-\d{2}$/)?.[0]||'';
-  let venueIds=null;
-  if(city){const {data:venues,error:venueError}=await supabase.from('venues').select('id').ilike('city','%'+city.replace(/[,*()\\"']/g,'')+'%');if(venueError)return res.status(500).json({error:'Не удалось отфильтровать мероприятия по городу'});venueIds=(venues||[]).map(v=>v.id);if(!venueIds.length)return res.json({events:[]})}
-  let query = supabase.from('events')
-    .select('id,title,description,cover_image,location_address,start_date,start_time,end_time,created_at,base_price,current_price,total_seats,available_seats,status,age_limit,rules,contact_email,contact_phone,dynamic_pricing_enabled,popularity_score,venue_id,category_id,organizer_id,event_categories(name),venues(name,address,city,latitude,longitude),event_program(*),users!events_organizer_id_fkey(id,full_name,username,avatar_url,avatar_path,role,city,preferences)')
-    .eq('status', 'published').order('start_date', { ascending: true });
-  if (term) query = query.or('title.ilike.%'+term+'%,description.ilike.%'+term+'%,location_address.ilike.%'+term+'%');
-  if (venueIds) query = query.in('venue_id',venueIds);
-  if (/^[0-9a-f-]{36}$/i.test(categoryId)) query=query.eq('category_id',categoryId);
-  if (from) query=query.gte('start_date',from);
-  if (to) query=query.lte('start_date',to);
-  const { data, error } = await query;
-  if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятия' });
-  let visibleEvents=data||[];
-  const token=req.get('authorization')?.replace(/^Bearer\\s+/i,'');
-  if(token){const auth=await supabase.auth.getUser(token);const viewer=auth.data?.user?.id;if(viewer){const organizerIds=[...new Set(visibleEvents.map(x=>x.organizer_id).filter(Boolean))];if(organizerIds.length){const blocks=await supabase.from('user_blocks').select('blocked_id').eq('blocker_id',viewer).in('blocked_id',organizerIds);const hidden=new Set((blocks.data||[]).map(x=>x.blocked_id));visibleEvents=visibleEvents.filter(x=>!hidden.has(x.organizer_id))}}}
-  visibleEvents=await Promise.all(visibleEvents.map(async e=>{e.users=await signedUserAvatar(e.users);return e}));
-  res.json({ events: visibleEvents });
-});
-
-app.get('/api/events/:id', async (req, res) => {
-  if (!supabase) return res.status(503).json({ error: 'Database is not configured' });
-  const { data, error } = await supabase.from('events')
-    .select('*,event_categories(name),venues(*),halls(*),event_program(*),users!events_organizer_id_fkey(id,full_name,username,avatar_url,avatar_path,role,city,preferences)')
-    .eq('id', req.params.id).eq('status', 'published').maybeSingle();
-  if (error) return res.status(500).json({ error: 'Не удалось загрузить мероприятие' });
-  if (!data) return res.status(404).json({ error: 'Мероприятие не найдено' });
-  data.users=await signedUserAvatar(data.users);
-  const token=req.get('authorization')?.replace(/^Bearer\\s+/i,'');if(token&&data.organizer_id){const auth=await supabase.auth.getUser(token);const viewer=auth.data?.user?.id;if(viewer&&viewer!==data.organizer_id){const block=await supabase.from('user_blocks').select('blocked_id').eq('blocker_id',viewer).eq('blocked_id',data.organizer_id).maybeSingle();if(block.data)return res.status(404).json({error:'Мероприятие не найдено'})}}
-  res.json({ event: data });
-});
-
-const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
-const requireUser = asyncRoute(async (req, res, next) => {
-  const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
-  if (!token || !supabase) return res.status(401).json({ error: 'Требуется вход в аккаунт' });
-  const { data: authData, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !authData.user) return res.status(401).json({ error: 'Сессия недействительна' });
-  const isRootAdmin = isRootEmail(authData.user.email);
-  const appMetadata = authData.user.app_metadata || {};
-  const claimRole = validRoles.has(appMetadata.flowtix_role) ? appMetadata.flowtix_role : 'visitor';
-  const claimBlocked = appMetadata.flowtix_blocked === true;
-  let { data: profile, error } = await supabase.from('users').select('*').eq('id', authData.user.id).maybeSingle();
-  if (error) return res.status(500).json({ error: 'Не удалось проверить профиль' });
-  if (!profile) {
-    const created = await supabase.from('users').insert({
-      id: authData.user.id, email: authData.user.email,
-      full_name: authData.user.user_metadata?.full_name || '',
-      username: (String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user') + '_' + authData.user.id.slice(0, 8),
-      role: 'visitor'
-    }).select('*').single();
-    profile = created.data;
-    error = created.error;
-    if (!error && profile) {
-      const claim = await supabase.auth.admin.updateUserById(authData.user.id, {
-        app_metadata: { ...appMetadata, flowtix_role: isRootAdmin ? 'admin' : claimRole, flowtix_blocked: false }
-      });
-      if (claim.error) return res.status(500).json({ error: 'Не удалось создать защищённые права аккаунта' });
-    }
-  }
-  if (error || !profile) return res.status(500).json({ error: 'Не удалось создать профиль' });
-  const profileBlocked = !isRootAdmin && profile.is_blocked === true;
-  if (!profile.username) {
-    const base = String(authData.user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user';
-    const { data: namedProfile, error: usernameError } = await supabase.from('users')
-      .update({ username: base + '_' + authData.user.id.slice(0, 8) }).eq('id', profile.id).select('*').single();
-    if (!usernameError && namedProfile) profile = namedProfile;
-  }
-  profile = { ...profile, role: isRootAdmin ? 'admin' : claimRole, is_blocked: profileBlocked, is_root_admin: isRootAdmin };
-  if (profileBlocked && !(req.method === 'GET' && req.path === '/api/me')) {
-    return res.status(403).json({ code: 'ACCOUNT_BLOCKED', error: 'Аккаунт заблокирован' });
-  }
-  req.user = profile;
-  next();
-});
-const allowRoles = (...roles) => (req, res, next) => {
-  const allowed = roles.some((role) => role === 'admin'
-    ? req.user.is_root_admin === true
-    : req.user.role === role);
-  return allowed ? next() : res.status(403).json({ error: 'Недостаточно прав' });
-};
-const requireRootAdmin = (req, res, next) => req.user.is_root_admin === true
-  ? next()
-  : res.status(403).json({ error: 'Доступ только главному администратору' });
-
+\n
 let mapGeocoderTail=Promise.resolve(),mapGeocoderLastAt=0;
 const mapGeocoderRequests=new Map();
 async function lookupVenueCoordinates(venue){
