@@ -1582,3 +1582,10 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
  .support-compose-note{margin-right:auto}
  .support-compose-foot .button{margin-left:auto}
 }
+.support-dialog.is-empty{height:auto}
+.support-dialog.is-empty .support-messages{flex:0 1 auto;min-height:64px;max-height:130px}
+.support-dialog.is-empty .support-welcome{margin:0 auto}
+@media(max-width:700px){
+ .support-dialog.is-empty{height:auto;max-height:calc(100dvh - env(safe-area-inset-top))}
+ .support-dialog.is-empty .support-messages{min-height:54px;max-height:110px}
+}
