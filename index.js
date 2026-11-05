@@ -22,6 +22,9 @@ let supportHistoryCursor = null;
 let supportHasMore = false;
 let supportLoadingOlder = false;
 let supportHistoryRetryAt = 0;
+let supportHistoryMessages = [];
+let supportHistoryCacheUserId = null;
+let supportPageHistoryFetched = false;
 let supportSelectedFile = null;
 let supportSelectedPreviewUrl = null;
 const supportImageObjectUrls = new Set();
@@ -358,7 +361,7 @@ function eventCard(event,source='catalog') {
   return '<article class="event-card"><div class="event-image">'+(image?'<img src="'+esc(image)+'" alt="" loading="lazy">':'')+
     '<span class="event-category">'+esc(event.event_categories?.name || event.category || 'Мероприятие')+'</span><button class="fav-button '+(fav?'active':'')+'" data-favorite="'+id+'" aria-label="Избранное">'+(fav?'♥':'♡')+'</button></div>'+
     '<div class="event-info"><div class="event-date">'+esc(date || 'Дата уточняется')+'</div><h3>'+title+'</h3><div class="event-place">⌖ '+esc(place || address || 'Место уточняется')+'</div>'+(place&&address?'<div class="event-address">'+esc(address)+'</div>':'')+(event.users?.id?'<button type="button" class="event-organizer-chip" data-profile-open="'+esc(event.users.id)+'"><span class="profile-avatar">'+(event.users.avatar_url?'<img src="'+esc(event.users.avatar_url)+'" alt="">':esc((event.users.full_name||'О')[0]))+'</span><span><small>Организатор</small><b>'+esc(event.users.full_name||event.users.username||'Профиль')+'</b></span><span class="profile-chip-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg></span></button>':'')+
-    '<div class="event-foot"><span class="event-price">'+esc(money(price))+'</span><div class="event-actions"><button class="button button-light" data-details="'+id+'" data-event-source="'+esc(source)+'">Подробнее</button><button class="button button-dark" data-register="'+id+'" data-event-source="'+esc(source)+'">Участвовать</button></div></div></div></article>';
+    '<div class="event-foot"><span class="event-price-wrap"><small class="event-price-label">Стоимость билета</small><span class="event-price">'+esc(money(price))+'</span></span><div class="event-actions"><button class="button button-light" data-details="'+id+'" data-event-source="'+esc(source)+'">Подробнее</button><button class="button button-dark" data-register="'+id+'" data-event-source="'+esc(source)+'">Участвовать</button></div></div></div></article>';
 }
 function localDateKey(date) {
   return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
@@ -2102,9 +2105,48 @@ function setupFlowScrollbars(){
 function supportFormatTime(value){
   try{return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date(value))}catch{return ''}
 }
+function supportHistoryCacheKey(userId=user?.id){return userId?'flowtix-support-history:v1:'+userId:null}
+function supportReadHistoryCache(userId=user?.id){
+  const key=supportHistoryCacheKey(userId);if(!key)return null;
+  try{
+    const cached=JSON.parse(localStorage.getItem(key)||'null');
+    if(!cached||!cached.conversationId||!Array.isArray(cached.messages))return null;
+    return cached;
+  }catch{return null}
+}
+function supportPersistHistory(){
+  const key=supportHistoryCacheKey(supportHistoryCacheUserId||user?.id);
+  if(!key||!supportConversationId)return;
+  const messages=supportHistoryMessages.slice(-300);
+  try{localStorage.setItem(key,JSON.stringify({conversationId:supportConversationId,messages,nextCursor:supportHistoryCursor,hasMore:supportHasMore,updatedAt:Date.now()}))}catch(error){console.warn('Support chat history cache is full:',error)}
+}
+function supportRenderCachedHistory(messages){
+  const list=$('#supportMessages');if(!list)return;
+  supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();supportHistoryMessages=[];
+  const sorted=[...messages].filter(message=>message?.id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id)));
+  sorted.forEach(message=>supportAppendMessage(message,{fromCache:true}));
+  if(!sorted.length){
+    const welcome=document.createElement('div');welcome.className='support-welcome';
+    welcome.innerHTML='<span class="support-welcome-icon" aria-hidden="true">✦</span><strong>Мы на связи</strong><p>Напиши, чем помочь. Ответ появится здесь же.</p>';
+    list.append(welcome);$('.support-dialog')?.classList.add('is-empty');
+  }
+  if(supportHasMore&&supportHistoryCursor){
+    const hint=document.createElement('div');hint.className='support-history-hint';hint.textContent='Прокрути вверх, чтобы загрузить более ранние сообщения';
+    list.insertBefore(hint,list.firstChild);
+  }
+  list.scrollTop=list.scrollHeight;
+}
 function supportAppendMessage(message,options={}){
+  if(!message?.id)return;
+  const exists=supportHistoryMessages.some(item=>item.id===message.id);
+  if(!exists){
+    supportHistoryMessages.push(message);
+    supportHistoryMessages.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id)));
+    if(supportHistoryMessages.length>300)supportHistoryMessages=supportHistoryMessages.slice(-300);
+    supportPersistHistory();
+  }
   const list=$('#supportMessages');
-  if(!list||!message?.id||supportRenderedMessageIds.has(message.id))return;
+  if(!list||supportRenderedMessageIds.has(message.id)||options.fromCache)return;
   list.querySelector('.support-welcome')?.remove();
   $('.support-dialog')?.classList.remove('is-empty');
   supportRenderedMessageIds.add(message.id);
@@ -2152,7 +2194,7 @@ async function supportLoadOlder(){
     supportHistoryCursor=result.nextCursor||null;
     supportHasMore=Boolean(result.hasMore&&supportHistoryCursor);
     hint.textContent=supportHasMore?'Прокрути вверх, чтобы загрузить более ранние сообщения':'Начало переписки';
-    list.scrollTop=previousTop+(list.scrollHeight-previousHeight);
+    list.scrollTop=previousTop+(list.scrollHeight-previousHeight);supportPersistHistory();
   }catch(error){
     hint.textContent='Не удалось загрузить историю. Прокрути вверх, чтобы повторить.';
     supportHistoryRetryAt=Date.now()+1200;
@@ -2199,39 +2241,49 @@ async function startSupportRealtime(conversationId){
 }
 async function openSupportChat(){
   if(!signedIn()){toast('Войди в аккаунт, чтобы написать в поддержку');authOpen('login');return}
-  const overlay=$('#supportOverlay'),list=$('#supportMessages');
-  if(!overlay||!list)return;
-  overlay.hidden=false;
-  $('.support-dialog')?.classList.add('is-empty');
-  supportSetStatus('Загружаем переписку');
-  supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();
-  supportHistoryCursor=null;supportHasMore=false;supportLoadingOlder=false;supportHistoryRetryAt=0;
-  try{
-    const result=await api('/api/support/conversation');
-    supportConversationId=result.conversation.id;
-    supportHistoryCursor=result.nextCursor||null;supportHasMore=Boolean(result.hasMore&&supportHistoryCursor);
-    (result.messages||[]).forEach(supportAppendMessage);
-    if(supportHasMore){
-      const hint=document.createElement('div');hint.className='support-history-hint';hint.textContent='Прокрути вверх, чтобы загрузить более ранние сообщения';
-      list.insertBefore(hint,list.firstChild);list.scrollTop=list.scrollHeight;
-    }
-    if(!(result.messages||[]).length){
-      const welcome=document.createElement('div');welcome.className='support-welcome';
-      welcome.innerHTML='<span class="support-welcome-icon" aria-hidden="true">✦</span><strong>Мы на связи</strong><p>Напиши, чем помочь. Ответ появится здесь же.</p>';
-      list.append(welcome);
-    }
-    await startSupportRealtime(supportConversationId);
-    $('#supportInput')?.focus();
-  }catch(error){
-    supportSetStatus('Не удалось подключиться');
-    list.innerHTML='<div class="support-error">Не удалось загрузить чат. '+esc(error.message||'Попробуй ещё раз.')+'</div>';
+  const overlay=$('#supportOverlay'),list=$('#supportMessages');if(!overlay||!list)return;
+  overlay.hidden=false;supportHistoryCacheUserId=user.id;
+  const cached=supportReadHistoryCache(user.id);
+  const alreadyMounted=supportConversationId&&supportHistoryCacheUserId===user.id&&list.dataset.conversationId===supportConversationId;
+  if(!alreadyMounted){
+    supportHistoryCursor=cached?.nextCursor||null;supportHasMore=Boolean(cached?.hasMore&&supportHistoryCursor);
+    supportLoadingOlder=false;supportHistoryRetryAt=0;
+    if(cached){supportConversationId=cached.conversationId;list.dataset.conversationId=cached.conversationId;supportHistoryMessages=[];supportRenderCachedHistory(cached.messages)}
+    else{supportConversationId=null;list.dataset.conversationId='';supportHistoryMessages=[];supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();$('.support-dialog')?.classList.add('is-empty')}
   }
+  if(!supportPageHistoryFetched){
+    supportSetStatus(cached?'Обновляем переписку':'Загружаем переписку');
+    try{
+      const result=await api('/api/support/conversation');
+      supportPageHistoryFetched=true;
+      const serverMessages=result.messages||[];
+      const sameConversation=!cached||cached.conversationId===result.conversation.id;
+      if(!sameConversation){supportHistoryMessages=[];supportRenderedMessageIds.clear();list.replaceChildren();supportClearImageUrls()}
+      supportConversationId=result.conversation.id;list.dataset.conversationId=supportConversationId;
+      if(!supportHasMore||!sameConversation){supportHistoryCursor=result.nextCursor||null;supportHasMore=Boolean(result.hasMore&&supportHistoryCursor)}
+      for(const message of serverMessages)supportAppendMessage(message);
+      if(supportHasMore&&supportHistoryCursor&&!list.querySelector('.support-history-hint')){
+        const hint=document.createElement('div');hint.className='support-history-hint';hint.textContent='Прокрути вверх, чтобы загрузить более ранние сообщения';list.insertBefore(hint,list.firstChild)
+      }
+      if(!supportHistoryMessages.length){
+        const welcome=document.createElement('div');welcome.className='support-welcome';
+        welcome.innerHTML='<span class="support-welcome-icon" aria-hidden="true">✦</span><strong>Мы на связи</strong><p>Напиши, чем помочь. Ответ появится здесь же.</p>';list.append(welcome);$('.support-dialog')?.classList.add('is-empty')
+      }else $('.support-dialog')?.classList.remove('is-empty');
+      list.scrollTop=list.scrollHeight;supportPersistHistory();
+    }catch(error){
+      supportSetStatus(cached?'Показана сохранённая переписка':'Не удалось подключиться');
+      if(!cached){list.innerHTML='<div class="support-error">Не удалось загрузить чат. '+esc(error.message||'Попробуй ещё раз.')+'</div>';$('.support-dialog')?.classList.add('is-empty')}
+    }
+  }else if(!supportConversationId){
+    supportSetStatus('Не удалось подключиться');
+  }else supportSetStatus('На связи',true);
+  if(supportConversationId){list.dataset.conversationId=supportConversationId;await startSupportRealtime(supportConversationId)}
+  $('#supportInput')?.focus();
 }
 async function closeSupportChat(){
   const overlay=$('#supportOverlay');if(overlay)overlay.hidden=true;
-  /* Floating support window leaves the page interactive. */
-  if(supportChannel&&supabaseAuth){try{await supabaseAuth.removeChannel(supportChannel)}catch{}supportChannel=null}
-  supportConversationId=null;supportSetStatus('Не в чате');supportClearImageUrls();
+  /* Keep the Realtime channel and rendered history alive while the floating panel is closed. */
+  supportPersistHistory();
 }
 async function submitSupportMessage(form){
   const input=$('#supportInput'),button=form.querySelector('[type="submit"]');
@@ -2291,7 +2343,11 @@ async function init(){
       if(session?.access_token){
         sessionStorage.setItem(tokenKey,session.access_token);
         supabaseAuth.realtime.setAuth(session.access_token);
-      }else if(event==='SIGNED_OUT')sessionStorage.removeItem(tokenKey);
+      }else if(event==='SIGNED_OUT'){
+        sessionStorage.removeItem(tokenKey);supportPageHistoryFetched=false;supportConversationId=null;supportHistoryMessages=[];supportRenderedMessageIds.clear();supportHistoryCacheUserId=null;
+        if(supportChannel){void supabaseAuth.removeChannel(supportChannel);supportChannel=null}
+        const list=$('#supportMessages');if(list){list.replaceChildren();delete list.dataset.conversationId}
+      }
     });
     void setupGoogleButton().catch(error=>{console.error('Google button unavailable:',error);$('#authError').textContent='Вход через Google временно недоступен.'});
     const {data:{session}}=await supabaseAuth.auth.getSession();
