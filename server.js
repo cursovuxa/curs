@@ -178,24 +178,69 @@ app.get('/api/public-config', (_req, res) => {
 function safeTelegramText(value) {
   return String(value || '').replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
 }
-async function sendSupportMessageToTelegram(message, conversation, profile) {
-  if (!telegramBotToken || !telegramAdminId) throw new Error('Поддержка временно недоступна');
-  const label = profile.full_name || profile.username || 'Пользователь';
-  const username = profile.username ? ' (@' + profile.username + ')' : '';
-  const text = 'Сообщение в поддержку FlowTix\n' +
-    'Пользователь: ' + label + username + '\n' +
-    'Чат: ' + conversation.id + '\n\n' + message;
-  const response = await fetch('https://api.telegram.org/bot' + telegramBotToken + '/sendMessage', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: telegramAdminId, text })
-  });
-  let payload = null;
-  try { payload = await response.json(); } catch {}
-  if (!response.ok || !payload?.ok || !payload.result?.message_id) {
-    console.error('[support] Telegram delivery failed with status ' + response.status);
+async function sendTelegram(method, fields, photo) {
+  let response;
+  if(photo){
+    const form=new FormData();
+    for(const [key,value] of Object.entries(fields))form.append(key,String(value));
+    form.append('photo',new Blob([photo.buffer],{type:photo.mimeType}),photo.name||'support-photo');
+    response=await fetch('https://api.telegram.org/bot'+telegramBotToken+'/'+method,{method:'POST',body:form});
+  }else{
+    response=await fetch('https://api.telegram.org/bot'+telegramBotToken+'/'+method,{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)
+    });
+  }
+  const payload=await response.json().catch(()=>null);
+  if(!response.ok||!payload?.ok||!payload.result?.message_id){
+    console.error('[support] Telegram delivery failed with status '+response.status);
     throw new Error('Не удалось отправить сообщение в поддержку. Попробуйте ещё раз.');
   }
-  return Number(payload.result.message_id);
+  return payload.result;
+}
+function validateSupportImage(image){
+  if(!image)return null;
+  const mimeType=String(image.type||'').toLowerCase();
+  if(!['image/jpeg','image/png','image/webp'].includes(mimeType))throw new Error('Прикрепи фото в формате JPG, PNG или WebP');
+  const encoded=String(image.data||'');
+  if(!encoded||encoded.length>Math.ceil(2*1024*1024*4/3)+8)throw new Error('Фото должно быть не больше 2 МБ');
+  const buffer=Buffer.from(encoded,'base64');
+  if(!buffer.length||buffer.length>2*1024*1024)throw new Error('Фото должно быть не больше 2 МБ');
+  const png=buffer.length>8&&buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+  const jpeg=buffer.length>3&&buffer[0]===0xff&&buffer[1]===0xd8&&buffer[2]===0xff;
+  const webp=buffer.length>12&&buffer.toString('ascii',0,4)==='RIFF'&&buffer.toString('ascii',8,12)==='WEBP';
+  if(!(mimeType==='image/png'&&png)&&!(mimeType==='image/jpeg'&&jpeg)&&!(mimeType==='image/webp'&&webp))throw new Error('Файл не распознан как изображение');
+  return {buffer,mimeType,name:String(image.name||'photo').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,80)};
+}
+async function sendSupportMessageToTelegram(message, conversation, profile, image) {
+  if (!telegramBotToken || !telegramAdminId) throw new Error('Поддержка временно недоступна');
+  const label=safeTelegramText(profile.full_name||profile.username||'Пользователь');
+  const username=profile.username?' (@'+safeTelegramText(profile.username)+')':'';
+  const header='<b>Новое обращение · FlowTix</b>\n<b>Пользователь:</b> '+label+username+
+    '\n<b>Диалог:</b> <code>'+conversation.id+'</code>';
+  const replyHint='\n\n↩️ Чтобы ответить, нажмите <b>«Ответить»</b> на сообщение ниже. Можно написать текст или отправить фото с подписью — ответ появится в чате на сайте.';
+  if(image){
+    const photoResult=await sendTelegram('sendPhoto',{
+      chat_id:telegramAdminId,
+      caption:header+'\n\n📷 Фото от пользователя.'+replyHint,
+      parse_mode:'HTML'
+    },image);
+    const photoId=Number(photoResult.message_id);
+    const fileId=photoResult.photo?.at(-1)?.file_id;
+    if(!fileId)throw new Error('Telegram не вернул загруженное фото');
+    if(message){
+      const textResult=await sendTelegram('sendMessage',{
+        chat_id:telegramAdminId,text:message,reply_to_message_id:photoId
+      });
+      return {telegramMessageId:Number(textResult.message_id),telegramFileId:fileId,mimeType:image.mimeType};
+    }
+    return {telegramMessageId:photoId,telegramFileId:fileId,mimeType:image.mimeType};
+  }
+  const textResult=await sendTelegram('sendMessage',{
+    chat_id:telegramAdminId,
+    text:header+'\n\n'+safeTelegramText(message)+replyHint,
+    parse_mode:'HTML'
+  });
+  return {telegramMessageId:Number(textResult.message_id),telegramFileId:null,mimeType:null};
 }
 async function configureTelegramWebhook() {
   if (!telegramBotToken || !telegramAdminId || !renderPublicUrl) return;
@@ -225,9 +270,10 @@ app.post('/api/webhooks/telegram', asyncRoute(async (req, res) => {
   const update = req.body || {};
   const message = update.message;
   if (!message || String(message.chat?.id || '') !== telegramAdminId) return res.sendStatus(200);
-  const body = String(message.text || '').trim().slice(0, 2000);
+  const body = String(message.text || message.caption || '').trim().slice(0, 2000);
+  const photoId = Array.isArray(message.photo) ? String(message.photo.at(-1)?.file_id || '') : '';
   const replyId = Number(message.reply_to_message?.message_id || 0);
-  if (!body || !replyId) return res.sendStatus(200);
+  if ((!body && !photoId) || !replyId) return res.sendStatus(200);
   const { data: source, error: sourceError } = await supabase.from('support_messages')
     .select('conversation_id').eq('telegram_message_id', replyId).maybeSingle();
   if (sourceError) return res.status(500).json({ error: 'Не удалось найти переписку поддержки' });
@@ -236,8 +282,9 @@ app.post('/api/webhooks/telegram', asyncRoute(async (req, res) => {
     .select('id,user_id').eq('id', source.conversation_id).maybeSingle();
   if (chatError || !chat) return res.sendStatus(200);
   const { data: sent, error: insertError } = await supabase.from('support_messages').insert({
-    conversation_id: chat.id, sender_type: 'admin', body, telegram_update_id: Number(update.update_id)
-  }).select('id,conversation_id,sender_type,sender_id,body,created_at').single();
+    conversation_id: chat.id, sender_type: 'admin', body, telegram_file_id: photoId || null,
+    media_mime_type: photoId ? 'image/jpeg' : null, telegram_update_id: Number(update.update_id)
+  }).select('id,conversation_id,sender_type,sender_id,body,telegram_file_id,created_at').single();
   if (insertError) {
     if (insertError.code === '23505') return res.sendStatus(200);
     return res.status(500).json({ error: 'Не удалось сохранить ответ поддержки' });
@@ -270,29 +317,45 @@ async function getOrCreateSupportConversation(userId) {
 app.get('/api/support/conversation', requireUser, asyncRoute(async (req, res) => {
   const conversation = await getOrCreateSupportConversation(req.user.id);
   const { data, error } = await supabase.from('support_messages')
-    .select('id,conversation_id,sender_type,sender_id,body,created_at')
+    .select('id,conversation_id,sender_type,sender_id,body,telegram_file_id,created_at')
     .eq('conversation_id', conversation.id).order('created_at', { ascending: false }).limit(40);
   if (error) return res.status(500).json({ error: 'Не удалось загрузить чат поддержки' });
   res.json({ conversation, messages: (data || []).reverse() });
 }));
 app.post('/api/support/conversation/messages', requireUser, asyncRoute(async (req, res) => {
-  const body = String(req.body.body || '').trim();
-  if (!body || body.length > 2000) return res.status(400).json({ error: 'Сообщение должно содержать от 1 до 2000 символов' });
-  const conversation = await getOrCreateSupportConversation(req.user.id);
-  const { data: message, error } = await supabase.from('support_messages').insert({
-    conversation_id: conversation.id, sender_type: 'user', sender_id: req.user.id, body
-  }).select('id,conversation_id,sender_type,sender_id,body,created_at').single();
-  if (error) return res.status(500).json({ error: 'Не удалось сохранить сообщение' });
-  try {
-    const telegramMessageId = await sendSupportMessageToTelegram(body, conversation, req.user);
-    const { error: updateError } = await supabase.from('support_messages').update({ telegram_message_id: telegramMessageId }).eq('id', message.id);
-    if (updateError) console.error('[support] could not store Telegram reply reference');
-  } catch (deliveryError) {
-    await supabase.from('support_messages').delete().eq('id', message.id);
-    throw deliveryError;
-  }
-  await supabase.from('support_conversations').update({ last_message_at: message.created_at, updated_at: message.created_at }).eq('id', conversation.id);
-  res.status(201).json({ message });
+  const body=String(req.body.body||'').trim();
+  const image=validateSupportImage(req.body.image);
+  if(!body&&!image)return res.status(400).json({error:'Напиши сообщение или прикрепи фото'});
+  if(body.length>2000)return res.status(400).json({error:'Сообщение не должно превышать 2000 символов'});
+  const conversation=await getOrCreateSupportConversation(req.user.id);
+  const delivery=await sendSupportMessageToTelegram(body,conversation,req.user,image);
+  const {data:message,error}=await supabase.from('support_messages').insert({
+    conversation_id:conversation.id,sender_type:'user',sender_id:req.user.id,body,
+    telegram_message_id:delivery.telegramMessageId,telegram_file_id:delivery.telegramFileId,
+    media_mime_type:delivery.mimeType
+  }).select('id,conversation_id,sender_type,sender_id,body,telegram_file_id,created_at').single();
+  if(error)return res.status(500).json({error:'Сообщение ушло в поддержку, но не сохранилось в чате. Обнови страницу.'});
+  await supabase.from('support_conversations').update({last_message_at:message.created_at,updated_at:message.created_at}).eq('id',conversation.id);
+  res.status(201).json({message});
+}));
+app.get('/api/support/conversation/messages/:messageId/photo',requireUser,asyncRoute(async(req,res)=>{
+  const {data:message,error}=await supabase.from('support_messages').select('conversation_id,telegram_file_id,media_mime_type').eq('id',req.params.messageId).maybeSingle();
+  if(error||!message?.telegram_file_id)return res.sendStatus(404);
+  const {data:conversation}=await supabase.from('support_conversations').select('user_id').eq('id',message.conversation_id).maybeSingle();
+  if(!conversation||conversation.user_id!==req.user.id)return res.sendStatus(404);
+  if(!telegramBotToken)return res.status(503).json({error:'Фото временно недоступно'});
+  const fileMetaResponse=await fetch('https://api.telegram.org/bot'+telegramBotToken+'/getFile?file_id='+encodeURIComponent(message.telegram_file_id));
+  const fileMeta=await fileMetaResponse.json().catch(()=>null);
+  const filePath=fileMeta?.result?.file_path;
+  if(!fileMetaResponse.ok||!fileMeta?.ok||!filePath)return res.status(502).json({error:'Не удалось загрузить фото из Telegram'});
+  const photoResponse=await fetch('https://api.telegram.org/file/bot'+telegramBotToken+'/'+filePath);
+  if(!photoResponse.ok)return res.status(502).json({error:'Не удалось загрузить фото из Telegram'});
+  const photoBuffer=Buffer.from(await photoResponse.arrayBuffer());
+  res.setHeader('Content-Type',photoResponse.headers.get('content-type')||message.media_mime_type||'image/jpeg');
+  res.setHeader('Content-Length',photoBuffer.length);
+  res.setHeader('Cache-Control','private, max-age=300');
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.send(photoBuffer);
 }));
 
 
