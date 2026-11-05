@@ -2319,6 +2319,42 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
+async function completeEndedEvents() {
+  if (!supabase) return;
+  try {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Almaty', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(new Date()).map(part => [part.type, part.value]));
+    const today = parts.year + '-' + parts.month + '-' + parts.day;
+    const nowTime = parts.hour + ':' + parts.minute + ':' + parts.second;
+    const completedAt = new Date().toISOString();
+
+    const { data: pastEvents, error: pastError } = await supabase.from('events')
+      .update({ status: 'completed', updated_at: completedAt })
+      .eq('status', 'published').lt('start_date', today).select('id');
+    if (pastError) throw pastError;
+
+    const { data: todayEvents, error: todayError } = await supabase.from('events')
+      .select('id,end_time').eq('status', 'published').eq('start_date', today);
+    if (todayError) throw todayError;
+    const endedToday = (todayEvents || [])
+      .filter(event => event.end_time && String(event.end_time).slice(0, 8) <= nowTime)
+      .map(event => event.id);
+    let endedEvents = pastEvents || [];
+    if (endedToday.length) {
+      const { data, error } = await supabase.from('events')
+        .update({ status: 'completed', updated_at: completedAt })
+        .eq('status', 'published').in('id', endedToday).select('id');
+      if (error) throw error;
+      endedEvents = endedEvents.concat(data || []);
+    }
+    if (endedEvents.length) console.log('[event-status] marked completed: ' + endedEvents.length);
+  } catch (error) {
+    console.error('[event-status] completion update failed:', error.message);
+  }
+}
+
 async function purgeDirectMessages() {
   if (!supabase) return;
   try { const { data, error } = await supabase.rpc('purge_direct_message_data'); if (error) throw error; if (data?.messages_deleted || data?.conversations_deleted) console.log('[message-retention] cleanup', data); } catch (error) { console.error('[message-retention] cleanup failed:', error.message); }
@@ -2344,12 +2380,14 @@ async function purgeExpiredUsedTickets() {
   }
 }
 app.listen(port, '0.0.0.0', () => { console.log('FlowTix API listening on ' + port); void configureTelegramWebhook(); });
+void completeEndedEvents();
 void purgeExpiredUsedTickets();
 void purgeExpiredPaymentIntents();
 void purgeDirectMessages();
 setInterval(purgeDirectMessages, 60 * 60 * 1000).unref();
 setInterval(purgeExpiredUsedTickets, 60 * 60 * 1000).unref();
 setInterval(purgeExpiredPaymentIntents, 60 * 1000).unref();
+setInterval(completeEndedEvents, 60 * 1000).unref();
 const pingUrl = process.env.RENDER_EXTERNAL_URL;
 if (pingUrl) {
   setInterval(() => {
