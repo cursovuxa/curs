@@ -18,6 +18,9 @@ let SUPABASE_PUBLISHABLE_KEY = '';
 let supabaseAuth = null;
 let supportChannel = null;
 let supportConversationId = null;
+let supportSelectedFile = null;
+let supportSelectedPreviewUrl = null;
+const supportImageObjectUrls = new Set();
 const supportRenderedMessageIds = new Set();
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -116,6 +119,25 @@ const api = async (path, options = {}) => {
     throw error;
   }
   return data;
+};
+const apiBlob = async (path) => {
+  let token = await currentAccessToken();
+  const request = (accessToken) => fetch(API_BASE + path, { headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : {} });
+  let response = await request(token);
+  if (response.status === 401 && supabaseAuth) {
+    const { data, error } = await supabaseAuth.auth.refreshSession();
+    if (!error && data.session?.access_token) {
+      token = data.session.access_token;
+      sessionStorage.setItem(tokenKey, token);
+      supabaseAuth.realtime.setAuth(token);
+      response = await request(token);
+    }
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Не удалось загрузить фото');
+  }
+  return response.blob();
 };
 const esc = (value = '') => String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function autosizeTextarea(field){
@@ -2079,12 +2101,44 @@ function supportFormatTime(value){
 function supportAppendMessage(message){
   const list=$('#supportMessages');
   if(!list||!message?.id||supportRenderedMessageIds.has(message.id))return;
+  list.querySelector('.support-welcome')?.remove();
   supportRenderedMessageIds.add(message.id);
   const item=document.createElement('article');
   item.className='support-message '+(message.sender_type==='user'?'is-mine':'is-support');
-  const body=document.createElement('p');body.textContent=message.body||'';
+  if(message.telegram_file_id||message.has_photo)void supportLoadImage(message.id,item);
+  if(message.body){const body=document.createElement('p');body.textContent=message.body;item.append(body)}
   const time=document.createElement('time');time.dateTime=message.created_at||'';time.textContent=supportFormatTime(message.created_at);
-  item.append(body,time);list.append(item);list.scrollTop=list.scrollHeight;
+  item.append(time);list.append(item);list.scrollTop=list.scrollHeight;
+}
+async function supportLoadImage(messageId,item){
+  try{
+    const blob=await apiBlob('/api/support/conversation/messages/'+encodeURIComponent(messageId)+'/photo');
+    const url=URL.createObjectURL(blob);supportImageObjectUrls.add(url);
+    const image=document.createElement('img');image.src=url;image.alt='Фото в переписке';image.loading='lazy';
+    item.insertBefore(image,item.firstChild);
+  }catch{
+    const notice=document.createElement('span');notice.className='support-image-error';notice.textContent='Фото временно недоступно';item.insertBefore(notice,item.firstChild);
+  }
+}
+function supportClearImageUrls(){for(const url of supportImageObjectUrls)URL.revokeObjectURL(url);supportImageObjectUrls.clear()}
+function supportResetAttachment(){
+  supportSelectedFile=null;
+  if(supportSelectedPreviewUrl){URL.revokeObjectURL(supportSelectedPreviewUrl);supportSelectedPreviewUrl=null}
+  const input=$('#supportFile');if(input)input.value='';
+  const preview=$('#supportAttachmentPreview');if(preview)preview.hidden=true;
+}
+function supportSelectAttachment(file){
+  if(!file){supportResetAttachment();return}
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){toast('Прикрепи изображение JPG, PNG или WebP');return}
+  if(file.size>2*1024*1024){toast('Фото должно быть не больше 2 МБ');return}
+  supportResetAttachment();supportSelectedFile=file;supportSelectedPreviewUrl=URL.createObjectURL(file);
+  const preview=$('#supportAttachmentPreview'),image=$('#supportAttachmentImage'),name=$('#supportAttachmentName');
+  if(preview&&image&&name){image.src=supportSelectedPreviewUrl;name.textContent=file.name;preview.hidden=false}
+}
+async function supportFileBase64(file){
+  const bytes=new Uint8Array(await file.arrayBuffer());let binary='';
+  for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+  return btoa(binary);
 }
 function supportSetStatus(label,live=false){
   const status=$('#supportConnection');
@@ -2111,7 +2165,7 @@ async function openSupportChat(){
   if(!overlay||!list)return;
   overlay.hidden=false;document.body.classList.add('support-chat-open');
   supportSetStatus('Загружаем переписку');
-  list.replaceChildren();supportRenderedMessageIds.clear();
+  supportClearImageUrls();list.replaceChildren();supportRenderedMessageIds.clear();
   try{
     const result=await api('/api/support/conversation');
     supportConversationId=result.conversation.id;
@@ -2132,16 +2186,18 @@ async function closeSupportChat(){
   const overlay=$('#supportOverlay');if(overlay)overlay.hidden=true;
   document.body.classList.remove('support-chat-open');
   if(supportChannel&&supabaseAuth){try{await supabaseAuth.removeChannel(supportChannel)}catch{}supportChannel=null}
-  supportConversationId=null;supportSetStatus('Не в чате');
+  supportConversationId=null;supportSetStatus('Не в чате');supportClearImageUrls();
 }
 async function submitSupportMessage(form){
   const input=$('#supportInput'),button=form.querySelector('[type="submit"]');
-  const body=String(input?.value||'').trim();
-  if(!body)return;
+  const body=String(input?.value||'').trim(),file=supportSelectedFile;
+  if(!body&&!file)return;
+  if(body.length>2000){toast('Сообщение не должно превышать 2000 символов');return}
   setBusy(button,true,'Отправляем…');
   try{
-    const result=await api('/api/support/conversation/messages',{method:'POST',body:JSON.stringify({body})});
-    supportAppendMessage(result.message);input.value='';input.style.height='';$('#supportCharCount').textContent='0 / 2000';
+    const image=file?{name:file.name,type:file.type,data:await supportFileBase64(file)}:null;
+    const result=await api('/api/support/conversation/messages',{method:'POST',body:JSON.stringify({body,image})});
+    supportAppendMessage(result.message);input.value='';input.style.height='';$('#supportCharCount').textContent='0 / 2000';supportResetAttachment();
     await startSupportRealtime(result.message.conversation_id);
   }catch(error){toast(error.message||'Не удалось отправить сообщение')}
   finally{setBusy(button,false)}
@@ -2149,7 +2205,16 @@ async function submitSupportMessage(form){
 document.addEventListener('click',event=>{
   const element=event.target instanceof Element?event.target:null;if(!element)return;
   if(element.closest('[data-support-open]')){event.preventDefault();void openSupportChat();return}
+  if(element.closest('[data-support-attach]')){$('#supportFile')?.click();return}
+  if(element.closest('[data-support-remove-file]')){supportResetAttachment();return}
   if(element.closest('[data-support-close]')||element.id==='supportOverlay'){void closeSupportChat()}
+});
+document.addEventListener('change',event=>{if(event.target?.id==='supportFile')supportSelectAttachment(event.target.files?.[0]||null)});
+document.addEventListener('keydown',event=>{
+  if(event.target?.id==='supportInput'&&event.key==='Enter'&&!event.shiftKey){
+    event.preventDefault();const form=$('#supportForm');
+    if(form?.requestSubmit)form.requestSubmit();else if(form)void submitSupportMessage(form);
+  }
 });
 document.addEventListener('submit',event=>{
   if(event.target?.id!=='supportForm')return;
@@ -2157,7 +2222,7 @@ document.addEventListener('submit',event=>{
 });
 document.addEventListener('input',event=>{
   if(event.target?.id!=='supportInput')return;
-  const input=event.target;input.style.height='auto';input.style.height=Math.min(input.scrollHeight,150)+'px';
+  const input=event.target;input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px';
   const counter=$('#supportCharCount');if(counter)counter.textContent=input.value.length+' / 2000';
 });
 
