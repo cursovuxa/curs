@@ -1047,3 +1047,59 @@ body[data-theme="halloween"] .complaint-review-card{box-shadow:0 10px 28px #1c11
  .analytics-live-heading>small{margin-left:18px}
 }
 @media(max-width:380px){.analytics-metric>b{font-size:16px}.analytics-metric>small{font-size:9px}}
+
+/* Clear, responsive calendar controls */
+.calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:20px}
+.calendar-toolbar .calendar-heading{display:grid;grid-template-columns:auto minmax(170px,1fr) auto;align-items:center;gap:14px;max-width:560px;flex:1}
+.calendar-heading h4{text-align:center;line-height:1.35}
+.calendar-nav{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:auto;min-width:92px;height:42px;padding:0 13px;border:1px solid var(--line);border-radius:13px;background:var(--surface-raised,var(--surface));color:var(--ink);font:700 12px "DM Sans",sans-serif;transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.calendar-nav svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.calendar-nav:hover{border-color:var(--violet);background:color-mix(in srgb,var(--violet) 10%,var(--surface));transform:translateY(-1px)}
+.calendar-view-switch{flex-shrink:0;padding:5px;gap:5px}
+.calendar-view-switch button{min-width:76px;min-height:38px;padding:9px 15px;transition:background .18s ease,color .18s ease,box-shadow .18s ease}
+.calendar-view-switch button[aria-pressed="true"],.calendar-view-switch button[data-selected="true"]{background:var(--violet)!important;color:#fff!important;box-shadow:0 4px 12px color-mix(in srgb,var(--violet) 34%,transparent)}
+.calendar-view-switch button[aria-pressed="false"]{background:transparent;color:var(--ink)}
+.calendar-weekdays,.calendar-grid{max-width:760px}
+.calendar-grid{gap:6px}
+.calendar-day{min-height:42px}
+.calendar-day.selected{background:var(--violet);color:#fff;box-shadow:0 4px 12px color-mix(in srgb,var(--violet) 28%,transparent)}
+.calendar-events{max-width:960px;margin-left:auto;margin-right:auto}
+@media(max-width:760px){
+ .calendar-panel{padding:14px}
+ .calendar-toolbar{display:grid;grid-template-columns:1fr;gap:14px}
+ .calendar-toolbar .calendar-heading{width:100%;max-width:none;grid-template-columns:42px minmax(0,1fr) 42px;gap:8px}
+ .calendar-nav{min-width:42px;width:42px;height:42px;padding:0;border-radius:13px}
+ .calendar-nav span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+ .calendar-view-switch{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+ .calendar-view-switch button{min-width:0;width:100%;padding:9px 6px}
+ .calendar-weekdays,.calendar-grid{max-width:none}
+ .calendar-grid{gap:3px}
+ .calendar-day{min-height:38px;aspect-ratio:auto}
+}
+@media(max-width:380px){.calendar-heading h4{font-size:13px}.calendar-nav{width:38px;min-width:38px;height:38px}.calendar-toolbar .calendar-heading{grid-template-columns:38px minmax(0,1fr) 38px}}
+/* Styled event picker for the map */
+.map-selection-layout{display:grid;gap:12px;min-width:0}
+.map-event-picker{position:relative;z-index:5}
+.map-event-picker-toggle{display:flex;width:100%;min-height:70px;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;box-shadow:0 8px 24px #0000000a}
+.map-event-picker-toggle:hover,.map-event-picker-toggle[aria-expanded="true"]{border-color:var(--violet);box-shadow:0 0 0 3px color-mix(in srgb,var(--violet) 16%,transparent)}
+.map-event-picker-copy{display:grid;gap:4px;min-width:0}
+.map-event-picker-copy small{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em}
+.map-event-picker-copy b{overflow:hidden;color:var(--ink);font-size:14px;text-overflow:ellipsis;white-space:nowrap}
+.map-event-picker-copy em{overflow:hidden;color:var(--muted);font-size:11px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
+.map-event-picker-toggle>svg{width:20px;height:20px;flex:none;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s ease}
+.map-event-picker-toggle[aria-expanded="true"]>svg{transform:rotate(180deg)}
+.map-event-picker-menu{position:absolute;top:calc(100% + 8px);left:0;right:0;max-height:min(340px,55vh);overflow:auto;padding:7px;border:1px solid var(--line);border-radius:16px;background:var(--paper);box-shadow:0 18px 48px #0005}
+.map-event-picker-menu[hidden]{display:none}
+.map-event-picker-menu>button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:14px;padding:12px;border:0;border-radius:11px;background:transparent;color:var(--ink);text-align:left;cursor:pointer}
+.map-event-picker-menu>button:hover,.map-event-picker-menu>button[aria-selected="true"]{background:color-mix(in srgb,var(--violet) 13%,var(--paper))}
+.map-event-picker-menu>button>span{display:grid;gap:4px;min-width:0}
+.map-event-picker-menu b{overflow:hidden;color:var(--ink);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.map-event-picker-menu small{color:var(--muted);font-size:10px}
+.map-event-picker-menu i{flex:none;color:var(--violet);font-style:normal;font-weight:800}
+.map-event-picker-empty,.map-selected-event{padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--paper) 80%,transparent);color:var(--ink)}
+.map-selected-event{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.map-selected-event>div{display:grid;gap:5px;min-width:0}
+.map-selected-event b{color:var(--ink);font-size:13px}
+.map-selected-event span,.map-selected-event small{color:var(--muted);font-size:11px;line-height:1.45}
+.map-selected-event .map-selected-distance{flex:none;color:var(--violet);font-weight:700}
+@media(max-width:600px){.map-event-picker-toggle{min-height:64px;padding:12px}.map-event-picker-copy b{font-size:13px}.map-selected-event{align-items:flex-start;flex-direction:column}.map-selected-event .map-selected-distance{flex:none}.map-frame{min-height:300px}}
