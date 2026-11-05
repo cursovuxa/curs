@@ -1712,3 +1712,13 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
 .admin-ticket-owner-copy strong{overflow:hidden;color:var(--ink);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
 .admin-ticket-owner-copy small{overflow:hidden;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}
 .admin-ticket-owner-arrow{margin-left:2px;color:var(--violet);font-size:13px;font-weight:800}
+
+
+/* Centered FlowTix footer with a clear copyright line */
+.footer{min-height:150px;padding:24px 18px;display:flex;align-items:center;justify-content:center;text-align:center}
+.footer-content{width:min(100%,520px);display:grid;justify-items:center;gap:12px}
+.footer-copy{margin:0;flex:none;letter-spacing:normal;line-height:1.5}
+.footer-support-link{justify-self:center}
+.footer-legal{color:var(--muted);font-size:11px;line-height:1.5;letter-spacing:normal}
+.footer-year{margin:0;font-variant-numeric:tabular-nums}
+@media(max-width:700px){.footer{min-height:160px;padding:22px 16px}.footer-content{gap:11px}.footer-copy{flex:none}.footer-legal{max-width:100%}}
