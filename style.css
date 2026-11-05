@@ -1418,3 +1418,13 @@ body[data-theme="halloween"] .brand-wordmark-halloween{
  body[data-theme="halloween"] .brand-wordmarks{padding:0}
  body[data-theme="halloween"] .brand-wordmark-halloween{filter:drop-shadow(0 1px 2px rgba(151,129,255,.22)) drop-shadow(0 1px 3px rgba(241,121,205,.14))}
 }
+
+/* Improve contrast of the Halloween wordmark while keeping its original colors and silhouette */
+body[data-theme="halloween"] .brand-wordmark-halloween{
+  filter:brightness(1.18) saturate(1.06) drop-shadow(0 1px 3px rgba(174,137,255,.2));
+}
+@media(max-width:700px){
+ body[data-theme="halloween"] .brand-wordmark-halloween{
+  filter:brightness(1.18) saturate(1.06) drop-shadow(0 1px 2px rgba(174,137,255,.18));
+ }
+}
