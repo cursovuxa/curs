@@ -342,13 +342,14 @@ function authOpen(mode='login') { $('#authModal').hidden=false; setAuthMode(mode
 function authClose() { $('#authModal').hidden=true; }
 function setAuthMode(mode) {
   const register=mode==='register';
-  $$('[data-auth]').forEach((tab)=>tab.classList.toggle('active',tab.dataset.auth===mode));
+  $('[data-auth]').forEach((tab)=>tab.classList.toggle('active',tab.dataset.auth===mode));
   $('#nameWrap').hidden=!register;
   $('#name').required=register;
   $('#password').autocomplete=register?'new-password':'current-password';
   $('#authSubmit').textContent=register?'Создать аккаунт':'Войти в FlowTix';
+  $('#authEmailLink').hidden=register;
   $('#authTitle').textContent=register?'Создай свой FlowTix':'С возвращением';
-  $('.auth-intro').textContent=register?'Создай аккаунт, чтобы находить события по душе.':'Войди, чтобы сохранять события и билеты в одном месте.';
+  $('.auth-intro').textContent=register?'Создай аккаунт, чтобы находить события по душе.':'Войди, чтобы сохранять события и билеты в одном месте. Можно войти по ссылке из письма без пароля.';
   $('#authError').textContent='';
 }
 function eventCard(event,source='catalog') {
@@ -1753,6 +1754,32 @@ document.addEventListener('click',async(e)=>{
   if(!e.target.closest('#profileMenuWrap')){$('#profileDropdown').hidden=true;$('#profileMenuToggle').setAttribute('aria-expanded','false')}
   const authTab=e.target.closest('.auth-tabs [data-auth]');
   if(authTab){setAuthMode(authTab.dataset.auth);return}
+  const emailLinkButton=e.target.closest('#authEmailLink');
+  if(emailLinkButton){
+    const email=$('#email').value.trim().toLowerCase();
+    const message=$('#authError');
+    if(!email){message.textContent='Сначала укажи email.';$('#email').focus();return}
+    if(!supabaseAuth){message.textContent='Вход по email временно недоступен. Обнови страницу и попробуй снова.';return}
+    setBusy(emailLinkButton,true,'Отправляем ссылку…');
+    message.textContent='';
+    try{
+      const {error}=await supabaseAuth.auth.signInWithOtp({
+        email,
+        options:{shouldCreateUser:false,emailRedirectTo:window.location.origin}
+      });
+      if(error){
+        console.error('Email link sign-in failed:',{status:error.status||null,code:error.code||null});
+        if(error.status===429)message.textContent='Слишком много запросов. Подожди немного и попробуй снова.';
+        else message.textContent='Если аккаунт с таким email существует, письмо со ссылкой отправлено. Проверь «Входящие» и «Спам».';
+      }else{
+        message.textContent='Если аккаунт с таким email существует, письмо со ссылкой отправлено. Проверь «Входящие» и «Спам».';
+      }
+    }catch(error){
+      console.error('Email link sign-in failed:',error.message);
+      message.textContent='Не удалось отправить письмо. Проверь подключение и попробуй снова.';
+    }finally{setBusy(emailLinkButton,false)}
+    return;
+  }
   const themeTrigger=e.target.closest('[data-theme-select-button]');
   if(themeTrigger){
     const menu=themeTrigger.parentElement.querySelector('[data-theme-menu]');
