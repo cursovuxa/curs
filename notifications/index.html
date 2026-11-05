@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=flowtix-support-chat-1-20261105">
-  <script type="module" src="/index.js?v=flowtix-support-chat-1-20261105" defer></script>
+  <link rel="stylesheet" href="/style.css?v=flowtix-support-chat-photos-2-20261105">
+  <script type="module" src="/index.js?v=flowtix-support-chat-photos-2-20261105" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -57,9 +57,20 @@
     <div id="supportConnection" class="support-connection"><span class="support-connection-dot"></span><span data-support-connection-label>Подключаемся…</span></div>
     <div id="supportMessages" class="support-messages" aria-live="polite" aria-relevant="additions"></div>
     <form id="supportForm" class="support-form">
+      <div id="supportAttachmentPreview" class="support-attachment-preview" hidden>
+        <img id="supportAttachmentImage" alt="Предпросмотр фото"><span id="supportAttachmentName"></span>
+        <button type="button" data-support-remove-file aria-label="Убрать фото">×</button>
+      </div>
       <label class="sr-only" for="supportInput">Сообщение в поддержку</label>
-      <textarea id="supportInput" name="body" rows="1" maxlength="2000" placeholder="Напиши сообщение…" required></textarea>
-      <div class="support-compose-foot"><span id="supportCharCount">0 / 2000</span><button class="button button-accent" type="submit"><span>Отправить</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3-6-8-2Z"/><path d="m12 14 4-5"/></svg></button></div>
+      <textarea id="supportInput" name="body" rows="1" maxlength="2000" placeholder="Напиши сообщение…"></textarea>
+      <input id="supportFile" class="sr-only" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Выбрать фото">
+      <div class="support-compose-foot">
+        <button class="support-attach-button" type="button" data-support-attach aria-label="Прикрепить фото" title="Прикрепить фото">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.1-8.9 8.9a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.9 1.9 0 0 1-2.6-2.6l8.3-8.3"/></svg>
+        </button>
+        <span class="support-compose-note">Фото до 2 МБ</span><span id="supportCharCount">0 / 2000</span>
+        <button class="button button-accent" type="submit"><span>Отправить</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3-6-8-2Z"/><path d="m12 14 4-5"/></svg></button>
+      </div>
     </form>
   </section>
 </div>
