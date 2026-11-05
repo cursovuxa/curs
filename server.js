@@ -328,7 +328,7 @@ app.get('/api/support/conversation', requireUser, asyncRoute(async (req, res) =>
     .eq('conversation_id',conversation.id);
   if(beforeCreatedAt){
     const parsedDate=new Date(beforeCreatedAt);
-    if(Number.isNaN(parsedDate.getTime())||!/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/.test(beforeId))
+    if(Number.isNaN(parsedDate.getTime())||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(beforeId))
       return res.status(400).json({error:'Некорректный курсор истории'});
     query=query.or('created_at.lt.'+parsedDate.toISOString()+',and(created_at.eq.'+parsedDate.toISOString()+',id.lt.'+beforeId+')');
   }
