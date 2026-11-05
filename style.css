@@ -1724,3 +1724,48 @@ body[data-theme="dark"] .support-dialog,body[data-theme="halloween"] .support-di
 @media(max-width:700px){.footer{min-height:160px;padding:22px 16px}.footer-content{gap:11px}.footer-copy{flex:none}.footer-legal{max-width:100%}}
 
 .create-event-errors{grid-column:1/-1;padding:18px 20px;border:1px solid color-mix(in srgb,var(--coral) 58%,var(--line));border-radius:16px;background:color-mix(in srgb,var(--coral) 9%,var(--surface));color:var(--ink);box-shadow:0 10px 28px rgba(20,16,30,.06);outline:none}.create-event-errors[hidden]{display:none}.create-event-errors strong{display:block;margin-bottom:8px;font-size:15px;letter-spacing:0}.create-event-errors ul{margin:0;padding-left:20px;display:grid;gap:6px;color:var(--ink);line-height:1.5}.create-event-errors li::marker{color:var(--coral)}.create-event-errors:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 24%,transparent)}@media(max-width:640px){.create-event-errors{padding:15px 16px;border-radius:14px}.create-event-errors strong{font-size:14px}.create-event-errors ul{padding-left:18px;font-size:14px;gap:8px}}
+/* Staff event picker: custom, theme-aware, and compact on touch screens */
+.staff-checkin-form,.staff-checkin-card,.staff-event-picker{overflow:visible}
+.staff-event-picker{position:relative;width:100%;z-index:2}
+.staff-event-toggle{width:100%;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface,#fff);color:var(--ink);font:inherit;font-weight:650;text-align:left;cursor:pointer;transition:border-color .16s,box-shadow .16s}
+.staff-event-toggle:hover,.staff-event-toggle[aria-expanded=true]{border-color:var(--violet);box-shadow:0 0 0 3px color-mix(in srgb,var(--violet) 12%,transparent)}
+.staff-event-toggle>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.staff-event-toggle svg{flex:0 0 18px;width:18px;height:18px;fill:none;stroke:var(--muted);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .16s}
+.staff-event-toggle[aria-expanded=true] svg{transform:rotate(180deg)}
+.staff-event-menu{position:absolute;z-index:90;top:calc(100% + 7px);left:0;right:0;display:grid;gap:4px;max-height:min(300px,45vh);overflow:auto;padding:7px;border:1px solid var(--line);border-radius:14px;background:var(--surface,#fff);color:var(--ink);box-shadow:0 18px 45px rgba(20,16,30,.2);overscroll-behavior:contain}
+.staff-event-menu[hidden]{display:none}
+.staff-event-option{position:relative;width:100%;min-width:0;display:grid;gap:4px;padding:11px 34px 11px 12px;border:0;border-radius:10px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.staff-event-option>span{overflow-wrap:anywhere;font-size:14px;font-weight:700;line-height:1.35}
+.staff-event-option small{color:var(--muted);font-size:11px;line-height:1.4}
+.staff-event-option:hover,.staff-event-option.is-selected{background:color-mix(in srgb,var(--violet) 12%,var(--surface,#fff))}
+.staff-event-option.is-selected:after{content:"✓";position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--violet);font-weight:800}
+.organizer-staff-assignment-help{max-width:760px;margin:-6px 0 14px;line-height:1.55}
+/* Ticket stub layout: keep seat and QR aligned instead of wrapping unpredictably */
+.flow-ticket{grid-template-columns:minmax(0,1fr) 176px}
+.flow-ticket-stub{min-width:0}
+.flow-ticket-number strong{overflow-wrap:anywhere}
+.flow-ticket-qr{flex:0 0 auto}
+@media(max-width:700px){
+ .staff-event-picker{z-index:8}
+ .staff-event-toggle{min-height:52px;padding:12px 14px;font-size:15px}
+ .staff-event-menu{max-height:42vh;border-radius:13px}
+ .staff-event-option{min-height:48px}
+ .flow-ticket{grid-template-columns:minmax(0,1fr)}
+ .flow-ticket-main{padding:18px 16px}
+ .flow-ticket h4{max-width:calc(100% - 94px);font-size:16px}
+ .flow-ticket-status{right:12px;top:12px}
+ .flow-ticket-stub{display:grid;grid-template-columns:minmax(0,1fr) auto;justify-items:stretch;align-items:center;gap:8px 14px;border-left:0;border-top:1px dashed color-mix(in srgb,var(--violet,#765cf5) 34%,var(--line,#ececf3));padding:16px 18px}
+ .flow-ticket-stub:before,.flow-ticket-stub:after{display:none}
+ .flow-ticket-seat-label{grid-column:1;grid-row:1}
+ .flow-ticket-stub>strong{grid-column:2;grid-row:1;justify-self:end}
+ .flow-ticket-qr{grid-column:1/-1;justify-self:center;margin:6px auto 0}
+ .flow-ticket-qr-hint{grid-column:1/-1;width:auto;max-width:none;margin:0 auto;text-align:center}
+ .organizer-staff-assignment-help{margin-top:-6px}
+}
+@media(max-width:380px){
+ .flow-ticket-main{padding:16px 13px}
+ .flow-ticket h4{max-width:100%;margin-top:40px}
+ .flow-ticket-status{left:13px;right:auto;top:13px}
+ .flow-ticket-stub{padding:14px}
+ .flow-ticket-number strong{font-size:12px}
+}
