@@ -217,11 +217,14 @@ async function sendSupportMessageToTelegram(message, conversation, profile, imag
   const username=profile.username?' (@'+safeTelegramText(profile.username)+')':'';
   const header='<b>Новое обращение · FlowTix</b>\n<b>Пользователь:</b> '+label+username+
     '\n<b>Диалог:</b> <code>'+conversation.id+'</code>';
-  const replyHint='\n\n↩️ Чтобы ответить, нажмите <b>«Ответить»</b> на сообщение ниже. Можно написать текст или отправить фото с подписью — ответ появится в чате на сайте.';
+  const textReplyHint='\n\n↩️ Нажмите <b>«Ответить» на это сообщение</b> и отправьте текст или фото с подписью. Ответ появится в чате на сайте.';
   if(image){
+    const photoReplyHint=message
+      ? '\n\n📷 Фото от пользователя. Ответьте на текст под фото — текст или фото с подписью вернутся в чат на сайте.'
+      : '\n\n📷 Фото без текста. Чтобы ответить, нажмите <b>«Ответить» прямо на это фото</b>; текст или фото с подписью появятся на сайте.';
     const photoResult=await sendTelegram('sendPhoto',{
       chat_id:telegramAdminId,
-      caption:header+'\n\n📷 Фото от пользователя.'+replyHint,
+      caption:header+photoReplyHint,
       parse_mode:'HTML'
     },image);
     const photoId=Number(photoResult.message_id);
@@ -237,7 +240,7 @@ async function sendSupportMessageToTelegram(message, conversation, profile, imag
   }
   const textResult=await sendTelegram('sendMessage',{
     chat_id:telegramAdminId,
-    text:header+'\n\n'+safeTelegramText(message)+replyHint,
+    text:header+'\n\n'+safeTelegramText(message)+textReplyHint,
     parse_mode:'HTML'
   });
   return {telegramMessageId:Number(textResult.message_id),telegramFileId:null,mimeType:null};
