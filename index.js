@@ -342,7 +342,7 @@ function authOpen(mode='login') { $('#authModal').hidden=false; setAuthMode(mode
 function authClose() { $('#authModal').hidden=true; }
 function setAuthMode(mode) {
   const register=mode==='register';
-  $('[data-auth]').forEach((tab)=>{const selected=tab.dataset.auth===mode;tab.classList.toggle('active',selected);tab.setAttribute('aria-pressed',String(selected))});
+  $$('[data-auth]').forEach((tab)=>{const selected=tab.dataset.auth===mode;tab.classList.toggle('active',selected);tab.setAttribute('aria-pressed',String(selected))});
   $('#nameWrap').hidden=!register;
   $('#name').required=register;
   $('#password').autocomplete=register?'new-password':'current-password';
