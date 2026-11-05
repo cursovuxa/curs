@@ -886,6 +886,21 @@ app.patch('/api/admin/users/:id/role', requireUser, requireRootAdmin, asyncRoute
   res.json({ user: data });
 }));
 
+app.get('/api/events/:id/registration-status', requireUser, asyncRoute(async (req, res) => {
+  const [registrationResult, ticketResult] = await Promise.all([
+    supabase.from('registrations').select('id')
+      .eq('event_id', req.params.id).eq('user_id', req.user.id).limit(1).maybeSingle(),
+    supabase.from('tickets').select('id,ticket_number,status')
+      .eq('event_id', req.params.id).eq('user_id', req.user.id).in('status', ['valid', 'used'])
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  ]);
+  if (registrationResult.error || ticketResult.error) {
+    return res.status(500).json({ error: 'Не удалось проверить ваш билет' });
+  }
+  const ticket = ticketResult.data || null;
+  res.json({ registered: Boolean(registrationResult.data || ticket), ticket });
+}));
+
 app.get('/api/events/:id/seats', requireUser, asyncRoute(async (req, res) => {
   const { data: event, error: eventError } = await supabase.from('events')
     .select('id,hall_id,total_seats,available_seats,halls(id,name,total_capacity,layout_config)')
