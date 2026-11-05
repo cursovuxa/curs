@@ -319,11 +319,31 @@ async function getOrCreateSupportConversation(userId) {
 }
 app.get('/api/support/conversation', requireUser, asyncRoute(async (req, res) => {
   const conversation = await getOrCreateSupportConversation(req.user.id);
-  const { data, error } = await supabase.from('support_messages')
+  const pageSize=15;
+  const beforeCreatedAt=String(req.query.beforeCreatedAt||'').trim();
+  const beforeId=String(req.query.beforeId||'').trim();
+  if(Boolean(beforeCreatedAt)!==Boolean(beforeId))return res.status(400).json({error:'Некорректный курсор истории'});
+  let query=supabase.from('support_messages')
     .select('id,conversation_id,sender_type,sender_id,body,telegram_file_id,created_at')
-    .eq('conversation_id', conversation.id).order('created_at', { ascending: false }).limit(40);
-  if (error) return res.status(500).json({ error: 'Не удалось загрузить чат поддержки' });
-  res.json({ conversation, messages: (data || []).reverse() });
+    .eq('conversation_id',conversation.id);
+  if(beforeCreatedAt){
+    const parsedDate=new Date(beforeCreatedAt);
+    if(Number.isNaN(parsedDate.getTime())||!/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/.test(beforeId))
+      return res.status(400).json({error:'Некорректный курсор истории'});
+    query=query.or('created_at.lt.'+parsedDate.toISOString()+',and(created_at.eq.'+parsedDate.toISOString()+',id.lt.'+beforeId+')');
+  }
+  const {data,error}=await query
+    .order('created_at',{ascending:false}).order('id',{ascending:false}).limit(pageSize+1);
+  if(error)return res.status(500).json({error:'Не удалось загрузить чат поддержки'});
+  const rows=data||[],hasMore=rows.length>pageSize;
+  const page=rows.slice(0,pageSize).reverse();
+  const oldest=page[0]||null;
+  res.json({
+    conversation,
+    messages:page,
+    hasMore,
+    nextCursor:hasMore&&oldest?{createdAt:oldest.created_at,id:oldest.id}:null
+  });
 }));
 app.post('/api/support/conversation/messages', requireUser, asyncRoute(async (req, res) => {
   const body=String(req.body.body||'').trim();
