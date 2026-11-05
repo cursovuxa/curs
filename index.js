@@ -1960,10 +1960,10 @@ async function setupGoogleButton(){
   finally{googleButtonSetupPromise=null}
 }
 $('#categoryBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-category]');if(b){const selected=b.dataset.category;activeCategory=activeCategory===selected?'':selected;document.querySelectorAll('#categoryBar [data-category]').forEach(x=>x.classList.toggle('active',x.dataset.category===activeCategory));renderEvents()}});
-$('#eventModeBar').addEventListener('click',(e)=>{const b=e.target.closest('[data-event-mode]');if(b){discoveryMode=b.dataset.eventMode;renderEvents()}});
+$('#eventModeBar')?.addEventListener('click',(e)=>{const b=e.target.closest('[data-event-mode]');if(b){discoveryMode=b.dataset.eventMode;renderEvents()}});
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadEvents,250)});
 $('#cityInput').addEventListener('change',loadEvents);
-$('#footerYear').textContent=new Date().getFullYear();
+if($('#footerYear'))$('#footerYear').textContent=new Date().getFullYear();
 
 document.addEventListener('click',async event=>{
  const el=event.target instanceof Element?event.target:null;if(!el)return;
