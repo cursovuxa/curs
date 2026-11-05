@@ -2000,6 +2000,7 @@ function setupFlowScrollbars(){
  window.addEventListener('resize',()=>{for(const axis of ['y','x'])if(bars[axis].classList.contains('is-visible'))paint(axis,true)},{passive:true});
 }
 async function init(){
+  if(!ACCOUNT_ROUTE){renderCalendar([]);renderMap([])}
   try {
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');
     supabaseAuth=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',detectSessionInUrl:true}});
@@ -2018,7 +2019,7 @@ async function init(){
   }
   const [hasSession]=await Promise.all([loadSession(),loadCategories()]);
   if(hasSession&&new URLSearchParams(location.search).has('paymentIntent'))void handlePaymentReturn();
-  if(!ACCOUNT_ROUTE){renderCalendar([]);renderMap([]);await loadEvents();const eventId=new URLSearchParams(window.location.search).get('eventId');if(eventId){history.replaceState(null,'',window.location.pathname+window.location.hash);openEvent(eventId)}}
+  if(!ACCOUNT_ROUTE){await loadEvents();const eventId=new URLSearchParams(window.location.search).get('eventId');if(eventId){history.replaceState(null,'',window.location.pathname+window.location.hash);openEvent(eventId)}}
   if(ACCOUNT_ROUTE&&hasSession&&user?.is_blocked){sessionStorage.setItem('flowtix_blocked_route_notice','1');window.location.replace('/');return}
   if(!ACCOUNT_ROUTE&&user?.is_blocked&&sessionStorage.getItem('flowtix_blocked_route_notice')==='1'){sessionStorage.removeItem('flowtix_blocked_route_notice');showBlockedAccountModal()}
   if(ACCOUNT_ROUTE){if(hasSession||PUBLIC_PROFILE_ROUTE)renderAccountRoute();else authOpen('login')}
