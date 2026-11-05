@@ -1446,3 +1446,9 @@ body[data-theme="dark"] .search-field,
 body[data-theme="dark"] .search-city{color:#c1bfd0}
 body[data-theme="halloween"] .search-field,
 body[data-theme="halloween"] .search-city{color:#d9c3ae}
+
+/* Soften the Halloween hero card edge: a quiet plum edge instead of a sharp orange stripe */
+body[data-theme="halloween"] .hero{
+  border-color:rgba(155,103,111,.12);
+  box-shadow:0 24px 90px rgba(0,0,0,.22),0 0 42px rgba(255,101,42,.035);
+}
