@@ -238,7 +238,7 @@ function hideBlockedAccountModal(){
   document.body.classList.remove('blocked-modal-open');
 }
 function isAllowedBlockedRead(target){
-  return Boolean(target.closest('#searchForm,#searchInput,#cityInput,#categoryBar,[data-category],[data-map-locate],[data-details],[data-period],[data-calendar-view],[data-calendar-owner],[data-calendar-date],[data-calendar-shift],#calendarToggle,[data-map-picker-toggle],[data-map-event-option],[data-map-event],[data-close="eventModal"],#eventModal,a[href="#"],a[href="#events"],a[href^="https://"],a[href^="http://"],a[href^="mailto:"],a[href^="tel:"]'));
+  return Boolean(target.closest('#searchForm,#searchInput,#cityInput,#categoryBar,[data-category],[data-map-locate],[data-details],[data-period],[data-calendar-view],[data-calendar-owner],[data-calendar-date],[data-calendar-shift],#calendarToggle,#mapToggle,[data-map-picker-toggle],[data-map-event-option],[data-map-event],[data-close="eventModal"],#eventModal,a[href="#"],a[href="#events"],a[href^="https://"],a[href^="http://"],a[href^="mailto:"],a[href^="tel:"]'));
 }
 document.addEventListener('click',(event)=>{
   if(!signedIn()||user?.is_blocked!==true)return;
@@ -1645,6 +1645,7 @@ document.addEventListener('click',async(e)=>{
   if(e.target.id==='blockedAccountOverlay'){hideBlockedAccountModal();return}
   if(e.target.id==='eventModal'){setEventModalOpen(false);return}
   const calendarToggle=e.target.closest('#calendarToggle');if(calendarToggle){const panel=$('#calendarContent'),expanded=calendarToggle.getAttribute('aria-expanded')!=='true';if(panel)panel.hidden=!expanded;calendarToggle.setAttribute('aria-expanded',String(expanded));calendarToggle.closest('.calendar-block')?.classList.toggle('calendar-is-open',expanded);$('#calendarToggleHint').textContent=expanded?'Свернуть календарь':'Развернуть календарь';return}
+  const mapToggle=e.target.closest('#mapToggle');if(mapToggle){const panel=$('#mapContentWrap'),expanded=mapToggle.getAttribute('aria-expanded')!=='true';if(panel)panel.hidden=!expanded;mapToggle.setAttribute('aria-expanded',String(expanded));mapToggle.closest('.map-block')?.classList.toggle('map-is-open',expanded);$('#mapToggleHint').textContent=expanded?'Свернуть карту':'Развернуть карту и выбрать событие';if(expanded)renderMap(mapCatalogEvents(),selectedMapEventId);return}
   const period=e.target.closest('[data-period]');
   if(period){const today=new Date();calendarView=period.dataset.period==='week'?'week':'day';selectedCalendarDate=localDateKey(period.dataset.period==='tomorrow'?shiftDate(today,1):today);calendarMonthDate=new Date(dateFromKey(selectedCalendarDate).getFullYear(),dateFromKey(selectedCalendarDate).getMonth(),1);renderCalendar(catalogEvents.length?catalogEvents:events);$('#calendarEvents').scrollIntoView({behavior:'smooth',block:'center'});return}
   const calendarViewButton=e.target.closest('[data-calendar-view]');if(calendarViewButton){calendarView=calendarViewButton.dataset.calendarView;$$('[data-calendar-view]').forEach(button=>{const selected=button===calendarViewButton;button.classList.toggle('active',selected);button.dataset.selected=String(selected);button.setAttribute('aria-pressed',String(selected))});renderCalendar(catalogEvents.length?catalogEvents:events);return}
