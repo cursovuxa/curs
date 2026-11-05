@@ -726,6 +726,8 @@ async function reserveSelectedSeat(seatId){
   if(!seatPickerEventId)return;
   try{
     const {reservation}=await api('/api/seat-reservations',{method:'POST',body:JSON.stringify({eventId:seatPickerEventId,seatId})});
+    const previousHold=(seatPickerState?.seats||[]).find(seat=>seat.status==='mine'&&seat.id!==seatId);
+    if(previousHold){previousHold.status='available';previousHold.reserved_until=null}
     selectedSeatId=seatId;
     const selected=(seatPickerState?.seats||[]).find(seat=>seat.id===seatId);
     if(selected){selected.status='mine';selected.reserved_until=reservation.reserved_until}
