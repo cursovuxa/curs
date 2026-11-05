@@ -1452,3 +1452,10 @@ body[data-theme="halloween"] .hero{
   border-color:rgba(155,103,111,.12);
   box-shadow:0 24px 90px rgba(0,0,0,.22),0 0 42px rgba(255,101,42,.035);
 }
+
+/* Remove the warm hairline visible on the left edge of the Halloween hero */
+body[data-theme="halloween"] .hero{
+  border:0!important;
+  outline:0!important;
+  box-shadow:0 24px 90px rgba(0,0,0,.18)!important;
+}
